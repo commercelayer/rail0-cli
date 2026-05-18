@@ -192,14 +192,14 @@ var paymentsRefundCmd = &cobra.Command{
 
 // ── payments authorize-nonce ──────────────────────────────────────────────────
 
-var authorizeNoncePayer string
+var authorizeNonceConfigHash string
 
 var paymentsAuthorizeNonceCmd = &cobra.Command{
 	Use:   "authorize-nonce <paymentId>",
 	Short: "Get the EIP-3009 nonce for an authorize call",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		resp, err := newClient().Payments.AuthorizeNonce(context.Background(), args[0], authorizeNoncePayer)
+		resp, err := newClient().Payments.AuthorizeNonce(context.Background(), args[0], authorizeNonceConfigHash)
 		if err != nil {
 			return err
 		}
@@ -209,14 +209,14 @@ var paymentsAuthorizeNonceCmd = &cobra.Command{
 
 // ── payments charge-nonce ─────────────────────────────────────────────────────
 
-var chargeNoncePayer string
+var chargeNonceConfigHash string
 
 var paymentsChargeNonceCmd = &cobra.Command{
 	Use:   "charge-nonce <paymentId>",
 	Short: "Get the EIP-3009 nonce for a charge call",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		resp, err := newClient().Payments.ChargeNonce(context.Background(), args[0], chargeNoncePayer)
+		resp, err := newClient().Payments.ChargeNonce(context.Background(), args[0], chargeNonceConfigHash)
 		if err != nil {
 			return err
 		}
@@ -293,13 +293,13 @@ func init() {
 	paymentsCmd.AddCommand(paymentsRefundCmd)
 
 	// payments authorize-nonce
-	paymentsAuthorizeNonceCmd.Flags().StringVar(&authorizeNoncePayer, "payer", "", "Payer address (0x-prefixed)")
-	_ = paymentsAuthorizeNonceCmd.MarkFlagRequired("payer")
+	paymentsAuthorizeNonceCmd.Flags().StringVar(&authorizeNonceConfigHash, "config-hash", "", "EIP-712 digest of the Payment configuration (from: payments hash)")
+	_ = paymentsAuthorizeNonceCmd.MarkFlagRequired("config-hash")
 	paymentsCmd.AddCommand(paymentsAuthorizeNonceCmd)
 
 	// payments charge-nonce
-	paymentsChargeNonceCmd.Flags().StringVar(&chargeNoncePayer, "payer", "", "Payer address (0x-prefixed)")
-	_ = paymentsChargeNonceCmd.MarkFlagRequired("payer")
+	paymentsChargeNonceCmd.Flags().StringVar(&chargeNonceConfigHash, "config-hash", "", "EIP-712 digest of the Payment configuration (from: payments hash)")
+	_ = paymentsChargeNonceCmd.MarkFlagRequired("config-hash")
 	paymentsCmd.AddCommand(paymentsChargeNonceCmd)
 
 	// payments hash

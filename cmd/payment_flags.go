@@ -15,6 +15,8 @@ import (
 
 const zeroAddress = "0x0000000000000000000000000000000000000000"
 
+// paymentFlags collects the CLI flags needed to construct a rail0.Payment.
+// Every command that accepts a Payment embeds one of these and calls addTo/build.
 type paymentFlags struct {
 	paymentFile  string
 	payer        string
@@ -27,6 +29,7 @@ type paymentFlags struct {
 	feeReceiver  string
 }
 
+// addTo registers the nine payment flags on cmd.
 func (f *paymentFlags) addTo(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&f.paymentFile, "payment-file", "", "Path to a JSON file containing the Payment object (overrides individual flags)")
 	cmd.Flags().StringVar(&f.payer, "payer", "", "Payer address (0x-prefixed)")
@@ -39,8 +42,13 @@ func (f *paymentFlags) addTo(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&f.feeReceiver, "fee-receiver", zeroAddress, "Fee receiver address (zero when fee-bps is 0)")
 }
 
-// build constructs a Payment from flags. When running interactively (TTY) and
-// required fields are absent it launches a Huh form to collect them.
+// build constructs a Payment from flags.
+//
+// Resolution order:
+//  1. --payment-file: reads and unmarshals the JSON file.
+//  2. If any required flag is missing and stdin is a TTY, launches the Huh
+//     interactive form so the user can fill in the gaps.
+//  3. Otherwise, validates that all required fields are present and returns.
 func (f *paymentFlags) build() (rail0.Payment, error) {
 	if f.paymentFile != "" {
 		b, err := os.ReadFile(f.paymentFile)
@@ -54,6 +62,8 @@ func (f *paymentFlags) build() (rail0.Payment, error) {
 		return p, nil
 	}
 	if f.payer == "" || f.payee == "" || f.token == "" || f.maxAmount == "" {
+		// Check stdin (not stdout) for TTY: the form reads keyboard input from
+		// stdin even if the user has redirected stdout to a file or pipe.
 		if term.IsTerminal(os.Stdin.Fd()) {
 			return f.buildInteractive()
 		}
@@ -62,6 +72,11 @@ func (f *paymentFlags) build() (rail0.Payment, error) {
 	return f.toPayment(), nil
 }
 
+// buildInteractive shows a two-page huh form to collect Payment fields.
+//
+// huh inputs bind to *string, so numeric fields (authExpiry, refundExpiry,
+// feeBps) are handled through local string intermediaries and parsed after the
+// form completes. Any flags already set by the caller are pre-filled in the form.
 func (f *paymentFlags) buildInteractive() (rail0.Payment, error) {
 	authStr := ""
 	if f.authExpiry != 0 {

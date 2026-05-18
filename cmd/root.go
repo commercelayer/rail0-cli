@@ -1,3 +1,7 @@
+// Package cmd defines the rail0 CLI command tree.
+//
+// The root command wires global flags (--base-url, --api-key, --debug, --json)
+// and delegates to the payments, tokens, and utils sub-trees.
 package cmd
 
 import (
@@ -16,9 +20,11 @@ var (
 )
 
 var rootCmd = &cobra.Command{
-	Use:           "rail0",
-	Short:         "CLI for the RAIL0 stablecoin payment protocol",
-	SilenceUsage:  true,
+	Use:          "rail0",
+	Short:        "CLI for the RAIL0 stablecoin payment protocol",
+	SilenceUsage: true,
+	// SilenceErrors prevents cobra from printing the error itself; Execute()
+	// routes every error through output.Fatal for consistent styled output.
 	SilenceErrors: true,
 	Long: `rail0 is a command-line interface for the RAIL0 API.
 
@@ -26,7 +32,8 @@ Configure the API endpoint with --base-url or RAIL0_BASE_URL.
 Set an API key with --api-key or RAIL0_API_KEY.`,
 }
 
-// Execute runs the root command and handles errors with styled output.
+// Execute is the entry point called from main. Errors are printed by
+// output.Fatal so they receive the same lipgloss styling as other errors.
 func Execute() {
 	if err := rootCmd.Execute(); err != nil {
 		output.Fatal(err)
@@ -39,11 +46,15 @@ func init() {
 	rootCmd.PersistentFlags().BoolVar(&debug, "debug", false, "Print HTTP request/response details to stderr")
 	rootCmd.PersistentFlags().BoolVar(&jsonOut, "json", false, "Output raw JSON instead of styled text")
 
+	// OnInitialize runs after flag parsing, so jsonOut already holds the
+	// correct value when output.SetJSON is called.
 	cobra.OnInitialize(func() { output.SetJSON(jsonOut) })
 
 	rootCmd.AddCommand(paymentsCmd, tokensCmd, utilsCmd)
 }
 
+// newClient builds a RAIL0 API client from the resolved configuration.
+// Flag values take priority over environment variables.
 func newClient() *rail0.Client {
 	url := baseURL
 	if url == "" {

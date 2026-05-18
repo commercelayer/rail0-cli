@@ -12,7 +12,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
+	lipgloss "charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/term"
 )
 
@@ -66,9 +66,9 @@ func Print(v any) error {
 		fmt.Println(string(b))
 		return nil
 	}
-	fmt.Println()
+	lipgloss.Println()
 	printMap(m, 2)
-	fmt.Println()
+	lipgloss.Println()
 	return nil
 }
 
@@ -86,22 +86,22 @@ func printMap(m map[string]any, indent int) {
 		label := keyStyle.Render(pad + k)
 		switch val := m[k].(type) {
 		case map[string]any:
-			fmt.Println(label)
+			lipgloss.Println(label)
 			printMap(val, indent+4)
 		case bool:
 			if val {
-				fmt.Printf("%s  %s\n", label, trueStyle.Render("true"))
+				lipgloss.Printf("%s  %s\n", label, trueStyle.Render("true"))
 			} else {
-				fmt.Printf("%s  %s\n", label, falseStyle.Render("false"))
+				lipgloss.Printf("%s  %s\n", label, falseStyle.Render("false"))
 			}
 		case float64:
 			// JSON numbers unmarshal as float64; format without trailing ".0"
 			// for integers (all RAIL0 numeric fields are integers).
-			fmt.Printf("%s  %s\n", label, numStyle.Render(fmt.Sprintf("%v", val)))
+			lipgloss.Printf("%s  %s\n", label, numStyle.Render(fmt.Sprintf("%v", val)))
 		case string:
-			fmt.Printf("%s  %s\n", label, renderStr(val))
+			lipgloss.Printf("%s  %s\n", label, renderStr(val))
 		default:
-			fmt.Printf("%s  %s\n", label, strStyle.Render(fmt.Sprintf("%v", val)))
+			lipgloss.Printf("%s  %s\n", label, strStyle.Render(fmt.Sprintf("%v", val)))
 		}
 	}
 }
@@ -117,7 +117,7 @@ func renderStr(s string) string {
 // Fatal prints a styled error to stderr and exits with code 1.
 func Fatal(err error) {
 	if isTerminal(os.Stderr) {
-		fmt.Fprintf(os.Stderr, "\n  %s  %s\n\n", errMark, errBody.Render(err.Error()))
+		lipgloss.Fprintf(os.Stderr, "\n  %s  %s\n\n", errMark, errBody.Render(err.Error()))
 	} else {
 		fmt.Fprintf(os.Stderr, "Error: %s\n", err)
 	}

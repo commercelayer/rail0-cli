@@ -12,7 +12,7 @@ import (
 	"sort"
 	"strings"
 
-	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/term"
 )
 

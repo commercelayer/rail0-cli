@@ -13,7 +13,7 @@ Command-line interface for the [RAIL0](https://rail0.xyz) stablecoin payment pro
 
 The CLI depends on the [rail0-go](../rail0-go) SDK. Both repositories must be present as siblings:
 
-```
+```txt
 Documents/GitHub/
 ├── rail0-cli/   ← this repo
 └── rail0-go/    ← Go SDK
@@ -37,12 +37,12 @@ mv rail0 /usr/local/bin/
 
 Every flag can be set via an environment variable. The flag always takes priority.
 
-| Flag          | Environment variable | Description                                 |
-|---------------|----------------------|---------------------------------------------|
-| `--base-url`  | `RAIL0_BASE_URL`     | RAIL0 API base URL (default: no base URL)   |
-| `--api-key`   | `RAIL0_API_KEY`      | Bearer token sent in the `Authorization` header |
-| `--debug`     | —                    | Print raw HTTP request/response to stderr   |
-| `--json`      | —                    | Force plain JSON output (useful in scripts) |
+| Flag         | Environment variable | Description                                     |
+|--------------|----------------------|---------------------------------------- ---------|
+| `--base-url` | `RAIL0_BASE_URL`     | RAIL0 API base URL (default: no base URL)       |
+| `--api-key`  | `RAIL0_API_KEY`      | Bearer token sent in the `Authorization` header |
+| `--debug`    | —                    | Print raw HTTP request/response to stderr       |
+| `--json`     | —                    | Force plain JSON output (useful in scripts)     |
 
 Minimal setup:
 
@@ -53,7 +53,7 @@ export RAIL0_API_KEY=your_api_key
 
 ## Usage
 
-```
+```sh
 rail0 <command> <subcommand> [flags]
 ```
 

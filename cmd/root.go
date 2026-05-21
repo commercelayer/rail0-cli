@@ -1,13 +1,14 @@
 // Package cmd defines the rail0 CLI command tree.
 //
 // The root command wires global flags (--base-url, --api-key, --debug, --json)
-// and delegates to the payments, tokens, and utils sub-trees.
+// and delegates to the payments and merchants sub-trees.
 package cmd
 
 import (
 	"os"
 
-	"github.com/rail0/cli/internal/output"
+	charmlog "github.com/charmbracelet/log"
+	"github.com/rail0/cli/internal/ui"
 	rail0 "github.com/rail0/go-sdk"
 	"github.com/spf13/cobra"
 )
@@ -24,19 +25,23 @@ var rootCmd = &cobra.Command{
 	Short:        "CLI for the RAIL0 stablecoin payment protocol",
 	SilenceUsage: true,
 	// SilenceErrors prevents cobra from printing the error itself; Execute()
-	// routes every error through output.Fatal for consistent styled output.
+	// routes every error through ui.Fatal for consistent styled output.
 	SilenceErrors: true,
-	Long: `rail0 is a command-line interface for the RAIL0 API.
+	Long: `rail0 is a command-line interface for the RAIL0 stablecoin payment API.
 
-Configure the API endpoint with --base-url or RAIL0_BASE_URL.
-Set an API key with --api-key or RAIL0_API_KEY.`,
+Configure the API endpoint and credentials via flags or environment variables:
+
+  --base-url / RAIL0_BASE_URL   RAIL0 API base URL
+  --api-key  / RAIL0_API_KEY    Bearer token for authenticated requests
+
+Use 'rail0 <command> --help' for detailed usage of any command.`,
 }
 
 // Execute is the entry point called from main. Errors are printed by
-// output.Fatal so they receive the same lipgloss styling as other errors.
+// ui.Fatal so they receive the same lipgloss styling as other errors.
 func Execute() {
 	if err := rootCmd.Execute(); err != nil {
-		output.Fatal(err)
+		ui.Fatal(err)
 	}
 }
 
@@ -47,10 +52,10 @@ func init() {
 	rootCmd.PersistentFlags().BoolVar(&jsonOut, "json", false, "Output raw JSON instead of styled text")
 
 	// OnInitialize runs after flag parsing, so jsonOut already holds the
-	// correct value when output.SetJSON is called.
-	cobra.OnInitialize(func() { output.SetJSON(jsonOut) })
+	// correct value when ui.SetJSON is called.
+	cobra.OnInitialize(func() { ui.SetJSON(jsonOut) })
 
-	rootCmd.AddCommand(paymentsCmd, tokensCmd, utilsCmd)
+	rootCmd.AddCommand(paymentsCmd, merchantsCmd)
 }
 
 // newClient builds a RAIL0 API client from the resolved configuration.
@@ -69,7 +74,39 @@ func newClient() *rail0.Client {
 		opts.Headers = map[string]string{"Authorization": "Bearer " + key}
 	}
 	if debug {
-		opts.Logger = rail0.DebugLogger
+		opts.Logger = makeDebugLogger()
 	}
 	return rail0.NewClient(opts)
+}
+
+// makeDebugLogger returns a rail0.Logger that routes HTTP traces through
+// charmbracelet/log, producing structured, coloured output on stderr.
+func makeDebugLogger() rail0.Logger {
+	logger := charmlog.New(os.Stderr)
+	logger.SetLevel(charmlog.DebugLevel)
+	return func(e rail0.LogEntry) {
+		fields := []any{
+			"method", e.Method,
+			"url", e.URL,
+			"status", e.Status,
+			"duration_ms", e.DurationMs,
+		}
+		if e.Attempt > 1 {
+			fields = append(fields, "attempt", e.Attempt)
+		}
+		if e.WillRetry {
+			fields = append(fields, "will_retry", true)
+		}
+		if e.RequestBody != nil {
+			fields = append(fields, "request", e.RequestBody)
+		}
+		if e.ResponseBody != nil {
+			fields = append(fields, "response", e.ResponseBody)
+		}
+		if e.Err != nil {
+			logger.Error("HTTP", append(fields, "error", e.Err)...)
+		} else {
+			logger.Debug("HTTP", fields...)
+		}
+	}
 }

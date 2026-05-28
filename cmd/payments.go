@@ -92,14 +92,19 @@ on-chain balances (capturableAmount, refundableAmount) when the payment
 is in an active on-chain state.
 
 Returned status values:
-  pending_signature  — created, payer signature not yet submitted
-  signed             — payer signature stored, awaiting payee action
-  authorized         — funds held in escrow, capture available
-  charged            — one-shot charge executed, refund available
-  captured           — funds captured by payee (partially or fully)
-  voided             — authorization cancelled, funds returned to payer
-  released           — expired authorization released back to payer
-  refunded           — captured funds refunded to payer`,
+  pending_signature   — created, payer signature not yet submitted
+  signed              — payer signature stored, awaiting payee action
+  submitting          — signed transaction being broadcast to the network
+  submitted           — transaction broadcast, waiting for on-chain confirmation
+  authorized          — funds held in escrow, capture available
+  charged             — one-shot charge executed, refund available
+  captured            — funds fully captured by payee
+  partially_captured  — partial capture executed; remaining escrow still capturable
+  voided              — authorization cancelled, funds returned to payer
+  released            — expired authorization released back to payer
+  refunded            — captured funds fully refunded to payer
+  partially_refunded  — partial refund executed; remaining balance still refundable
+  failed              — terminal failure; payment cannot proceed`,
 	Example: `  rail0 payments get 0xabc123…`,
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -244,11 +249,14 @@ var paymentsCaptureCmd = &cobra.Command{
 	Use:   "capture <paymentId>",
 	Short: "Prepare the unsigned capture transaction",
 	Long: `Prepare an unsigned EIP-1559 transaction that calls capture() on the
-RAIL0 contract. The payment must be in 'authorized' status.
+RAIL0 contract. The payment must be in 'authorized', 'captured', or
+'partially_captured' status.
 
 Partial captures are supported: pass an --amount less than the full
 capturableAmount to capture only a portion. The remaining escrowed
 balance stays available for additional captures until authorizationExpiry.
+Each additional capture transitions the payment back through 'submitting'
+→ 'submitted' → 'partially_captured' until the full amount is captured.
 
 After authorizationExpiry the remaining balance can only be released
 (see 'payments release').
@@ -278,9 +286,11 @@ var paymentsCaptureSubmitCmd = &cobra.Command{
 	Short: "Broadcast the payee-signed capture transaction",
 	Long: `Broadcast a signed capture transaction to the network via the RAIL0 API.
 
-On success the payment status is updated to 'captured'. The response
-includes capturedAmount, feeAmount, and the updated capturableAmount
-and refundableAmount balances.`,
+On success the payment status is updated to 'captured' (if the full
+authorized amount was captured) or 'partially_captured' (if a partial
+amount was captured and escrowed balance remains). The response includes
+capturedAmount, feeAmount, and the updated capturableAmount and
+refundableAmount balances.`,
 	Example: `  rail0 payments capture-submit 0xpaymentId… \
     --signed-tx 0x02f8…`,
 	Args: cobra.ExactArgs(1),
@@ -461,8 +471,9 @@ var paymentsRefundCmd = &cobra.Command{
 	Use:   "refund <paymentId>",
 	Short: "Prepare the unsigned refund transaction",
 	Long: `Prepare an unsigned EIP-1559 transaction that calls refund() on the
-RAIL0 contract. The payment must be in 'captured', 'charged', or
-'refunded' status and must still have a positive refundableAmount.
+RAIL0 contract. The payment must be in 'captured', 'partially_captured',
+'charged', 'refunded', or 'partially_refunded' status and must still
+have a positive refundableAmount.
 
 The RAIL0 contract pulls refundAmount from the payee and returns it to
 the payer. The payee must first grant sufficient allowance to the RAIL0
@@ -496,8 +507,10 @@ var paymentsRefundSubmitCmd = &cobra.Command{
 	Short: "Broadcast the payee-signed refund transaction",
 	Long: `Broadcast a signed refund transaction to the network via the RAIL0 API.
 
-On success the payment status is updated to 'refunded'. The response
-includes refundedAmount and the remaining refundableAmount balance.`,
+On success the payment status is updated to 'refunded' (if the full
+refundable balance was returned) or 'partially_refunded' (if a partial
+amount was refunded and balance remains). The response includes
+refundedAmount and the remaining refundableAmount balance.`,
 	Example: `  rail0 payments refund-submit 0xpaymentId… \
     --signed-tx 0x02f8…`,
 	Args: cobra.ExactArgs(1),

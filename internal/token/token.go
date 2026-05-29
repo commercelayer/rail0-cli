@@ -39,14 +39,23 @@ func Load() string {
 
 // Save writes the JWT to the cache file.
 func Save(jwt string) error {
+	_, err := SaveAndReport(jwt)
+	return err
+}
+
+// SaveAndReport writes the JWT and returns the file path on success.
+func SaveAndReport(jwt string) (string, error) {
 	path, err := tokenFilePath()
 	if err != nil {
-		return err
+		return "", err
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
-		return err
+		return "", err
 	}
-	return os.WriteFile(path, []byte(jwt+"\n"), 0600)
+	if err := os.WriteFile(path, []byte(jwt+"\n"), 0600); err != nil {
+		return "", err
+	}
+	return path, nil
 }
 
 // Delete removes the cached token file.

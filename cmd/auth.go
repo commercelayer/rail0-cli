@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -78,8 +79,12 @@ Override with the RAIL0_TOKEN environment variable.`,
 		}
 
 		// Step 5: save token
-		if err := token.Save(authResp.Token); err != nil {
-			return fmt.Errorf("save token: %w", err)
+		tokenPath, saveErr := token.SaveAndReport(authResp.Token)
+		if saveErr != nil {
+			fmt.Fprintf(os.Stderr, "warning: could not save token to disk: %v\n", saveErr)
+			fmt.Fprintf(os.Stderr, "Set RAIL0_TOKEN=%s to authenticate manually.\n", authResp.Token)
+		} else {
+			fmt.Fprintf(os.Stderr, "Token saved to %s\n", tokenPath)
 		}
 
 		return ui.RunAPI(func() (any, error) { return authResp, nil })

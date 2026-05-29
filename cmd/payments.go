@@ -153,42 +153,6 @@ sign it with eth_signTypedData_v4, then submit the result:
 	},
 }
 
-// ── payments submit ───────────────────────────────────────────────────────────
-
-var submitSignedTx string
-
-var paymentsSubmitCmd = &cobra.Command{
-	Use:   "submit <rail0Id>",
-	Short: "Broadcast a signed transaction (external wallet flow)",
-	Long: `Broadcast a signed transaction to the network via the RAIL0 API.
-
-Use this command when signing externally (MetaMask, Ledger, cast, ethers.js).
-It works after any action command run with --prepare — the API infers the
-operation from the pending state set during that call.
-
-Returns 202 immediately. The payment stays in its current state until
-rail0-indexer detects the on-chain confirmation and calls back to the API,
-which then advances the payment to its final state (authorized, captured, etc.).
-Poll 'payments get <rail0Id>' and watch the transaction list until the
-relevant transaction moves from submitted → confirmed.
-
---signed-tx must be the RLP-encoded signed EIP-1559 transaction as a
-0x-prefixed hex string, as returned by eth_signTransaction or
-wallet.signTransaction.
-
-For automated flows where the private key is available locally, pass
---private-key (-p) directly to the action command instead:
-
-  rail0 payments authorize <rail0Id> -p 0xKey…`,
-	Example: `  rail0 payments submit 0xrail0Id… --signed-tx 0x02f8…`,
-	Args:    cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		return ui.RunAPI(func() (any, error) {
-			return newClient().Payments.Submit(context.Background(), args[0],
-				rail0.SubmitTransactionRequest{SignedTransaction: submitSignedTx})
-		})
-	},
-}
 
 // ── action command helpers ────────────────────────────────────────────────────
 
@@ -257,7 +221,7 @@ Signing modes (one required):
 		rail0Id := args[0]
 		client := newClient()
 		ctx := context.Background()
-		prep, err := client.Payments.Authorize(ctx, rail0Id)
+		prep, err := client.Payments.AuthorizePayload(ctx, rail0Id)
 		if err != nil {
 			return err
 		}
@@ -269,7 +233,7 @@ Signing modes (one required):
 			return fmt.Errorf("sign: %w", err)
 		}
 		return ui.RunAPI(func() (any, error) {
-			return client.Payments.Submit(ctx, rail0Id,
+			return client.Payments.Authorize(ctx, rail0Id,
 				rail0.SubmitTransactionRequest{SignedTransaction: signedTx})
 		})
 	},
@@ -313,7 +277,7 @@ Signing modes (one required):
 		rail0Id := args[0]
 		client := newClient()
 		ctx := context.Background()
-		prep, err := client.Payments.Charge(ctx, rail0Id)
+		prep, err := client.Payments.ChargePayload(ctx, rail0Id)
 		if err != nil {
 			return err
 		}
@@ -325,7 +289,7 @@ Signing modes (one required):
 			return fmt.Errorf("sign: %w", err)
 		}
 		return ui.RunAPI(func() (any, error) {
-			return client.Payments.Submit(ctx, rail0Id,
+			return client.Payments.Charge(ctx, rail0Id,
 				rail0.SubmitTransactionRequest{SignedTransaction: signedTx})
 		})
 	},
@@ -370,7 +334,7 @@ Signing modes (one required):
 		rail0Id := args[0]
 		client := newClient()
 		ctx := context.Background()
-		prep, err := client.Payments.PrepareCapture(ctx, rail0Id,
+		prep, err := client.Payments.CapturePayload(ctx, rail0Id,
 			rail0.CapturePaymentRequest{Amount: captureAmount})
 		if err != nil {
 			return err
@@ -383,7 +347,7 @@ Signing modes (one required):
 			return fmt.Errorf("sign: %w", err)
 		}
 		return ui.RunAPI(func() (any, error) {
-			return client.Payments.Submit(ctx, rail0Id,
+			return client.Payments.Capture(ctx, rail0Id,
 				rail0.SubmitTransactionRequest{SignedTransaction: signedTx})
 		})
 	},
@@ -424,7 +388,7 @@ Signing modes (one required):
 		rail0Id := args[0]
 		client := newClient()
 		ctx := context.Background()
-		prep, err := client.Payments.PrepareVoid(ctx, rail0Id)
+		prep, err := client.Payments.VoidPayload(ctx, rail0Id)
 		if err != nil {
 			return err
 		}
@@ -436,7 +400,7 @@ Signing modes (one required):
 			return fmt.Errorf("sign: %w", err)
 		}
 		return ui.RunAPI(func() (any, error) {
-			return client.Payments.Submit(ctx, rail0Id,
+			return client.Payments.Void(ctx, rail0Id,
 				rail0.SubmitTransactionRequest{SignedTransaction: signedTx})
 		})
 	},
@@ -484,7 +448,7 @@ Signing modes (one required):
 		rail0Id := args[0]
 		client := newClient()
 		ctx := context.Background()
-		prep, err := client.Payments.PrepareRelease(ctx, rail0Id,
+		prep, err := client.Payments.ReleasePayload(ctx, rail0Id,
 			rail0.ReleaseRequest{CallerAddress: releaseCallerAddress})
 		if err != nil {
 			return err
@@ -497,7 +461,7 @@ Signing modes (one required):
 			return fmt.Errorf("sign: %w", err)
 		}
 		return ui.RunAPI(func() (any, error) {
-			return client.Payments.Submit(ctx, rail0Id,
+			return client.Payments.Release(ctx, rail0Id,
 				rail0.SubmitTransactionRequest{SignedTransaction: signedTx})
 		})
 	},
@@ -505,57 +469,6 @@ Signing modes (one required):
 
 // ── payments approve ──────────────────────────────────────────────────────────
 
-var approveAmount string
-var approvePrivateKey string
-var approvePrepare bool
-
-var paymentsApproveCmd = &cobra.Command{
-	Use:   "approve <rail0Id>",
-	Short: "Grant ERC-20 allowance to the RAIL0 contract (prepare, sign, and broadcast)",
-	Long: `Prepare the ERC-20 approve() transaction that grants the RAIL0 contract
-an allowance to pull funds from the payee for a future refund.
-
-Required before 'payments refund' if the payee has insufficient allowance.
-Only needs to be done once per (payee, token, RAIL0 contract) combination
-— pass max uint256 as --amount for an unlimited approval.
-
-Signing modes (one required):
-
-  --private-key (-p)   Sign locally and broadcast in one step.
-  --prepare            Return the unsigned transaction for external signing,
-                       then broadcast with 'payments submit'.`,
-	Example: `  # Direct key — exact amount
-  rail0 payments approve 0xrail0Id… --amount 100000000 -p 0xPayeeKey…
-
-  # External wallet
-  rail0 payments approve 0xrail0Id… --amount 100000000 --prepare
-  rail0 payments submit  0xrail0Id… --signed-tx 0x02f8…`,
-	Args: cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := requireSigningMode(approvePrivateKey, approvePrepare); err != nil {
-			return err
-		}
-		rail0Id := args[0]
-		client := newClient()
-		ctx := context.Background()
-		prep, err := client.Payments.PrepareApprove(ctx, rail0Id,
-			rail0.ApproveRequest{Amount: approveAmount})
-		if err != nil {
-			return err
-		}
-		if approvePrepare {
-			return ui.RunAPI(func() (any, error) { return prep, nil })
-		}
-		signedTx, err := signTx(prep.UnsignedTransaction, approvePrivateKey)
-		if err != nil {
-			return fmt.Errorf("sign: %w", err)
-		}
-		return ui.RunAPI(func() (any, error) {
-			return client.Payments.Submit(ctx, rail0Id,
-				rail0.SubmitTransactionRequest{SignedTransaction: signedTx})
-		})
-	},
-}
 
 // ── payments refund ───────────────────────────────────────────────────────────
 
@@ -596,8 +509,7 @@ Signing modes (one required):
 		rail0Id := args[0]
 		client := newClient()
 		ctx := context.Background()
-		prep, err := client.Payments.PrepareRefund(ctx, rail0Id,
-			rail0.RefundPaymentRequest{Amount: refundAmount})
+		prep, err := client.Payments.RefundPayload(ctx, rail0Id, rail0.RefundPayloadRequest{Amount: refundAmount})
 		if err != nil {
 			return err
 		}
@@ -609,7 +521,7 @@ Signing modes (one required):
 			return fmt.Errorf("sign: %w", err)
 		}
 		return ui.RunAPI(func() (any, error) {
-			return client.Payments.Submit(ctx, rail0Id,
+			return client.Payments.Refund(ctx, rail0Id,
 				rail0.SubmitTransactionRequest{SignedTransaction: signedTx})
 		})
 	},
@@ -636,12 +548,6 @@ func init() {
 	// payments list
 	paymentsCmd.AddCommand(paymentsListCmd)
 
-	// payments submit
-	paymentsSubmitCmd.Flags().StringVarP(&submitSignedTx, "signed-tx", "x", "",
-		"RLP-encoded signed EIP-1559 transaction (0x-prefixed hex)")
-	_ = paymentsSubmitCmd.MarkFlagRequired("signed-tx")
-	paymentsCmd.AddCommand(paymentsSubmitCmd)
-
 	// payments authorize
 	addSigningFlags(paymentsAuthorizeCmd, &authorizePrivateKey, &authorizePrepare)
 	paymentsCmd.AddCommand(paymentsAuthorizeCmd)
@@ -666,13 +572,6 @@ func init() {
 		"Address that will sign the tx (default: payee on record)")
 	addSigningFlags(paymentsReleaseCmd, &releasePrivateKey, &releasePrepare)
 	paymentsCmd.AddCommand(paymentsReleaseCmd)
-
-	// payments approve
-	paymentsApproveCmd.Flags().StringVarP(&approveAmount, "amount", "a", "",
-		"ERC-20 allowance in token base units (use max uint256 for unlimited)")
-	_ = paymentsApproveCmd.MarkFlagRequired("amount")
-	addSigningFlags(paymentsApproveCmd, &approvePrivateKey, &approvePrepare)
-	paymentsCmd.AddCommand(paymentsApproveCmd)
 
 	// payments refund
 	paymentsRefundCmd.Flags().StringVarP(&refundAmount, "amount", "a", "",

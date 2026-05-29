@@ -1,22 +1,18 @@
 #!/usr/bin/env bash
 # test_authorize_capture_refund.sh
 #
-# End-to-end CLI flow: create → authorize → capture → approve → refund
+# End-to-end CLI flow: create → authorize → capture → refund (EIP-3009, no approve)
 #
 # Usage:
 #   ./scripts/test_authorize_capture_refund.sh
-#
-# Overrides:
-#   API_URL=http://…  CHAIN=arc-testnet  TOKEN=USDC  AMOUNT=1000000
-#   BUYER_PRIVATE_KEY=0x…  ACCOUNT_PRIVATE_KEY=0x…  ACCOUNT_ID=<uuid>
 
 set -euo pipefail
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 
 API_URL=http://0.0.0.0:4567
-CHAIN="${CHAIN:-arc-testnet}"
-TOKEN="${TOKEN:-USDC}"
+CHAIN="arc-testnet"
+TOKEN="USDC"
 AMOUNT=1000000   # 1 USDC (6 decimals)
 BUYER_ADDRESS="${BUYER_ADDRESS:-0xe3DD5ea618F74De4C95B0ff0EbF9921A06a694c4}"
 BUYER_PRIVATE_KEY="${BUYER_PRIVATE_KEY:-0x58cfb681b2a04e9dc0083d8258da8c19ac7cc1750f94bb1ab7651f606df5a4d6}"
@@ -24,7 +20,6 @@ ACCOUNT_PRIVATE_KEY="${ACCOUNT_PRIVATE_KEY:-0x700e3be6cef3c28464d6c432eda04d87b5
 ACCOUNT_ID="${ACCOUNT_ID:-019e748b-da9a-7c3f-ba32-50572ffd5388}"
 POLL_INTERVAL="${POLL_INTERVAL:-3}"
 POLL_TIMEOUT="${POLL_TIMEOUT:-120}"
-APPROVE_WAIT="${APPROVE_WAIT:-10}"
 
 : "${RAIL0:=$(go build -o /tmp/rail0-bin . 2>&1 && echo /tmp/rail0-bin)}"
 RAIL0="${RAIL0:-/tmp/rail0-bin}"
@@ -36,8 +31,6 @@ step() { echo; echo "── $* ──"; }
 ok()   { echo "  ✓ $*"; }
 fail() { echo "  ✗ $*" >&2; exit 1; }
 run()  { echo "  $ $RAIL0 $*" >&2; $RAIL0 "$@"; }
-
-jq_field() { python3 -c "import json,sys; d=json.load(sys.stdin); print(d$1)"; }
 
 poll_until() {
   local id="$1"; shift; local want=("$@")
@@ -101,34 +94,9 @@ ok "Broadcast — polling for indexer confirmation…"
 poll_until "$RAIL0_ID" captured partially_captured
 ok "Captured"
 
-# ── 4. Approve ────────────────────────────────────────────────────────────────
+# ── 4. Refund (EIP-3009, no approve needed) ───────────────────────────────────
 
-step "4. Approve RAIL0 contract for $AMOUNT"
-run  payments approve "$RAIL0_ID" -a "$AMOUNT" -p "$ACCOUNT_PRIVATE_KEY" $BASE > /dev/null
-# Approve is ERC-20 — the indexer does not call back for it, so the transaction
-# stays "submitted" indefinitely. Poll until it appears (confirms broadcast),
-# then sleep briefly for on-chain mining.
-ok "Broadcast — polling until approve tx appears, then waiting for mining…"
-elapsed=0
-while true; do
-  approve_status=$($RAIL0 payments get "$RAIL0_ID" $BASE | python3 -c "
-import json,sys
-ts=json.load(sys.stdin).get('transactions',[])
-t=next((t for t in ts if t['operation']=='approve'),None)
-print(t['status'] if t else '')
-")
-  echo "  polling… approve tx: ${approve_status:-not yet visible}"
-  [[ "$approve_status" == "submitted" ]] && break
-  (( elapsed += POLL_INTERVAL ))
-  (( elapsed >= POLL_TIMEOUT )) && fail "timeout waiting for approve tx to appear"
-  sleep "$POLL_INTERVAL"
-done
-sleep "$APPROVE_WAIT"
-ok "Approve tx broadcast and mined"
-
-# ── 5. Refund ─────────────────────────────────────────────────────────────────
-
-step "5. Refund $AMOUNT"
+step "4. Refund $AMOUNT (EIP-3009 receiveWithAuthorization)"
 run  payments refund "$RAIL0_ID" -a "$AMOUNT" -p "$ACCOUNT_PRIVATE_KEY" $BASE > /dev/null
 ok "Broadcast — polling for indexer confirmation…"
 poll_until "$RAIL0_ID" refunded partially_refunded
@@ -149,4 +117,4 @@ for t in d.get('transactions', []):
     print(f\"  {t['operation']:12s} {t['status']:12s} {(t.get('transaction_hash') or '')[:22]}…\")
 "
 echo
-echo "✓ authorize → capture → refund complete"
+echo "✓ authorize → capture → refund complete (v9 EIP-3009)"

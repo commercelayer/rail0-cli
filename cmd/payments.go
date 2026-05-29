@@ -509,16 +509,40 @@ Signing modes (one required):
 		rail0Id := args[0]
 		client := newClient()
 		ctx := context.Background()
-		prep, err := client.Payments.RefundPayload(ctx, rail0Id, rail0.RefundPayloadRequest{Amount: refundAmount})
+		// Phase 1: get EIP-712 ReceiveWithAuthorization signing payload.
+		phase1, err := client.Payments.RefundPayload(ctx, rail0Id, rail0.RefundPayloadRequest{Amount: refundAmount})
 		if err != nil {
 			return err
 		}
 		if refundPrepare {
-			return ui.RunAPI(func() (any, error) { return prep, nil })
+			return ui.RunAPI(func() (any, error) { return phase1, nil })
 		}
-		signedTx, err := signTx(prep.UnsignedTransaction, refundPrivateKey)
+
+		// Sign the EIP-3009 ReceiveWithAuthorization payload (payee key).
+		paymentResp, err := client.Payments.Get(ctx, rail0Id)
 		if err != nil {
-			return fmt.Errorf("sign: %w", err)
+			return fmt.Errorf("get payment: %w", err)
+		}
+		v, r, s, err := signRefundPayload(phase1.SigningPayload, paymentResp, refundAmount, refundPrivateKey)
+		if err != nil {
+			return fmt.Errorf("sign refund payload: %w", err)
+		}
+
+		// Phase 2: submit V/R/S → get unsigned transaction with EIP-3009 sig embedded.
+		phase2, err := client.Payments.RefundPayload(ctx, rail0Id, rail0.RefundPayloadRequest{
+			Amount: refundAmount,
+			V:      v,
+			R:      r,
+			S:      s,
+		})
+		if err != nil {
+			return fmt.Errorf("refund payload phase 2: %w", err)
+		}
+
+		// Sign the unsigned EIP-1559 transaction and broadcast.
+		signedTx, err := signTx(phase2.UnsignedTransaction, refundPrivateKey)
+		if err != nil {
+			return fmt.Errorf("sign tx: %w", err)
 		}
 		return ui.RunAPI(func() (any, error) {
 			return client.Payments.Refund(ctx, rail0Id,

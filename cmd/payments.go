@@ -519,11 +519,7 @@ Signing modes (one required):
 		}
 
 		// Sign the EIP-3009 ReceiveWithAuthorization payload (payee key).
-		paymentResp, err := client.Payments.Get(ctx, rail0Id)
-		if err != nil {
-			return fmt.Errorf("get payment: %w", err)
-		}
-		v, r, s, err := signRefundPayload(phase1.SigningPayload, paymentResp, refundAmount, refundPrivateKey)
+		v, r, s, err := signRefundPayload(phase1.SigningPayload, refundPrivateKey)
 		if err != nil {
 			return fmt.Errorf("sign refund payload: %w", err)
 		}

@@ -1,0 +1,60 @@
+package cmd
+
+import (
+	"fmt"
+	"math/big"
+
+	rail0 "github.com/rail0/go-sdk"
+)
+
+// signEIP712FromCreate signs the EIP-3009 payload using the CreatePaymentResponse
+// returned directly by the create endpoint (no extra GET needed).
+func signEIP712FromCreate(resp *rail0.CreatePaymentResponse, privateKeyHex string) (string, error) {
+	return signPayload(
+		resp.Payment,
+		resp.SigningPayload,
+		resp.Rail0Contract,
+		string(resp.Payment.Amount),
+		resp.Mode,
+		privateKeyHex,
+	)
+}
+
+// signPayload is the shared signing core.
+func signPayload(pc rail0.PaymentConfig, sp rail0.SigningPayload, contractAddress rail0.Address, amountStr string, mode string, privateKeyHex string) (string, error) {
+	privKey, err := rail0.HexToPrivateKey(privateKeyHex)
+	if err != nil {
+		return "", fmt.Errorf("invalid private key: %w", err)
+	}
+
+	amount := new(big.Int)
+	if _, ok := amount.SetString(amountStr, 10); !ok {
+		return "", fmt.Errorf("invalid payment amount: %s", amountStr)
+	}
+
+	tokenDomain := rail0.TokenDomain{
+		Name:              sp.Domain.Name,
+		Version:           sp.Domain.Version,
+		ChainID:           uint64(sp.Domain.ChainId),
+		VerifyingContract: sp.Domain.VerifyingContract,
+	}
+
+	signFn := rail0.SignAuthorize
+	if mode == "charge" {
+		signFn = rail0.SignCharge
+	}
+
+	sig, err := signFn(rail0.SignPaymentParams{
+		PrivateKey:      privKey,
+		Payment:         pc,
+		Amount:          amount,
+		Nonce:           sp.Message.Nonce,
+		ContractAddress: contractAddress,
+		TokenDomain:     tokenDomain,
+	})
+	if err != nil {
+		return "", fmt.Errorf("EIP-712 signing failed: %w", err)
+	}
+
+	return "0x" + sig.R[2:] + sig.S[2:] + fmt.Sprintf("%02x", sig.V), nil
+}

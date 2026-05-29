@@ -1,11 +1,12 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
-	"strconv"
+	"strings"
 
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/x/term"
@@ -17,29 +18,33 @@ import (
 // They map 1-to-1 to rail0.PaymentInput + ChainID + Mode.
 type createPaymentFlags struct {
 	paymentFile string
-	payer       string
-	payee       string
-	token       string
+	from        string
+	to          string
+	token       string // symbol (e.g. "USDC") resolved to address at build time
 	amount      string
-	chainID     int
+	chain       string // slug (e.g. "arc-testnet") — mutually exclusive with chainID
+	chainID     int    // numeric chain id — mutually exclusive with chain
 	mode        string
 }
 
 // addTo registers all create-payment flags on cmd.
 func (f *createPaymentFlags) addTo(cmd *cobra.Command) {
-	cmd.Flags().StringVar(&f.paymentFile, "payment-file", "",
+	cmd.Flags().StringVarP(&f.paymentFile, "payment-file", "f", "",
 		"Path to a JSON file with the full request body (overrides individual flags)")
-	cmd.Flags().StringVar(&f.payer, "payer", "",
-		"Buyer wallet address (0x-prefixed, funds are pulled from here)")
-	cmd.Flags().StringVar(&f.payee, "payee", "",
-		"Merchant wallet address (0x-prefixed, walletAddress from merchants payment-methods)")
-	cmd.Flags().StringVar(&f.token, "token", "",
-		"ERC-20 token address (0x-prefixed, tokenAddress from merchants payment-methods)")
-	cmd.Flags().StringVar(&f.amount, "amount", "",
-		"Amount to pay in token base units (e.g. '100000000' for 100 USDC)")
-	cmd.Flags().IntVar(&f.chainID, "chain-id", 0,
-		"EVM chain ID of the target network (e.g. 42220 for Celo)")
-	cmd.Flags().StringVar(&f.mode, "mode", "authorize",
+	cmd.Flags().StringVarP(&f.from, "from", "F", "",
+		"Payer wallet address (from) (0x-prefixed, funds are pulled from here)")
+	cmd.Flags().StringVarP(&f.to, "to", "T", "",
+		"Payee wallet address (to) (0x-prefixed, walletAddress from accounts payment-methods)")
+	cmd.Flags().StringVarP(&f.token, "token", "t", "",
+		"Token symbol as listed in GET /tokens (e.g. USDC)")
+	cmd.Flags().StringVarP(&f.amount, "amount", "a", "",
+		"Amount to pay in token base units (e.g. '1000000' for 1 USDC)")
+	cmd.Flags().StringVarP(&f.chain, "chain", "c", "",
+		"Chain slug as listed in GET /blockchains (e.g. arc-testnet) — exclusive with --chain-id")
+	cmd.Flags().IntVarP(&f.chainID, "chain-id", "n", 0,
+		"EVM chain ID (e.g. 5042002) — exclusive with --chain")
+	cmd.MarkFlagsMutuallyExclusive("chain", "chain-id")
+	cmd.Flags().StringVarP(&f.mode, "mode", "m", "authorize",
 		"Payment mode: 'authorize' (escrow then capture) or 'charge' (immediate, no escrow)")
 }
 
@@ -62,55 +67,46 @@ func (f *createPaymentFlags) build() (rail0.CreatePaymentRequest, error) {
 		return req, nil
 	}
 
-	missing := f.payer == "" || f.payee == "" || f.token == "" || f.amount == "" || f.chainID == 0
+	missing := f.from == "" || f.to == "" || f.token == "" || f.amount == "" || (f.chain == "" && f.chainID == 0)
 	if missing {
 		if term.IsTerminal(os.Stdin.Fd()) {
 			return f.buildInteractive()
 		}
 		return rail0.CreatePaymentRequest{}, fmt.Errorf(
-			"--payer, --payee, --token, --amount, and --chain-id are required (or use --payment-file)")
+			"--from, --to, --token, --amount, and --chain (or --chain-id) are required (or use --payment-file)")
 	}
-	return f.toRequest(), nil
+	return f.resolve()
 }
 
 // buildInteractive shows a two-page huh form to collect missing payment fields.
 func (f *createPaymentFlags) buildInteractive() (rail0.CreatePaymentRequest, error) {
-	chainStr := ""
-	if f.chainID != 0 {
-		chainStr = strconv.Itoa(f.chainID)
-	}
-
 	form := huh.NewForm(
 		huh.NewGroup(
 			huh.NewInput().
-				Title("Payer").
-				Description("Buyer wallet address (0x-prefixed) — funds are pulled from here").
-				Value(&f.payer),
+				Title("From (payer)").
+				Description("Payer wallet address (0x-prefixed) — funds are pulled from here").
+				Value(&f.from),
 			huh.NewInput().
-				Title("Payee").
-				Description("Merchant wallet address (0x-prefixed) — use walletAddress from merchants payment-methods").
-				Value(&f.payee),
+				Title("To (payee)").
+				Description("Payee wallet address (0x-prefixed) — use walletAddress from accounts payment-methods").
+				Value(&f.to),
 			huh.NewInput().
 				Title("Token").
-				Description("ERC-20 token address (0x-prefixed) — use tokenAddress from merchants payment-methods").
+				Description("Token symbol (e.g. USDC) — see 'rail0 catalog tokens'").
 				Value(&f.token),
 			huh.NewInput().
 				Title("Amount").
-				Description("Amount in token base units (e.g. 100000000 = 100 USDC with 6 decimals)").
+				Description("Amount in token base units (e.g. 1000000 = 1 USDC with 6 decimals)").
 				Value(&f.amount),
 		),
 		huh.NewGroup(
 			huh.NewInput().
-				Title("Chain ID").
-				Description("EVM chain ID (e.g. 42220 for Celo, 5042002 for Arc Testnet)").
-				Value(&chainStr).
+				Title("Chain").
+				Description("Chain slug (e.g. arc-testnet) — see 'rail0 catalog blockchains'").
+				Value(&f.chain).
 				Validate(func(s string) error {
 					if s == "" {
-						return fmt.Errorf("chain-id is required")
-					}
-					v, err := strconv.Atoi(s)
-					if err != nil || v <= 0 {
-						return fmt.Errorf("must be a positive integer")
+						return fmt.Errorf("chain is required")
 					}
 					return nil
 				}),
@@ -133,26 +129,69 @@ func (f *createPaymentFlags) buildInteractive() (rail0.CreatePaymentRequest, err
 		return rail0.CreatePaymentRequest{}, err
 	}
 
-	if chainStr != "" {
-		v, err := strconv.Atoi(chainStr)
-		if err != nil {
-			return rail0.CreatePaymentRequest{}, fmt.Errorf("chain-id: %w", err)
-		}
-		f.chainID = v
-	}
-
-	return f.toRequest(), nil
+	return f.resolve()
 }
 
-func (f *createPaymentFlags) toRequest() rail0.CreatePaymentRequest {
+// resolve calls GET /blockchains and GET /tokens to turn the human-readable
+// chain slug and token symbol into the chain_id and token address required
+// by the API, then builds the CreatePaymentRequest.
+func (f *createPaymentFlags) resolve() (rail0.CreatePaymentRequest, error) {
+	ctx := context.Background()
+	client := newClient()
+
+	// Resolve chain: either slug → chain_id, or chain_id used directly.
+	chainID := f.chainID
+	if chainID == 0 {
+		chains, err := client.Chains.List(ctx)
+		if err != nil {
+			return rail0.CreatePaymentRequest{}, fmt.Errorf("fetch blockchains: %w", err)
+		}
+		for _, b := range chains {
+			if strings.EqualFold(b.Slug, f.chain) {
+				chainID = b.ChainID
+				break
+			}
+		}
+		if chainID == 0 {
+			slugs := make([]string, 0, len(chains))
+			for _, b := range chains {
+				slugs = append(slugs, b.Slug)
+			}
+			return rail0.CreatePaymentRequest{}, fmt.Errorf(
+				"unknown chain %q — available: %s", f.chain, strings.Join(slugs, ", "))
+		}
+	}
+
+	// Resolve token symbol → address on the resolved chain.
+	tokens, err := client.Tokens.List(ctx, chainID)
+	if err != nil {
+		return rail0.CreatePaymentRequest{}, fmt.Errorf("fetch tokens: %w", err)
+	}
+	var tokenAddress string
+	for _, t := range tokens {
+		if strings.EqualFold(t.Symbol, f.token) {
+			tokenAddress = string(t.Address)
+			break
+		}
+	}
+	if tokenAddress == "" {
+		syms := make([]string, 0, len(tokens))
+		for _, t := range tokens {
+			syms = append(syms, t.Symbol)
+		}
+		return rail0.CreatePaymentRequest{}, fmt.Errorf(
+			"unknown token %q on chain %q — available: %s", f.token, f.chain, strings.Join(syms, ", "))
+	}
+
 	return rail0.CreatePaymentRequest{
 		Payment: rail0.PaymentInput{
-			Payer:  f.payer,
-			Payee:  f.payee,
-			Token:  f.token,
+			Payer:  f.from,
+			Payee:  f.to,
+			Token:  tokenAddress,
 			Amount: f.amount,
 		},
-		ChainId: f.chainID,
+		ChainId: chainID,
 		Mode:    f.mode,
-	}
+	}, nil
 }
+

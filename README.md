@@ -52,288 +52,268 @@ export RAIL0_API_KEY=your_api_key
 
 ---
 
+## Signing modes
+
+### Payer — `payments create`
+
+The payer creates the payment and signs the EIP-712 payload. Two modes:
+
+| Mode | Command | Description |
+|------|---------|-------------|
+| Direct key | `payments create … -p 0xPayerKey…` | Creates the payment, signs locally, submits signature in one step |
+| External wallet | `payments create … -s 0x1a2b…` with `<rail0Id>` | Submit a signature produced by MetaMask / `eth_signTypedData_v4` |
+
+### Payee — action commands
+
+Every on-chain action command (`authorize`, `charge`, `capture`, `void`, `release`, `approve`, `refund`) requires exactly one of:
+
+| Flag | Short | Description |
+|------|-------|-------------|
+| `--private-key` | `-p` | Sign locally and broadcast in one step |
+| `--prepare` | `-w` | Return the unsigned tx for external wallet signing, then broadcast with `payments submit -x` |
+
+`--private-key` and `--prepare` are mutually exclusive.
+
+---
+
 ## Commands
 
-### Merchants
+### Accounts
 
-#### `merchants payment-methods <merchantId>`
+#### `accounts payment-methods <accountId>`
 
-List the accepted payment methods for a merchant. The returned `walletAddress`, `tokenAddress`, and `chainId` fields map directly to the `--payee`, `--token`, and `--chain-id` flags of `payments create`.
+List the accepted payment methods for an account. The returned `walletAddress`, `tokenAddress`, and `chainId` map directly to `--to`, `--token`, and `--chain-id` of `payments create`.
 
 ```sh
-rail0 merchants payment-methods 42
-rail0 merchants payment-methods 42 --json
+rail0 accounts payment-methods 019e6f9e-…
+rail0 accounts payment-methods 019e6f9e-… --json
 ```
 
 ---
 
 ### Payments
 
-Every on-chain operation follows the same **prepare → sign offline → submit** pattern. The prepare commands (`authorize`, `charge`, `capture`, `void`, `release`, `approve`, `refund`) return an `unsignedTransaction` (RLP-encoded EIP-1559). Sign it with any secp256k1 wallet, then broadcast the result with `payments submit`.
-
 #### `payments create`
 
-Create a payment intent. Returns a `paymentId` and an EIP-712 `signingPayload` for the payer to sign off-chain.
+Create a payment, sign the EIP-712 payload, and submit the payer's signature in one step.
 
-Flags:
+| Flag | Short | Required | Default | Description |
+|------|-------|----------|---------|-------------|
+| `--from` | `-F` | yes | — | Payer wallet address (0x-prefixed) |
+| `--to` | `-T` | yes | — | Payee wallet address (0x-prefixed) |
+| `--token` | `-t` | yes | — | ERC-20 token address (0x-prefixed) |
+| `--amount` | `-a` | yes | — | Amount in token base units (e.g. `1000000` for 1 USDC) |
+| `--chain-id` | `-c` | yes | — | EVM chain ID (e.g. `5042002` for Arc Testnet) |
+| `--mode` | `-m` | no | `authorize` | `authorize` (escrow + capture) or `charge` (immediate) |
+| `--payment-file` | `-f` | no | — | JSON file with the full request body |
+| `--private-key` | `-p` | no* | — | Payer's key — creates and signs locally in one step |
+| `--signature` | `-s` | no* | — | Submit an externally-produced EIP-712 signature for an existing `<rail0Id>` |
 
-| Flag              | Required | Default      | Description                                      |
-|-------------------|----------|--------------|--------------------------------------------------|
-| `--payer`         | yes      | —            | Buyer wallet address (0x-prefixed)               |
-| `--payee`         | yes      | —            | Merchant wallet address (0x-prefixed)            |
-| `--token`         | yes      | —            | ERC-20 token address (0x-prefixed)               |
-| `--amount`        | yes      | —            | Amount in token base units (e.g. `100000000`)    |
-| `--chain-id`      | yes      | —            | EVM chain ID (e.g. `42220` for Celo)             |
-| `--mode`          | no       | `authorize`  | `authorize` (escrow + capture) or `charge` (immediate) |
-| `--payment-file`  | no       | —            | Path to a JSON file with the full request body   |
+\* one of `-p` or `-s` required (mutually exclusive)
 
 ```sh
-# All flags inline
+# Payer with direct key access — create + sign in one step
 rail0 payments create \
-  --payer  0xBuyer… \
-  --payee  0xMerchant… \
-  --token  0xcebA9300f2b948710d2De3250b7Ad3e4aFb0e50a \
-  --amount 100000000 \
-  --chain-id 42220
+  -F 0xBuyer… -T 0xMerchant… -t 0x3600… -a 1000000 -c 5042002 \
+  -p 0xPayerKey…
 
-# Charge mode (no escrow)
-rail0 payments create --mode charge \
-  --payer 0xBuyer… --payee 0xMerchant… \
-  --token 0xcebA9300… --amount 50000000 --chain-id 42220
-
-# From a JSON file
-rail0 payments create --payment-file payment.json
+# Payer using MetaMask — submit externally-produced signature
+rail0 payments create <rail0Id> -s 0x1a2b…(130 hex chars)
 ```
 
 If required flags are missing and stdin is a TTY, an interactive form launches automatically.
 
 ---
 
-#### `payments get <paymentId>`
+#### `payments get <rail0Id>`
 
-Fetch the current status of a payment, including live on-chain balances (`capturableAmount`, `refundableAmount`) when relevant.
+Fetch the current status of a payment, including live on-chain balances and the transaction list.
 
 ```sh
 rail0 payments get 0xabc123…
 ```
 
-Payment status values:
-
-| Status                 | Description                                                    |
-|------------------------|----------------------------------------------------------------|
-| `pending_signature`    | Created; payer signature not yet submitted                     |
-| `signed`               | Payer signature stored; awaiting payee action                  |
-| `submitting`           | Signed transaction being broadcast                             |
-| `submitted`            | Transaction broadcast; awaiting on-chain confirmation          |
-| `authorized`           | Funds held in escrow; capture available                        |
-| `charged`              | One-shot charge executed; refund available                     |
-| `captured`             | Funds fully captured by payee                                  |
-| `partially_captured`   | Partial capture executed; remaining escrow still capturable    |
-| `voided`               | Authorization cancelled; funds returned to payer               |
-| `released`             | Expired authorization released back to payer                   |
-| `refunded`             | Captured funds fully refunded to payer                         |
-| `partially_refunded`   | Partial refund executed; remaining balance still refundable    |
-| `failed`               | Terminal failure; payment cannot proceed                       |
+| Status | Description |
+|--------|-------------|
+| `pending_signature` | Created; payer signature not yet submitted |
+| `signed` | Payer signature stored; awaiting payee action |
+| `authorized` | Funds held in escrow; capture available |
+| `charged` | One-shot charge executed; refund available |
+| `captured` | Funds fully captured by payee |
+| `partially_captured` | Partial capture; remaining escrow still capturable |
+| `voided` | Authorization cancelled; funds returned to payer |
+| `released` | Expired authorization released back to payer |
+| `refunded` | Captured funds fully refunded to payer |
+| `partially_refunded` | Partial refund; remaining balance still refundable |
+| `failed` | Terminal failure; payment cannot proceed |
 
 ---
 
-#### `payments sign <paymentId> --signature <0x…>`
+#### `payments authorize <rail0Id>`
 
-Submit the payer's EIP-712 signature to the API. The signature is produced by calling `eth_signTypedData_v4` on the `signingPayload` returned by `payments create`.
-
-`--signature` must be a 0x-prefixed 130-character hex string (65 bytes: r[32] + s[32] + v[1]).
+Prepare the `authorize()` transaction pulling funds into escrow. Payer signature must be submitted first.
 
 ```sh
-rail0 payments sign 0xpaymentId… \
-  --signature 0x1a2b3c…
+# Direct key
+rail0 payments authorize <rail0Id> -p 0xPayeeKey…
+
+# External wallet
+rail0 payments authorize <rail0Id> -w
+rail0 payments submit    <rail0Id> -x 0x02f8…
 ```
 
 ---
 
-#### `payments authorize <paymentId>`
+#### `payments charge <rail0Id>`
 
-Prepare the unsigned EIP-1559 transaction that calls `authorize()` on the RAIL0 contract, pulling funds into escrow. The payer signature must have been submitted first.
+Prepare the `charge()` transaction — authorize + capture in one call (no escrow). Payment must have been created with `-m charge`.
 
 ```sh
-rail0 payments authorize 0xpaymentId…
+rail0 payments charge <rail0Id> -p 0xPayeeKey…
 ```
 
 ---
 
-#### `payments charge <paymentId>`
+#### `payments capture <rail0Id> -a <n>`
 
-Prepare the unsigned transaction for a one-shot `charge()` (authorize + capture in one call, no escrow window). The payment must have been created with `--mode charge`.
-
-```sh
-rail0 payments charge 0xpaymentId…
-```
-
----
-
-#### `payments capture <paymentId> --amount <n>`
-
-Prepare the unsigned transaction that calls `capture()`. Partial captures are supported: pass an `--amount` less than `capturableAmount` to capture a portion; the remaining balance stays available until `authorizationExpiry`.
+Prepare the `capture()` transaction. Partial captures supported: pass `-a` less than `capturableAmount`.
 
 ```sh
 # Full capture
-rail0 payments capture 0xpaymentId… --amount 100000000
+rail0 payments capture <rail0Id> -a 1000000 -p 0xPayeeKey…
 
 # Partial capture
-rail0 payments capture 0xpaymentId… --amount 50000000
+rail0 payments capture <rail0Id> -a 500000 -p 0xPayeeKey…
 ```
 
 ---
 
-#### `payments void <paymentId>`
+#### `payments void <rail0Id>`
 
-Prepare the unsigned transaction that cancels an authorization and returns the full escrowed balance to the payer. Only available before `authorizationExpiry`, by the payee.
+Prepare the `void()` transaction — cancels authorization and returns escrowed funds to payer. Only callable before `authorizationExpiry`, by the payee.
 
 ```sh
-rail0 payments void 0xpaymentId…
+rail0 payments void <rail0Id> -p 0xPayeeKey…
 ```
 
 ---
 
-#### `payments release <paymentId>`
+#### `payments release <rail0Id>`
 
-Prepare the unsigned transaction that returns remaining escrowed funds to the payer after `authorizationExpiry`. Permissionless — both payer and payee can initiate it.
+Prepare the `release()` transaction — returns remaining escrowed funds to payer after `authorizationExpiry`. Permissionless.
 
-Use `--caller-address` to build the transaction for the payer (so they sign and submit it themselves). Omit to build for the payee.
+Use `-C` to build the transaction for the payer; omit it for the payee (default).
 
 ```sh
-# Build for payee (default)
-rail0 payments release 0xpaymentId…
+# Payee releases
+rail0 payments release <rail0Id> -p 0xPayeeKey…
 
-# Build for payer
-rail0 payments release 0xpaymentId… --caller-address 0xBuyer…
+# Payer releases
+rail0 payments release <rail0Id> -C 0xBuyer… -p 0xBuyerKey…
 ```
 
 ---
 
-#### `payments approve <paymentId> --amount <n>`
+#### `payments approve <rail0Id> -a <n>`
 
-Prepare the unsigned ERC-20 `approve()` transaction granting the RAIL0 contract an allowance to pull funds from the payee for a future refund. Required before `payments refund` if the payee has insufficient allowance.
+Prepare the ERC-20 `approve()` transaction granting the RAIL0 contract an allowance for a future refund. Required before `refund` if allowance is insufficient.
 
 ```sh
-# Approve exact amount
-rail0 payments approve 0xpaymentId… --amount 100000000
-
-# Unlimited approval
-rail0 payments approve 0xpaymentId… \
-  --amount 115792089237316195423570985008687907853269984665640564039457584007913129639935
+rail0 payments approve <rail0Id> -a 1000000 -p 0xPayeeKey…
 ```
 
 ---
 
-#### `payments refund <paymentId> --amount <n>`
+#### `payments refund <rail0Id> -a <n>`
 
-Prepare the unsigned transaction that calls `refund()`, pulling `amount` from the payee and returning it to the payer. Partial refunds are supported. Requires prior `approve` if allowance is insufficient.
+Prepare the `refund()` transaction. Partial refunds supported.
 
 ```sh
-# Full refund
-rail0 payments refund 0xpaymentId… --amount 100000000
-
-# Partial refund
-rail0 payments refund 0xpaymentId… --amount 25000000
+rail0 payments refund <rail0Id> -a 1000000 -p 0xPayeeKey…
 ```
 
 ---
 
-#### `payments submit <paymentId> --signed-tx <0x…>`
+#### `payments submit <rail0Id> -x <0x…>`
 
-Broadcast a signed transaction to the network via the RAIL0 API. Works after any prepare step (`authorize`, `charge`, `capture`, `void`, `release`, `approve`, `refund`) — the API infers the operation from the pending state set during the preceding prepare call.
+Broadcast a signed transaction from an external wallet. Used after any action command run with `-w`/`--prepare`.
 
-Returns immediately with `{ "status": "submitting" }` (HTTP 202). Poll `payments get <paymentId>` until the status advances past `submitting`.
-
-`--signed-tx` must be the RLP-encoded signed EIP-1559 transaction as a 0x-prefixed hex string.
+Returns 202 immediately. The payment stays in its current state until rail0-indexer confirms the on-chain event. Poll `payments get <rail0Id>` until the payment reaches the expected state and the transaction shows `confirmed`.
 
 ```sh
-rail0 payments submit 0xpaymentId… --signed-tx 0x02f8…
-
-# Poll for outcome
-rail0 payments get 0xpaymentId…
+rail0 payments submit <rail0Id> -x 0x02f8…
 ```
 
 ---
 
 ## Full flow examples
 
-### Authorize-and-capture
-
-The standard escrow flow: payer creates and signs off-chain; payee authorizes, captures, and optionally refunds.
+### Authorize-and-capture — direct key
 
 ```sh
 export RAIL0_BASE_URL=https://api.rail0.xyz
 export RAIL0_API_KEY=your_api_key
 
-# 1. Payer creates the payment and receives signingPayload
-PAYMENT=$(rail0 payments create \
-  --payer  0xBuyer… \
-  --payee  0xMerchant… \
-  --token  0xcebA9300f2b948710d2De3250b7Ad3e4aFb0e50a \
-  --amount 100000000 \
-  --chain-id 42220 \
-  --json)
-PAYMENT_ID=$(echo "$PAYMENT" | jq -r .paymentId)
+# 1. Payer creates payment and signs EIP-712 locally
+RAIL0_ID=$(rail0 payments create \
+  -F 0xBuyer… -T 0xMerchant… -t 0x3600… -a 1000000 -c 5042002 \
+  -p 0xPayerKey… --json | jq -r .rail0_id)
 
-# 2. Payer signs signingPayload with their wallet (eth_signTypedData_v4)
-#    and submits the 65-byte signature
-rail0 payments sign "$PAYMENT_ID" --signature 0x1a2b3c…
+# 2. Payee authorizes (funds → escrow) and polls until confirmed
+rail0 payments authorize "$RAIL0_ID" -p 0xPayeeKey…
+rail0 payments get "$RAIL0_ID"   # poll until payment=authorized, authorize:confirmed
 
-# 3. Payee prepares the authorize transaction
-UNSIGNED=$(rail0 payments authorize "$PAYMENT_ID" --json | jq -r .unsignedTransaction)
-
-# 4. Payee signs the transaction offline (ethers.js, cast, etc.) → SIGNED_TX
-
-# 5. Payee broadcasts it
-rail0 payments submit "$PAYMENT_ID" --signed-tx "$SIGNED_TX"
-
-# 6. Poll until authorized
-rail0 payments get "$PAYMENT_ID"
-
-# 7. Payee prepares and submits the capture transaction
-UNSIGNED=$(rail0 payments capture "$PAYMENT_ID" --amount 100000000 --json | jq -r .unsignedTransaction)
-# sign → SIGNED_TX
-rail0 payments submit "$PAYMENT_ID" --signed-tx "$SIGNED_TX"
-rail0 payments get "$PAYMENT_ID"   # → captured
+# 3. Payee captures
+rail0 payments capture "$RAIL0_ID" -a 1000000 -p 0xPayeeKey…
+rail0 payments get "$RAIL0_ID"   # poll until payment=captured, capture:confirmed
 ```
 
 ---
 
-### Charge (one-shot, no escrow)
+### Authorize-and-capture — external wallet (MetaMask)
 
 ```sh
-# 1. Create with charge mode
-PAYMENT_ID=$(rail0 payments create --mode charge \
-  --payer 0xBuyer… --payee 0xMerchant… \
-  --token 0xcebA9300… --amount 50000000 --chain-id 42220 \
-  --json | jq -r .paymentId)
+# 1. Payer gets the signingPayload from the API
+rail0 payments create \
+  -F 0xBuyer… -T 0xMerchant… -t 0x3600… -a 1000000 -c 5042002 \
+  --json
+# → note the rail0_id and signingPayload
 
-# 2. Payer signs and submits signature
-rail0 payments sign "$PAYMENT_ID" --signature 0x…
+# 2. Payer signs with MetaMask (eth_signTypedData_v4) → SIGNATURE
+rail0 payments create <rail0Id> -s "$SIGNATURE"
 
-# 3. Payee prepares, signs, and submits the charge transaction
-UNSIGNED=$(rail0 payments charge "$PAYMENT_ID" --json | jq -r .unsignedTransaction)
-# sign → SIGNED_TX
-rail0 payments submit "$PAYMENT_ID" --signed-tx "$SIGNED_TX"
-rail0 payments get "$PAYMENT_ID"   # → charged
+# 3. Payee obtains unsigned authorize tx, signs with MetaMask, broadcasts
+rail0 payments authorize <rail0Id> -w
+rail0 payments submit    <rail0Id> -x "$SIGNED_TX"
+rail0 payments get       <rail0Id>   # poll until authorized
+
+# 4. Payee captures
+rail0 payments capture <rail0Id> -a 1000000 -w
+rail0 payments submit  <rail0Id> -x "$SIGNED_TX"
+rail0 payments get     <rail0Id>   # poll until captured
 ```
 
 ---
 
-### Refund
+### Charge (one-shot) — direct key
 
 ```sh
-# Ensure the payee has granted sufficient allowance to the RAIL0 contract
-UNSIGNED=$(rail0 payments approve "$PAYMENT_ID" --amount 25000000 --json | jq -r .unsignedTransaction)
-# sign → SIGNED_TX
-rail0 payments submit "$PAYMENT_ID" --signed-tx "$SIGNED_TX"
+RAIL0_ID=$(rail0 payments create \
+  -F 0xBuyer… -T 0xMerchant… -t 0x3600… -a 1000000 -c 5042002 -m charge \
+  -p 0xPayerKey… --json | jq -r .rail0_id)
 
-# Prepare and submit the refund
-UNSIGNED=$(rail0 payments refund "$PAYMENT_ID" --amount 25000000 --json | jq -r .unsignedTransaction)
-# sign → SIGNED_TX
-rail0 payments submit "$PAYMENT_ID" --signed-tx "$SIGNED_TX"
-rail0 payments get "$PAYMENT_ID"   # → refunded or partially_refunded
+rail0 payments charge "$RAIL0_ID" -p 0xPayeeKey…
+rail0 payments get "$RAIL0_ID"   # poll until charged
+```
+
+---
+
+### Refund — direct key
+
+```sh
+rail0 payments approve "$RAIL0_ID" -a 1000000 -p 0xPayeeKey…
+rail0 payments refund  "$RAIL0_ID" -a 1000000 -p 0xPayeeKey…
+rail0 payments get "$RAIL0_ID"   # poll until refunded
 ```
 
 ---
@@ -345,9 +325,9 @@ rail0 payments get "$PAYMENT_ID"   # → refunded or partially_refunded
 **JSON (`--json` or piped):** plain indented JSON on stdout, suitable for `jq` and shell pipelines.
 
 ```sh
-# Extract unsignedTransaction from any prepare step
-rail0 payments authorize 0xpaymentId… --json | jq -r .unsignedTransaction
+# Extract the unsigned transaction for external signing
+rail0 payments authorize <rail0Id> -w --json | jq -r .unsignedTransaction
 
 # Check payment status in a script
-STATUS=$(rail0 payments get 0xpaymentId… --json | jq -r .status)
+STATUS=$(rail0 payments get <rail0Id> --json | jq -r .status)
 ```

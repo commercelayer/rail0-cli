@@ -1,13 +1,11 @@
 // Package cmd defines the rail0 CLI command tree.
-//
-// The root command wires global flags (--base-url, --api-key, --debug, --json)
-// and delegates to the payments and merchants sub-trees.
 package cmd
 
 import (
 	"os"
 
 	charmlog "github.com/charmbracelet/log"
+	"github.com/rail0/cli/internal/config"
 	"github.com/rail0/cli/internal/ui"
 	rail0 "github.com/rail0/go-sdk"
 	"github.com/spf13/cobra"
@@ -15,30 +13,22 @@ import (
 
 var (
 	baseURL string
-	apiKey  string
 	debug   bool
 	jsonOut bool
 )
 
 var rootCmd = &cobra.Command{
-	Use:          "rail0",
-	Short:        "CLI for the RAIL0 stablecoin payment protocol",
-	SilenceUsage: true,
-	// SilenceErrors prevents cobra from printing the error itself; Execute()
-	// routes every error through ui.Fatal for consistent styled output.
+	Use:           "rail0",
+	Short:         "CLI for the RAIL0 stablecoin payment protocol",
+	SilenceUsage:  true,
 	SilenceErrors: true,
 	Long: `rail0 is a command-line interface for the RAIL0 stablecoin payment API.
 
-Configure the API endpoint and credentials via flags or environment variables:
-
-  --base-url / RAIL0_BASE_URL   RAIL0 API base URL
-  --api-key  / RAIL0_API_KEY    Bearer token for authenticated requests
+Defaults to https://api.rail0.xyz. Override with --base-url or RAIL0_BASE_URL.
 
 Use 'rail0 <command> --help' for detailed usage of any command.`,
 }
 
-// Execute is the entry point called from main. Errors are printed by
-// ui.Fatal so they receive the same lipgloss styling as other errors.
 func Execute() {
 	if err := rootCmd.Execute(); err != nil {
 		ui.Fatal(err)
@@ -47,32 +37,25 @@ func Execute() {
 
 func init() {
 	rootCmd.PersistentFlags().StringVar(&baseURL, "base-url", "", "RAIL0 API base URL (env: RAIL0_BASE_URL)")
-	rootCmd.PersistentFlags().StringVar(&apiKey, "api-key", "", "API key sent as Bearer token (env: RAIL0_API_KEY)")
 	rootCmd.PersistentFlags().BoolVar(&debug, "debug", false, "Print HTTP request/response details to stderr")
 	rootCmd.PersistentFlags().BoolVar(&jsonOut, "json", false, "Output raw JSON instead of styled text")
 
-	// OnInitialize runs after flag parsing, so jsonOut already holds the
-	// correct value when ui.SetJSON is called.
 	cobra.OnInitialize(func() { ui.SetJSON(jsonOut) })
 
-	rootCmd.AddCommand(paymentsCmd, merchantsCmd)
+	rootCmd.AddCommand(paymentsCmd, accountsCmd, chainsCmd, tokensCmd)
 }
 
-// newClient builds a RAIL0 API client from the resolved configuration.
-// Flag values take priority over environment variables.
+// newClient builds a RAIL0 API client.
+// Priority: --base-url flag > RAIL0_BASE_URL env var > config.DefaultBaseURL.
 func newClient() *rail0.Client {
 	url := baseURL
 	if url == "" {
 		url = os.Getenv("RAIL0_BASE_URL")
 	}
-	key := apiKey
-	if key == "" {
-		key = os.Getenv("RAIL0_API_KEY")
+	if url == "" {
+		url = config.DefaultBaseURL
 	}
 	opts := rail0.ClientOptions{BaseURL: url}
-	if key != "" {
-		opts.Headers = map[string]string{"Authorization": "Bearer " + key}
-	}
 	if debug {
 		opts.Logger = makeDebugLogger()
 	}

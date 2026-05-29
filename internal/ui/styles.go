@@ -24,4 +24,26 @@ var (
 	FalseStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("203"))
 	ErrStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("203"))
 	SpinStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("212"))
+	HeaderStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Bold(true)
+	DimStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("238"))
 )
+
+// StatusStyle returns a style based on the payment status value.
+func StatusStyle(status string) lipgloss.Style {
+	switch status {
+	case "authorized", "captured", "charged", "refunded":
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("82")).Bold(true)
+	case "partially_captured", "partially_refunded":
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("215"))
+	case "failed":
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("203")).Bold(true)
+	case "signed", "pending_signature":
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("75"))
+	case "submitted":
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("212"))
+	case "confirmed":
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("82"))
+	default:
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
+	}
+}

@@ -2,6 +2,8 @@ package cmd
 
 import (
 	"context"
+	"errors"
+	"fmt"
 
 	"github.com/rail0/cli/internal/ui"
 	rail0 "github.com/rail0/go-sdk"
@@ -13,90 +15,46 @@ var paymentsCmd = &cobra.Command{
 	Short: "Payment lifecycle operations",
 	Long: `Manage the full RAIL0 payment lifecycle.
 
-A typical authorize-and-capture flow:
-  1. payments create     — payer creates the payment and receives a signingPayload
-  2. payments sign       — payer signs the signingPayload (off-chain, wallet side)
-  3. payments authorize  — payee prepares the on-chain authorize transaction
-  4. payments submit     — payee broadcasts the signed authorize transaction
-  5. payments capture    — payee prepares the on-chain capture transaction
-  6. payments submit     — payee broadcasts the signed capture transaction
+Every on-chain operation supports two signing modes:
 
-A charge (one-shot) flow skips escrow:
-  1. payments create --mode charge
-  2. payments sign
-  3. payments charge
-  4. payments submit
+  Direct key (automated)
+    Pass --private-key (-p) to any action command. The CLI prepares the
+    unsigned transaction, signs it locally, and broadcasts it in one step.
 
-Other operations (void, release, approve, refund) each follow the same
-prepare → submit pattern.`,
-}
+      rail0 payments authorize <rail0Id> -p 0xYourPrivateKey…
 
-// ── payments create ──────────────────────────────────────────────────────────
+  External wallet (MetaMask, Ledger, hardware wallet)
+    Pass --prepare to obtain the unsigned transaction, sign it in your
+    wallet, then broadcast the result with 'submit'.
 
-var createFlags createPaymentFlags
+      rail0 payments authorize <rail0Id> --prepare
+      # sign unsignedTransaction in MetaMask / cast / ethers.js
+      rail0 payments submit <rail0Id> --signed-tx 0x02f8…
 
-var paymentsCreateCmd = &cobra.Command{
-	Use:   "create",
-	Short: "Create a payment and receive the EIP-712 signing payload",
-	Long: `Create a new RAIL0 payment intent.
+  --prepare and --private-key are mutually exclusive.
 
-The API generates a unique paymentId, applies the server-side policy
-(authorizationExpiry, refundExpiry, feeBps, feeReceiver) and returns an
-EIP-712 typed-data signingPayload for the payer to sign off-chain.
+Authorize-and-capture flow:
+  1. payments create -F 0xBuyer… -p 0xPayerKey…  — payer creates + signs
+  2. payments authorize <rail0Id> -p 0xPayeeKey…  — payee authorizes
+  3. payments capture   <rail0Id> -a <n> -p 0xPayeeKey…  — payee captures
 
-After creation, the payer must sign the signingPayload with their wallet
-(eth_signTypedData_v4) and submit the resulting signature via:
-
-  rail0 payments sign <paymentId> --signature <0x…>
-
-Required flags: --payer, --payee, --token, --amount, --chain-id
-Optional flags: --mode (default: authorize)
-
-Alternatively pass --payment-file with a JSON file containing the full
-request body to skip individual flags.`,
-	Example: `  # Interactive mode (TTY only — prompts for missing fields)
-  rail0 payments create
-
-  # All flags inline
-  rail0 payments create \
-    --payer  0xBuyer… \
-    --payee  0xMerchant… \
-    --token  0xcebA9300f2b948710d2De3250b7Ad3e4aFb0e50a \
-    --amount 100000000 \
-    --chain-id 42220
-
-  # Charge mode (no escrow window)
-  rail0 payments create --mode charge \
-    --payer 0xBuyer… --payee 0xMerchant… \
-    --token 0xcebA9300… --amount 50000000 --chain-id 42220
-
-  # From a JSON file
-  rail0 payments create --payment-file payment.json`,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		req, err := createFlags.build()
-		if err != nil {
-			return err
-		}
-		return ui.RunAPI(func() (any, error) {
-			return newClient().Payments.CreatePayment(context.Background(), req)
-		})
-	},
+Charge (one-shot) flow:
+  1. payments create -m charge -F 0xBuyer… -p 0xPayerKey…
+  2. payments charge <rail0Id> -p 0xPayeeKey…`,
 }
 
 // ── payments get ─────────────────────────────────────────────────────────────
 
 var paymentsGetCmd = &cobra.Command{
-	Use:   "get <paymentId>",
+	Use:   "get <rail0Id>",
 	Short: "Fetch the current state of a payment",
 	Long: `Fetch a payment's current status from the RAIL0 API together with live
 on-chain balances (capturableAmount, refundableAmount) when the payment
 is in an active on-chain state.
 
-Returned status values:
+Status values:
   pending_signature   — created, payer signature not yet submitted
   signed              — payer signature stored, awaiting payee action
-  submitting          — signed transaction being broadcast to the network
-  submitted           — transaction broadcast, waiting for on-chain confirmation
   authorized          — funds held in escrow, capture available
   charged             — one-shot charge executed, refund available
   captured            — funds fully captured by payee
@@ -117,239 +75,65 @@ Returned status values:
 
 // ── payments sign ─────────────────────────────────────────────────────────────
 
+var signPrivateKey string
 var signSignature string
+var signCreateFlags createPaymentFlags
 
 var paymentsSignCmd = &cobra.Command{
-	Use:   "sign <paymentId>",
-	Short: "Submit the payer's EIP-712 signature",
-	Long: `Submit the payer's EIP-3009 signature to the RAIL0 API.
+	Use:   "create",
+	Short: "Create a payment and sign it with the payer's key (or submit an external signature)",
+	Long: `Create a RAIL0 payment and sign the EIP-3009 payload with the payer's private
+key in one step. The API stores the signature; the payee can then authorize.
 
-The signature is produced by the payer's wallet (e.g. MetaMask) when
-calling eth_signTypedData_v4 on the signingPayload returned by
-'payments create'. The API verifies that the recovered address matches
-payment.payer and stores the signature for the payee to use.
+  --private-key (-p)   Create the payment, sign the signingPayload locally,
+                       and submit the signature in one step.
 
---signature must be the raw 65-byte secp256k1 signature as a
-0x-prefixed 130-character hex string (r[32] + s[32] + v[1]) exactly
-as returned by eth_signTypedData_v4.`,
-	Example: `  rail0 payments sign 0xpaymentId… \
-    --signature 0x1a2b3c…(130 hex chars)`,
-	Args: cobra.ExactArgs(1),
+For external wallets (MetaMask): use 'payments get' to fetch the signingPayload,
+sign it with eth_signTypedData_v4, then submit the result:
+
+  rail0 payments create <rail0Id> --signature 0x1a2b…`,
+	Example: `  # Payer with direct key access — create + sign in one step
+  rail0 payments create \
+    -F 0xBuyer… -T 0xMerchant… -t 0x3600… -a 1000000 -c 5042002 \
+    -p 0xPayerKey…
+
+  # Payer using MetaMask — submit externally-produced signature
+  rail0 payments create <rail0Id> --signature 0x1a2b…(130 hex chars)`,
+	Args: cobra.RangeArgs(0, 1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		ctx := context.Background()
+		client := newClient()
+
+		if len(args) == 1 {
+			// Submit-signature mode: payer signed externally (MetaMask).
+			if signSignature == "" {
+				return errors.New("provide --signature when passing a rail0Id")
+			}
+			return ui.RunAPI(func() (any, error) {
+				return client.Payments.Sign(ctx, args[0],
+					rail0.PayerSignatureRequest{Signature: signSignature})
+			})
+		}
+
+		// Create + sign mode: payer has direct key access.
+		if signPrivateKey == "" {
+			return errors.New("provide --private-key (-p) to sign locally, or pass <rail0Id> --signature for an externally-produced signature")
+		}
+		req, err := signCreateFlags.build()
+		if err != nil {
+			return err
+		}
+		createResp, err := client.Payments.CreatePayment(ctx, req)
+		if err != nil {
+			return err
+		}
+		sig, err := signEIP712FromCreate(createResp, signPrivateKey)
+		if err != nil {
+			return fmt.Errorf("sign: %w", err)
+		}
 		return ui.RunAPI(func() (any, error) {
-			return newClient().Payments.Sign(context.Background(), args[0],
-				rail0.PayerSignatureRequest{Signature: signSignature})
-		})
-	},
-}
-
-// ── payments authorize ────────────────────────────────────────────────────────
-
-var paymentsAuthorizeCmd = &cobra.Command{
-	Use:   "authorize <paymentId>",
-	Short: "Prepare the unsigned authorize transaction",
-	Long: `Prepare an unsigned EIP-1559 transaction that calls authorize() on the
-RAIL0 contract. The payer signature must have been submitted first via
-'payments sign'.
-
-The returned unsignedTransaction is an RLP-encoded type-2 transaction
-ready for the payee to sign. Options:
-  • Browser wallet: pass to eth_signTransaction
-  • In-process key: sign with ethers.js wallet.signTransaction or any
-    secp256k1 library
-
-After signing, broadcast the result with:
-  rail0 payments submit <paymentId> --signed-tx <0x…>`,
-	Example: `  rail0 payments authorize 0xpaymentId…`,
-	Args:    cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		return ui.RunAPI(func() (any, error) {
-			return newClient().Payments.Authorize(context.Background(), args[0])
-		})
-	},
-}
-
-// ── payments charge ───────────────────────────────────────────────────────────
-
-var paymentsChargeCmd = &cobra.Command{
-	Use:   "charge <paymentId>",
-	Short: "Prepare the unsigned charge transaction (one-shot, no escrow)",
-	Long: `Prepare an unsigned EIP-1559 transaction that calls charge() on the
-RAIL0 contract. The payment must have been created with --mode charge
-and the payer signature submitted via 'payments sign'.
-
-Charge combines authorize + capture into a single on-chain call:
-funds are transferred directly from payer to payee without an escrow
-window, making it suitable for immediate settlements.
-
-After signing, broadcast the result with:
-  rail0 payments submit <paymentId> --signed-tx <0x…>`,
-	Example: `  rail0 payments charge 0xpaymentId…`,
-	Args:    cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		return ui.RunAPI(func() (any, error) {
-			return newClient().Payments.Charge(context.Background(), args[0])
-		})
-	},
-}
-
-// ── payments capture ──────────────────────────────────────────────────────────
-
-var captureAmount string
-
-var paymentsCaptureCmd = &cobra.Command{
-	Use:   "capture <paymentId>",
-	Short: "Prepare the unsigned capture transaction",
-	Long: `Prepare an unsigned EIP-1559 transaction that calls capture() on the
-RAIL0 contract. The payment must be in 'authorized', 'captured', or
-'partially_captured' status.
-
-Partial captures are supported: pass an --amount less than the full
-capturableAmount to capture only a portion. The remaining escrowed
-balance stays available for additional captures until authorizationExpiry.
-Each additional capture transitions the payment back through 'submitting'
-→ 'submitted' → 'partially_captured' until the full amount is captured.
-
-After authorizationExpiry the remaining balance can only be released
-(see 'payments release').
-
-After signing, broadcast the result with:
-  rail0 payments submit <paymentId> --signed-tx <0x…>`,
-	Example: `  # Full capture
-  rail0 payments capture 0xpaymentId… --amount 100000000
-
-  # Partial capture (50 USDC out of 100 escrowed)
-  rail0 payments capture 0xpaymentId… --amount 50000000`,
-	Args: cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		return ui.RunAPI(func() (any, error) {
-			return newClient().Payments.PrepareCapture(context.Background(), args[0],
-				rail0.CapturePaymentRequest{Amount: captureAmount})
-		})
-	},
-}
-
-// ── payments void ─────────────────────────────────────────────────────────────
-
-var paymentsVoidCmd = &cobra.Command{
-	Use:   "void <paymentId>",
-	Short: "Prepare the unsigned void transaction",
-	Long: `Prepare an unsigned EIP-1559 transaction that calls void() on the RAIL0
-contract. The payment must be in 'authorized' status.
-
-Void cancels an authorization and returns the full escrowed balance to
-the payer. It can only be called before authorizationExpiry and only by
-the payee.
-
-After signing, broadcast the result with:
-  rail0 payments submit <paymentId> --signed-tx <0x…>`,
-	Example: `  rail0 payments void 0xpaymentId…`,
-	Args:    cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		return ui.RunAPI(func() (any, error) {
-			return newClient().Payments.PrepareVoid(context.Background(), args[0])
-		})
-	},
-}
-
-// ── payments release ──────────────────────────────────────────────────────────
-
-var releaseCallerAddress string
-
-var paymentsReleaseCmd = &cobra.Command{
-	Use:   "release <paymentId>",
-	Short: "Prepare the unsigned release transaction",
-	Long: `Prepare an unsigned EIP-1559 transaction that calls release() on the
-RAIL0 contract. Release is only available after authorizationExpiry has
-passed on-chain.
-
-Release returns the remaining escrowed balance to the payer. It is
-permissionless — both payer and payee can initiate it.
-
-Use --caller-address to build the transaction for the payer (so they
-can sign and submit it themselves). Omit the flag to build for the payee.
-
-After signing, broadcast the result with:
-  rail0 payments submit <paymentId> --signed-tx <0x…>`,
-	Example: `  # Build for payee (default)
-  rail0 payments release 0xpaymentId…
-
-  # Build for payer
-  rail0 payments release 0xpaymentId… --caller-address 0xBuyer…`,
-	Args: cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		return ui.RunAPI(func() (any, error) {
-			return newClient().Payments.PrepareRelease(context.Background(), args[0],
-				rail0.ReleaseRequest{CallerAddress: releaseCallerAddress})
-		})
-	},
-}
-
-// ── payments approve ──────────────────────────────────────────────────────────
-
-var approveAmount string
-
-var paymentsApproveCmd = &cobra.Command{
-	Use:   "approve <paymentId>",
-	Short: "Prepare the unsigned ERC-20 approve transaction (needed before refund)",
-	Long: `Prepare an unsigned EIP-1559 transaction that calls ERC-20 approve() on
-the token contract, granting the RAIL0 contract an allowance to pull
-funds from the payee for a future refund.
-
-This step is required before 'payments refund' when the payee's wallet
-has insufficient allowance. It only needs to be done once per (payee,
-token, RAIL0 contract) combination — or set --amount to
-115792089237316195423570985008687907853269984665640564039457584007913129639935
-for an unlimited approval.
-
-After signing, broadcast the result with:
-  rail0 payments submit <paymentId> --signed-tx <0x…>`,
-	Example: `  # Approve exact refund amount
-  rail0 payments approve 0xpaymentId… --amount 50000000
-
-  # Unlimited approval (type(uint256).max)
-  rail0 payments approve 0xpaymentId… \
-    --amount 115792089237316195423570985008687907853269984665640564039457584007913129639935`,
-	Args: cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		return ui.RunAPI(func() (any, error) {
-			return newClient().Payments.PrepareApprove(context.Background(), args[0],
-				rail0.ApproveRequest{Amount: approveAmount})
-		})
-	},
-}
-
-// ── payments refund ───────────────────────────────────────────────────────────
-
-var refundAmount string
-
-var paymentsRefundCmd = &cobra.Command{
-	Use:   "refund <paymentId>",
-	Short: "Prepare the unsigned refund transaction",
-	Long: `Prepare an unsigned EIP-1559 transaction that calls refund() on the
-RAIL0 contract. The payment must be in 'captured', 'partially_captured',
-'charged', 'refunded', or 'partially_refunded' status and must still
-have a positive refundableAmount.
-
-The RAIL0 contract pulls refundAmount from the payee and returns it to
-the payer. The payee must first grant sufficient allowance to the RAIL0
-contract via 'payments approve'.
-
-Partial refunds are supported: pass an --amount less than the current
-refundableAmount to refund only a portion.
-
-After signing, broadcast the result with:
-  rail0 payments submit <paymentId> --signed-tx <0x…>`,
-	Example: `  # Full refund
-  rail0 payments refund 0xpaymentId… --amount 100000000
-
-  # Partial refund
-  rail0 payments refund 0xpaymentId… --amount 25000000`,
-	Args: cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		return ui.RunAPI(func() (any, error) {
-			return newClient().Payments.PrepareRefund(context.Background(), args[0],
-				rail0.RefundPaymentRequest{Amount: refundAmount})
+			return client.Payments.Sign(ctx, createResp.Rail0Id,
+				rail0.PayerSignatureRequest{Signature: sig})
 		})
 	},
 }
@@ -359,26 +143,30 @@ After signing, broadcast the result with:
 var submitSignedTx string
 
 var paymentsSubmitCmd = &cobra.Command{
-	Use:   "submit <paymentId>",
-	Short: "Broadcast a signed transaction (any operation)",
+	Use:   "submit <rail0Id>",
+	Short: "Broadcast a signed transaction (external wallet flow)",
 	Long: `Broadcast a signed transaction to the network via the RAIL0 API.
 
-Universal submit endpoint — works after any prepare step: authorize,
-charge, capture, void, release, approve, refund. The API infers the
-operation from pending_operation set during the preceding prepare call.
+Use this command when signing externally (MetaMask, Ledger, cast, ethers.js).
+It works after any action command run with --prepare — the API infers the
+operation from the pending state set during that call.
 
-The API enqueues the transaction and returns immediately with status
-"submitting" (HTTP 202). Poll 'payments get <paymentId>' until the
-status advances past "submitting" to learn the final outcome.
+Returns 202 immediately. The payment stays in its current state until
+rail0-indexer detects the on-chain confirmation and calls back to the API,
+which then advances the payment to its final state (authorized, captured, etc.).
+Poll 'payments get <rail0Id>' and watch the transaction list until the
+relevant transaction moves from submitted → confirmed.
 
---signed-tx must be the RLP-encoded signed EIP-1559 transaction as
-returned by the wallet's signTransaction call (0x-prefixed hex).`,
-	Example: `  # After any prepare step (authorize, capture, void, release, approve, refund…)
-  rail0 payments submit 0xpaymentId… --signed-tx 0x02f8…
+--signed-tx must be the RLP-encoded signed EIP-1559 transaction as a
+0x-prefixed hex string, as returned by eth_signTransaction or
+wallet.signTransaction.
 
-  # Then poll until the transaction is confirmed
-  rail0 payments get 0xpaymentId…`,
-	Args: cobra.ExactArgs(1),
+For automated flows where the private key is available locally, pass
+--private-key (-p) directly to the action command instead:
+
+  rail0 payments authorize <rail0Id> -p 0xKey…`,
+	Example: `  rail0 payments submit 0xrail0Id… --signed-tx 0x02f8…`,
+	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return ui.RunAPI(func() (any, error) {
 			return newClient().Payments.Submit(context.Background(), args[0],
@@ -387,57 +175,491 @@ returned by the wallet's signTransaction call (0x-prefixed hex).`,
 	},
 }
 
+// ── action command helpers ────────────────────────────────────────────────────
+
+// addSigningFlags attaches --prepare, --private-key / -p, and the hidden
+// alias --pk to cmd, and marks --prepare and --private-key mutually exclusive.
+func addSigningFlags(cmd *cobra.Command, privateKey *string, prepare *bool) {
+	cmd.Flags().StringVarP(privateKey, "private-key", "p", "",
+		"Caller's secp256k1 private key (0x-prefixed hex); signs and broadcasts in one step")
+	cmd.Flags().StringVar(privateKey, "pk", "", "Alias for --private-key")
+	_ = cmd.Flags().MarkHidden("pk")
+	cmd.Flags().BoolVarP(prepare, "prepare", "w", false,
+		"Return the unsigned transaction only, for external wallet signing")
+	cmd.MarkFlagsMutuallyExclusive("private-key", "prepare")
+	cmd.MarkFlagsMutuallyExclusive("pk", "prepare")
+}
+
+// requireSigningMode returns an error when neither --private-key / --pk nor
+// --prepare was provided, giving the user a clear hint about the two options.
+func requireSigningMode(privateKey string, prepare bool) error {
+	if privateKey == "" && !prepare {
+		return errors.New("provide --private-key (-p / --pk) for automated signing, or --prepare for external wallet signing")
+	}
+	return nil
+}
+
+// ── payments authorize ────────────────────────────────────────────────────────
+
+var authorizePrivateKey string
+var authorizePrepare bool
+
+var paymentsAuthorizeCmd = &cobra.Command{
+	Use:   "authorize <rail0Id>",
+	Short: "Authorize a payment (prepare, sign, and broadcast)",
+	Long: `Prepare the transaction that calls authorize() on the RAIL0 contract,
+pulling funds from the payer into escrow.
+
+The payer signature must have been submitted first via 'payments sign'.
+The API returns 202 immediately. The payment stays at "signed" until
+rail0-indexer confirms the on-chain event and the API transitions it to
+"authorized". Poll 'payments get <rail0Id>' until payment=authorized
+and the authorize transaction shows confirmed.
+
+Signing modes (one required):
+
+  --private-key (-p)   Sign locally and broadcast in one step.
+  --prepare            Return the unsigned transaction for external signing,
+                       then broadcast with 'payments submit'.`,
+	Example: `  # 1. Payer creates the payment and receives signingPayload
+  rail0 payments create --from 0xBuyer… --to 0xMerchant… \
+    --token 0x3600… --amount 1000000 --chain-id 5042002
+
+  # 2. Payer signs and submits the EIP-712 signature
+  rail0 payments sign <rail0Id> --signature 0x1a2b…
+
+  # 3. Payee authorizes — direct key
+  rail0 payments authorize <rail0Id> -p 0xPayeeKey…
+
+  # 3. Payee authorizes — external wallet
+  rail0 payments authorize <rail0Id> --prepare
+  rail0 payments submit    <rail0Id> --signed-tx 0x02f8…`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := requireSigningMode(authorizePrivateKey, authorizePrepare); err != nil {
+			return err
+		}
+		rail0Id := args[0]
+		client := newClient()
+		ctx := context.Background()
+		prep, err := client.Payments.Authorize(ctx, rail0Id)
+		if err != nil {
+			return err
+		}
+		if authorizePrepare {
+			return ui.RunAPI(func() (any, error) { return prep, nil })
+		}
+		signedTx, err := signTx(prep.UnsignedTransaction, authorizePrivateKey)
+		if err != nil {
+			return fmt.Errorf("sign: %w", err)
+		}
+		return ui.RunAPI(func() (any, error) {
+			return client.Payments.Submit(ctx, rail0Id,
+				rail0.SubmitTransactionRequest{SignedTransaction: signedTx})
+		})
+	},
+}
+
+// ── payments charge ───────────────────────────────────────────────────────────
+
+var chargePrivateKey string
+var chargePrepare bool
+
+var paymentsChargeCmd = &cobra.Command{
+	Use:   "charge <rail0Id>",
+	Short: "Charge a payment — authorize + capture in one call (no escrow)",
+	Long: `Prepare the transaction that calls charge() on the RAIL0 contract.
+Combines authorize + capture into a single on-chain call; funds move
+directly from payer to payee without an escrow window.
+
+The payment must have been created with --mode charge and the payer
+signature submitted via 'payments sign'.
+The API returns 202 immediately. The payment stays at "signed" until
+rail0-indexer confirms and the API transitions it to "charged".
+Poll 'payments get <rail0Id>' until payment=charged and the charge
+transaction shows confirmed.
+
+Signing modes (one required):
+
+  --private-key (-p)   Sign locally and broadcast in one step.
+  --prepare            Return the unsigned transaction for external signing,
+                       then broadcast with 'payments submit'.`,
+	Example: `  # Direct key
+  rail0 payments charge 0xrail0Id… -p 0xPayeeKey…
+
+  # External wallet
+  rail0 payments charge 0xrail0Id… --prepare
+  rail0 payments submit 0xrail0Id… --signed-tx 0x02f8…`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := requireSigningMode(chargePrivateKey, chargePrepare); err != nil {
+			return err
+		}
+		rail0Id := args[0]
+		client := newClient()
+		ctx := context.Background()
+		prep, err := client.Payments.Charge(ctx, rail0Id)
+		if err != nil {
+			return err
+		}
+		if chargePrepare {
+			return ui.RunAPI(func() (any, error) { return prep, nil })
+		}
+		signedTx, err := signTx(prep.UnsignedTransaction, chargePrivateKey)
+		if err != nil {
+			return fmt.Errorf("sign: %w", err)
+		}
+		return ui.RunAPI(func() (any, error) {
+			return client.Payments.Submit(ctx, rail0Id,
+				rail0.SubmitTransactionRequest{SignedTransaction: signedTx})
+		})
+	},
+}
+
+// ── payments capture ──────────────────────────────────────────────────────────
+
+var captureAmount string
+var capturePrivateKey string
+var capturePrepare bool
+
+var paymentsCaptureCmd = &cobra.Command{
+	Use:   "capture <rail0Id>",
+	Short: "Capture a payment (prepare, sign, and broadcast)",
+	Long: `Prepare the transaction that calls capture() on the RAIL0 contract.
+
+The payment must be in 'authorized' or 'partially_captured' status.
+Partial captures are supported: pass --amount less than capturableAmount
+to capture a portion; the remaining balance stays available until
+authorizationExpiry.
+The API returns 202 immediately. The payment stays at "authorized" until
+rail0-indexer confirms and the API transitions it to "captured" or
+"partially_captured". Poll 'payments get <rail0Id>' until the payment
+reaches the expected state and the capture transaction shows confirmed.
+
+Signing modes (one required):
+
+  --private-key (-p)   Sign locally and broadcast in one step.
+  --prepare            Return the unsigned transaction for external signing,
+                       then broadcast with 'payments submit'.`,
+	Example: `  # Direct key — full capture
+  rail0 payments capture 0xrail0Id… --amount 100000000 -p 0xPayeeKey…
+
+  # External wallet — partial capture
+  rail0 payments capture 0xrail0Id… --amount 50000000 --prepare
+  rail0 payments submit  0xrail0Id… --signed-tx 0x02f8…`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := requireSigningMode(capturePrivateKey, capturePrepare); err != nil {
+			return err
+		}
+		rail0Id := args[0]
+		client := newClient()
+		ctx := context.Background()
+		prep, err := client.Payments.PrepareCapture(ctx, rail0Id,
+			rail0.CapturePaymentRequest{Amount: captureAmount})
+		if err != nil {
+			return err
+		}
+		if capturePrepare {
+			return ui.RunAPI(func() (any, error) { return prep, nil })
+		}
+		signedTx, err := signTx(prep.UnsignedTransaction, capturePrivateKey)
+		if err != nil {
+			return fmt.Errorf("sign: %w", err)
+		}
+		return ui.RunAPI(func() (any, error) {
+			return client.Payments.Submit(ctx, rail0Id,
+				rail0.SubmitTransactionRequest{SignedTransaction: signedTx})
+		})
+	},
+}
+
+// ── payments void ─────────────────────────────────────────────────────────────
+
+var voidPrivateKey string
+var voidPrepare bool
+
+var paymentsVoidCmd = &cobra.Command{
+	Use:   "void <rail0Id>",
+	Short: "Void a payment (prepare, sign, and broadcast)",
+	Long: `Prepare the transaction that calls void() on the RAIL0 contract.
+
+The payment must be in 'authorized' status. Void cancels the authorization
+and returns the full escrowed balance to the payer. Only callable before
+authorizationExpiry, by the payee.
+The API returns 202 immediately; poll 'payments get <rail0Id>' until
+status advances to "voided".
+
+Signing modes (one required):
+
+  --private-key (-p)   Sign locally and broadcast in one step.
+  --prepare            Return the unsigned transaction for external signing,
+                       then broadcast with 'payments submit'.`,
+	Example: `  # Direct key
+  rail0 payments void 0xrail0Id… -p 0xPayeeKey…
+
+  # External wallet
+  rail0 payments void   0xrail0Id… --prepare
+  rail0 payments submit 0xrail0Id… --signed-tx 0x02f8…`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := requireSigningMode(voidPrivateKey, voidPrepare); err != nil {
+			return err
+		}
+		rail0Id := args[0]
+		client := newClient()
+		ctx := context.Background()
+		prep, err := client.Payments.PrepareVoid(ctx, rail0Id)
+		if err != nil {
+			return err
+		}
+		if voidPrepare {
+			return ui.RunAPI(func() (any, error) { return prep, nil })
+		}
+		signedTx, err := signTx(prep.UnsignedTransaction, voidPrivateKey)
+		if err != nil {
+			return fmt.Errorf("sign: %w", err)
+		}
+		return ui.RunAPI(func() (any, error) {
+			return client.Payments.Submit(ctx, rail0Id,
+				rail0.SubmitTransactionRequest{SignedTransaction: signedTx})
+		})
+	},
+}
+
+// ── payments release ──────────────────────────────────────────────────────────
+
+var releaseCallerAddress string
+var releasePrivateKey string
+var releasePrepare bool
+
+var paymentsReleaseCmd = &cobra.Command{
+	Use:   "release <rail0Id>",
+	Short: "Release a payment after expiry (prepare, sign, and broadcast)",
+	Long: `Prepare the transaction that calls release() on the RAIL0 contract.
+
+Release is only available after authorizationExpiry has passed on-chain.
+Returns the remaining escrowed balance to the payer. Permissionless —
+both payer and payee can call it.
+
+Use --caller-address to build the transaction for the payer. Omit it to
+build for the payee (default).
+The API returns 202 immediately; poll 'payments get <rail0Id>' until
+status advances to "released".
+
+Signing modes (one required):
+
+  --private-key (-p)   Sign locally and broadcast in one step.
+  --prepare            Return the unsigned transaction for external signing,
+                       then broadcast with 'payments submit'.`,
+	Example: `  # Payee releases — direct key
+  rail0 payments release 0xrail0Id… -p 0xPayeeKey…
+
+  # Payer releases — direct key
+  rail0 payments release 0xrail0Id… --caller-address 0xBuyer… -p 0xBuyerKey…
+
+  # External wallet
+  rail0 payments release 0xrail0Id… --prepare
+  rail0 payments submit  0xrail0Id… --signed-tx 0x02f8…`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := requireSigningMode(releasePrivateKey, releasePrepare); err != nil {
+			return err
+		}
+		rail0Id := args[0]
+		client := newClient()
+		ctx := context.Background()
+		prep, err := client.Payments.PrepareRelease(ctx, rail0Id,
+			rail0.ReleaseRequest{CallerAddress: releaseCallerAddress})
+		if err != nil {
+			return err
+		}
+		if releasePrepare {
+			return ui.RunAPI(func() (any, error) { return prep, nil })
+		}
+		signedTx, err := signTx(prep.UnsignedTransaction, releasePrivateKey)
+		if err != nil {
+			return fmt.Errorf("sign: %w", err)
+		}
+		return ui.RunAPI(func() (any, error) {
+			return client.Payments.Submit(ctx, rail0Id,
+				rail0.SubmitTransactionRequest{SignedTransaction: signedTx})
+		})
+	},
+}
+
+// ── payments approve ──────────────────────────────────────────────────────────
+
+var approveAmount string
+var approvePrivateKey string
+var approvePrepare bool
+
+var paymentsApproveCmd = &cobra.Command{
+	Use:   "approve <rail0Id>",
+	Short: "Grant ERC-20 allowance to the RAIL0 contract (prepare, sign, and broadcast)",
+	Long: `Prepare the ERC-20 approve() transaction that grants the RAIL0 contract
+an allowance to pull funds from the payee for a future refund.
+
+Required before 'payments refund' if the payee has insufficient allowance.
+Only needs to be done once per (payee, token, RAIL0 contract) combination
+— pass max uint256 as --amount for an unlimited approval.
+
+Signing modes (one required):
+
+  --private-key (-p)   Sign locally and broadcast in one step.
+  --prepare            Return the unsigned transaction for external signing,
+                       then broadcast with 'payments submit'.`,
+	Example: `  # Direct key — exact amount
+  rail0 payments approve 0xrail0Id… --amount 100000000 -p 0xPayeeKey…
+
+  # External wallet
+  rail0 payments approve 0xrail0Id… --amount 100000000 --prepare
+  rail0 payments submit  0xrail0Id… --signed-tx 0x02f8…`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := requireSigningMode(approvePrivateKey, approvePrepare); err != nil {
+			return err
+		}
+		rail0Id := args[0]
+		client := newClient()
+		ctx := context.Background()
+		prep, err := client.Payments.PrepareApprove(ctx, rail0Id,
+			rail0.ApproveRequest{Amount: approveAmount})
+		if err != nil {
+			return err
+		}
+		if approvePrepare {
+			return ui.RunAPI(func() (any, error) { return prep, nil })
+		}
+		signedTx, err := signTx(prep.UnsignedTransaction, approvePrivateKey)
+		if err != nil {
+			return fmt.Errorf("sign: %w", err)
+		}
+		return ui.RunAPI(func() (any, error) {
+			return client.Payments.Submit(ctx, rail0Id,
+				rail0.SubmitTransactionRequest{SignedTransaction: signedTx})
+		})
+	},
+}
+
+// ── payments refund ───────────────────────────────────────────────────────────
+
+var refundAmount string
+var refundPrivateKey string
+var refundPrepare bool
+
+var paymentsRefundCmd = &cobra.Command{
+	Use:   "refund <rail0Id>",
+	Short: "Refund a payment (prepare, sign, and broadcast)",
+	Long: `Prepare the transaction that calls refund() on the RAIL0 contract,
+pulling refundAmount from the payee and returning it to the payer.
+
+The payment must be in 'captured', 'partially_captured', 'charged',
+'refunded', or 'partially_refunded' status with a positive
+refundableAmount. Partial refunds are supported: pass --amount less
+than refundableAmount. Requires prior 'payments approve' if the payee
+has insufficient allowance.
+The API returns 202 immediately; poll 'payments get <rail0Id>' until
+status advances to "refunded" or "partially_refunded".
+
+Signing modes (one required):
+
+  --private-key (-p)   Sign locally and broadcast in one step.
+  --prepare            Return the unsigned transaction for external signing,
+                       then broadcast with 'payments submit'.`,
+	Example: `  # Direct key — full refund
+  rail0 payments refund 0xrail0Id… --amount 100000000 -p 0xPayeeKey…
+
+  # External wallet — partial refund
+  rail0 payments refund  0xrail0Id… --amount 25000000 --prepare
+  rail0 payments submit  0xrail0Id… --signed-tx 0x02f8…`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := requireSigningMode(refundPrivateKey, refundPrepare); err != nil {
+			return err
+		}
+		rail0Id := args[0]
+		client := newClient()
+		ctx := context.Background()
+		prep, err := client.Payments.PrepareRefund(ctx, rail0Id,
+			rail0.RefundPaymentRequest{Amount: refundAmount})
+		if err != nil {
+			return err
+		}
+		if refundPrepare {
+			return ui.RunAPI(func() (any, error) { return prep, nil })
+		}
+		signedTx, err := signTx(prep.UnsignedTransaction, refundPrivateKey)
+		if err != nil {
+			return fmt.Errorf("sign: %w", err)
+		}
+		return ui.RunAPI(func() (any, error) {
+			return client.Payments.Submit(ctx, rail0Id,
+				rail0.SubmitTransactionRequest{SignedTransaction: signedTx})
+		})
+	},
+}
+
 // ── init ──────────────────────────────────────────────────────────────────────
 
 func init() {
-	// payments create
-	createFlags.addTo(paymentsCreateCmd)
-	paymentsCmd.AddCommand(paymentsCreateCmd)
+	// payments create — creates the payment and signs it with the payer's key
+	signCreateFlags.addTo(paymentsSignCmd)
+	paymentsSignCmd.Flags().StringVarP(&signPrivateKey, "private-key", "p", "",
+		"Payer's secp256k1 private key (0x-prefixed hex); creates the payment and signs locally")
+	paymentsSignCmd.Flags().StringVar(&signPrivateKey, "pk", "", "Alias for --private-key")
+	_ = paymentsSignCmd.Flags().MarkHidden("pk")
+	paymentsSignCmd.Flags().StringVarP(&signSignature, "signature", "s", "",
+		"65-byte EIP-712 signature (0x-prefixed 130-char hex) — used with <rail0Id> for external signing")
+	paymentsSignCmd.MarkFlagsMutuallyExclusive("private-key", "signature")
+	paymentsSignCmd.MarkFlagsMutuallyExclusive("pk", "signature")
+	paymentsCmd.AddCommand(paymentsSignCmd)
 
 	// payments get
 	paymentsCmd.AddCommand(paymentsGetCmd)
 
-	// payments sign
-	paymentsSignCmd.Flags().StringVar(&signSignature, "signature", "",
-		"65-byte EIP-712 signature (0x-prefixed 130-char hex) from eth_signTypedData_v4")
-	_ = paymentsSignCmd.MarkFlagRequired("signature")
-	paymentsCmd.AddCommand(paymentsSignCmd)
+	// payments submit
+	paymentsSubmitCmd.Flags().StringVarP(&submitSignedTx, "signed-tx", "x", "",
+		"RLP-encoded signed EIP-1559 transaction (0x-prefixed hex)")
+	_ = paymentsSubmitCmd.MarkFlagRequired("signed-tx")
+	paymentsCmd.AddCommand(paymentsSubmitCmd)
 
 	// payments authorize
+	addSigningFlags(paymentsAuthorizeCmd, &authorizePrivateKey, &authorizePrepare)
 	paymentsCmd.AddCommand(paymentsAuthorizeCmd)
 
 	// payments charge
+	addSigningFlags(paymentsChargeCmd, &chargePrivateKey, &chargePrepare)
 	paymentsCmd.AddCommand(paymentsChargeCmd)
 
 	// payments capture
-	paymentsCaptureCmd.Flags().StringVar(&captureAmount, "amount", "",
-		"Amount to capture in token base units (must be > 0 and ≤ capturableAmount)")
+	paymentsCaptureCmd.Flags().StringVarP(&captureAmount, "amount", "a", "",
+		"Amount to capture in token base units (> 0, ≤ capturableAmount)")
 	_ = paymentsCaptureCmd.MarkFlagRequired("amount")
+	addSigningFlags(paymentsCaptureCmd, &capturePrivateKey, &capturePrepare)
 	paymentsCmd.AddCommand(paymentsCaptureCmd)
 
 	// payments void
+	addSigningFlags(paymentsVoidCmd, &voidPrivateKey, &voidPrepare)
 	paymentsCmd.AddCommand(paymentsVoidCmd)
 
 	// payments release
-	paymentsReleaseCmd.Flags().StringVar(&releaseCallerAddress, "caller-address", "",
-		"Address that will sign and submit the release tx (default: payee address on record)")
+	paymentsReleaseCmd.Flags().StringVarP(&releaseCallerAddress, "caller-address", "C", "",
+		"Address that will sign the tx (default: payee on record)")
+	addSigningFlags(paymentsReleaseCmd, &releasePrivateKey, &releasePrepare)
 	paymentsCmd.AddCommand(paymentsReleaseCmd)
 
 	// payments approve
-	paymentsApproveCmd.Flags().StringVar(&approveAmount, "amount", "",
-		"ERC-20 allowance to grant in token base units (use max uint256 for unlimited)")
+	paymentsApproveCmd.Flags().StringVarP(&approveAmount, "amount", "a", "",
+		"ERC-20 allowance in token base units (use max uint256 for unlimited)")
 	_ = paymentsApproveCmd.MarkFlagRequired("amount")
+	addSigningFlags(paymentsApproveCmd, &approvePrivateKey, &approvePrepare)
 	paymentsCmd.AddCommand(paymentsApproveCmd)
 
 	// payments refund
-	paymentsRefundCmd.Flags().StringVar(&refundAmount, "amount", "",
-		"Amount to refund in token base units (must be > 0 and ≤ refundableAmount)")
+	paymentsRefundCmd.Flags().StringVarP(&refundAmount, "amount", "a", "",
+		"Amount to refund in token base units (> 0, ≤ refundableAmount)")
 	_ = paymentsRefundCmd.MarkFlagRequired("amount")
+	addSigningFlags(paymentsRefundCmd, &refundPrivateKey, &refundPrepare)
 	paymentsCmd.AddCommand(paymentsRefundCmd)
-
-	// payments submit
-	paymentsSubmitCmd.Flags().StringVar(&submitSignedTx, "signed-tx", "",
-		"RLP-encoded signed EIP-1559 transaction (0x-prefixed hex) from eth_signTransaction")
-	_ = paymentsSubmitCmd.MarkFlagRequired("signed-tx")
-	paymentsCmd.AddCommand(paymentsSubmitCmd)
 }

@@ -15,7 +15,7 @@ var accountsCmd = &cobra.Command{
 var accountsPaymentMethodsCmd = &cobra.Command{
 	Use:     "payment-methods <accountId>",
 	Short:   "List the accepted payment methods for an account",
-	Example: `  rail0 accounts payment-methods 019e6f9e-46f8-7174-8919-802e0953ae42`,
+	Example: `  rail0 accounts payment-methods 019e748b-da9a-7c3f-ba32-50572ffd5388`,
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return ui.RunAPI(func() (any, error) {

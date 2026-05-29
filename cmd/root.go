@@ -6,6 +6,7 @@ import (
 
 	charmlog "github.com/charmbracelet/log"
 	"github.com/rail0/cli/internal/config"
+	"github.com/rail0/cli/internal/token"
 	"github.com/rail0/cli/internal/ui"
 	rail0 "github.com/rail0/go-sdk"
 	"github.com/spf13/cobra"
@@ -42,11 +43,13 @@ func init() {
 
 	cobra.OnInitialize(func() { ui.SetJSON(jsonOut) })
 
-	rootCmd.AddCommand(paymentsCmd, accountsCmd, chainsCmd, tokensCmd)
+	rootCmd.AddCommand(paymentsCmd, accountsCmd, chainsCmd, tokensCmd, authCmd)
 }
 
 // newClient builds a RAIL0 API client.
 // Priority: --base-url flag > RAIL0_BASE_URL env var > config.DefaultBaseURL.
+// If a JWT is stored (RAIL0_TOKEN env var or ~/.cache/rail0/token), it is sent
+// as Authorization: Bearer on every request.
 func newClient() *rail0.Client {
 	url := baseURL
 	if url == "" {
@@ -56,6 +59,9 @@ func newClient() *rail0.Client {
 		url = config.DefaultBaseURL
 	}
 	opts := rail0.ClientOptions{BaseURL: url}
+	if t := token.Load(); t != "" {
+		opts.Headers = map[string]string{"Authorization": "Bearer " + t}
+	}
 	if debug {
 		opts.Logger = makeDebugLogger()
 	}

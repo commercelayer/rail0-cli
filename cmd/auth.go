@@ -1,0 +1,135 @@
+package cmd
+
+import (
+	"context"
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/rail0/cli/internal/token"
+	"github.com/rail0/cli/internal/ui"
+	rail0 "github.com/rail0/go-sdk"
+	"github.com/spf13/cobra"
+)
+
+var authCmd = &cobra.Command{
+	Use:   "auth",
+	Short: "Authenticate with the RAIL0 API using SIWE",
+}
+
+// ── auth login ────────────────────────────────────────────────────────────────
+
+var loginPrivateKey string
+
+var authLoginCmd = &cobra.Command{
+	Use:   "login",
+	Short: "Sign in with your Ethereum wallet (SIWE)",
+	Long: `Authenticates with the RAIL0 API using Sign-In with Ethereum (EIP-4361).
+
+  1. Fetches a single-use nonce from the API
+  2. Builds a SIWE message and signs it with your private key
+  3. Verifies the signature and stores the JWT token
+
+The token is saved to ~/.cache/rail0/token and used automatically by all
+commands that require authentication (e.g. 'payments list').
+Override with the RAIL0_TOKEN environment variable.`,
+	Example: `  rail0 auth login -p 0xYourPrivateKey…`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		ctx := context.Background()
+		client := newClient()
+
+		// Step 1: get nonce
+		nonceResp, err := client.Auth.GetNonce(ctx)
+		if err != nil {
+			return fmt.Errorf("get nonce: %w", err)
+		}
+
+		// Step 2: derive address and build SIWE message
+		privKey, err := rail0.HexToPrivateKey(loginPrivateKey)
+		if err != nil {
+			return fmt.Errorf("invalid private key: %w", err)
+		}
+		address, err := privateKeyToAddress(privKey)
+		if err != nil {
+			return fmt.Errorf("derive address: %w", err)
+		}
+
+		apiURL := baseURL
+		if apiURL == "" {
+			apiURL = "https://api.rail0.xyz"
+		}
+		host := strings.TrimPrefix(strings.TrimPrefix(apiURL, "https://"), "http://")
+
+		message := buildSIWEMessage(host, address, nonceResp.Nonce)
+
+		// Step 3: sign the message
+		sig, err := personalSign(privKey, message)
+		if err != nil {
+			return fmt.Errorf("sign: %w", err)
+		}
+
+		// Step 4: verify with API
+		authResp, err := client.Auth.Verify(ctx, rail0.AuthRequest{
+			Message:   message,
+			Signature: sig,
+		})
+		if err != nil {
+			return err
+		}
+
+		// Step 5: save token
+		if err := token.Save(authResp.Token); err != nil {
+			return fmt.Errorf("save token: %w", err)
+		}
+
+		return ui.RunAPI(func() (any, error) { return authResp, nil })
+	},
+}
+
+// ── auth status ───────────────────────────────────────────────────────────────
+
+var authStatusCmd = &cobra.Command{
+	Use:   "status",
+	Short: "Show the current authentication status",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		t := token.Load()
+		if t == "" {
+			fmt.Println("Not logged in. Run: rail0 auth login -p 0xYourKey…")
+			return nil
+		}
+		claims, err := parseJWTClaims(t)
+		if err != nil {
+			fmt.Println("Token invalid or expired. Run: rail0 auth login -p 0xYourKey…")
+			return nil
+		}
+		fmt.Printf("Logged in as %s (expires %s)\n",
+			claims["sub"], time.Unix(int64(claims["exp"].(float64)), 0).UTC().Format(time.RFC3339))
+		return nil
+	},
+}
+
+// ── auth logout ───────────────────────────────────────────────────────────────
+
+var authLogoutCmd = &cobra.Command{
+	Use:   "logout",
+	Short: "Remove the stored authentication token",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := token.Delete(); err != nil {
+			return err
+		}
+		fmt.Println("Logged out.")
+		return nil
+	},
+}
+
+// ── init ──────────────────────────────────────────────────────────────────────
+
+func init() {
+	authLoginCmd.Flags().StringVarP(&loginPrivateKey, "private-key", "p", "",
+		"Ethereum private key (0x-prefixed hex) to sign the SIWE message")
+	_ = authLoginCmd.MarkFlagRequired("private-key")
+	authLoginCmd.Flags().StringVar(&loginPrivateKey, "pk", "", "Alias for --private-key")
+	_ = authLoginCmd.Flags().MarkHidden("pk")
+
+	authCmd.AddCommand(authLoginCmd, authStatusCmd, authLogoutCmd)
+}

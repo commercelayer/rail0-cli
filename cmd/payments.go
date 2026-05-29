@@ -73,6 +73,21 @@ Status values:
 	},
 }
 
+// ── payments list ────────────────────────────────────────────────────────────
+
+var paymentsListCmd = &cobra.Command{
+	Use:   "list",
+	Short: "List payments for the authenticated wallet (requires login)",
+	Long: `Returns all payments where your wallet is payer or payee.
+Requires authentication — run 'rail0 auth login -p 0xKey…' first.`,
+	Example: `  rail0 payments list`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return ui.RunAPI(func() (any, error) {
+			return newClient().Payments.List(context.Background())
+		})
+	},
+}
+
 // ── payments sign ─────────────────────────────────────────────────────────────
 
 var signPrivateKey string
@@ -617,6 +632,9 @@ func init() {
 
 	// payments get
 	paymentsCmd.AddCommand(paymentsGetCmd)
+
+	// payments list
+	paymentsCmd.AddCommand(paymentsListCmd)
 
 	// payments submit
 	paymentsSubmitCmd.Flags().StringVarP(&submitSignedTx, "signed-tx", "x", "",

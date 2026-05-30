@@ -107,9 +107,29 @@ var authStatusCmd = &cobra.Command{
 			fmt.Println("Token invalid or expired. Run: rail0 auth login -p 0xYourKey…")
 			return nil
 		}
-		fmt.Printf("Logged in as %s (expires %s)\n",
-			claims["sub"], time.Unix(int64(claims["exp"].(float64)), 0).UTC().Format(time.RFC3339))
-		return nil
+		exp := time.Unix(int64(claims["exp"].(float64)), 0).UTC()
+		expiresIn := time.Until(exp).Round(time.Minute)
+		var expiresInStr string
+		if expiresIn <= 0 {
+			expiresInStr = "expired"
+		} else {
+			h := int(expiresIn.Hours())
+			m := int(expiresIn.Minutes()) % 60
+			if h > 0 {
+				expiresInStr = fmt.Sprintf("%dh %dm", h, m)
+			} else {
+				expiresInStr = fmt.Sprintf("%dm", m)
+			}
+		}
+		return ui.RunAPI(func() (any, error) {
+			info := map[string]any{
+				"address":    claims["sub"],
+				"account_id": claims["account_id"],
+				"expires_at": exp.Format(time.RFC3339),
+				"expires_in": expiresInStr,
+			}
+			return info, nil
+		})
 	},
 }
 

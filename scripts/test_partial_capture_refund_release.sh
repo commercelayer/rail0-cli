@@ -151,7 +151,7 @@ ok "authorization_expiry passed"
 # ── 8. Release (buyer) ────────────────────────────────────────────────────────
 
 step "8. Release (buyer)"
-run payments release "$RAIL0_ID" -p "$BUYER_PRIVATE_KEY" $BASE > /dev/null
+run payments release "$RAIL0_ID" --caller-address "$BUYER_ADDRESS" -p "$BUYER_PRIVATE_KEY" $BASE > /dev/null
 ok "Broadcast — polling…"
 poll_until "$RAIL0_ID" released
 ok "Released"

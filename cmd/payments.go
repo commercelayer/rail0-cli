@@ -53,7 +53,7 @@ on-chain balances (capturableAmount, refundableAmount) when the payment
 is in an active on-chain state.
 
 Status values:
-  pending_signature   — created, payer signature not yet submitted
+  unsigned   — created, payer signature not yet submitted
   signed              — payer signature stored, awaiting payee action
   authorized          — funds held in escrow, capture available
   charged             — one-shot charge executed, refund available

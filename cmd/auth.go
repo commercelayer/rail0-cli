@@ -39,20 +39,9 @@ Override with the RAIL0_TOKEN environment variable.`,
 		ctx := context.Background()
 		client := newClient()
 
-		// Step 1: get nonce
-		nonceResp, err := client.Auth.GetNonce(ctx)
-		if err != nil {
-			return fmt.Errorf("get nonce: %w", err)
-		}
-
-		// Step 2: derive address and build SIWE message
 		privKey, err := rail0.HexToPrivateKey(loginPrivateKey)
 		if err != nil {
 			return fmt.Errorf("invalid private key: %w", err)
-		}
-		address, err := privateKeyToAddress(privKey)
-		if err != nil {
-			return fmt.Errorf("derive address: %w", err)
 		}
 
 		apiURL := baseURL
@@ -61,24 +50,11 @@ Override with the RAIL0_TOKEN environment variable.`,
 		}
 		host := strings.TrimPrefix(strings.TrimPrefix(apiURL, "https://"), "http://")
 
-		message := buildSIWEMessage(host, address, nonceResp.Nonce)
-
-		// Step 3: sign the message
-		sig, err := personalSign(privKey, message)
-		if err != nil {
-			return fmt.Errorf("sign: %w", err)
-		}
-
-		// Step 4: verify with API
-		authResp, err := client.Auth.Verify(ctx, rail0.AuthRequest{
-			Message:   message,
-			Signature: sig,
-		})
+		authResp, err := client.Auth.Login(ctx, privKey, host)
 		if err != nil {
 			return err
 		}
 
-		// Step 5: save token
 		tokenPath, saveErr := token.SaveAndReport(authResp.Token)
 		if saveErr != nil {
 			fmt.Fprintf(os.Stderr, "warning: could not save token to disk: %v\n", saveErr)

@@ -135,7 +135,7 @@ rail0 payments get 0xabc123…
 
 | Status | Description |
 |--------|-------------|
-| `pending_signature` | Created; payer signature not yet submitted |
+| `unsigned` | Created; payer signature not yet submitted |
 | `signed` | Payer signature stored; awaiting payee action |
 | `authorized` | Funds held in escrow; capture available |
 | `charged` | One-shot charge executed; refund available |

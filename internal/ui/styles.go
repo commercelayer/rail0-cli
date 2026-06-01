@@ -37,7 +37,7 @@ func StatusStyle(status string) lipgloss.Style {
 		return lipgloss.NewStyle().Foreground(lipgloss.Color("215"))
 	case "failed":
 		return lipgloss.NewStyle().Foreground(lipgloss.Color("203")).Bold(true)
-	case "signed", "pending_signature":
+	case "signed", "unsigned":
 		return lipgloss.NewStyle().Foreground(lipgloss.Color("75"))
 	case "submitted":
 		return lipgloss.NewStyle().Foreground(lipgloss.Color("212"))

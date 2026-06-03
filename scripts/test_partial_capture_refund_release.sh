@@ -2,8 +2,8 @@
 # test_partial_capture_refund_release.sh
 #
 # End-to-end CLI flow:
-#   create → authorize → capture 300k → capture 200k →
-#   refund 100k → refund 150k → (wait expiry) → release
+#   create → authorize → capture 0.30 → capture 0.20 →
+#   refund 0.10 → refund 0.15 → (wait expiry) → release
 #
 # Requires the API running with a short authorization TTL:
 #   POLICY_AUTHORIZATION_TTL=30 bundle exec puma -C config/puma.rb
@@ -15,15 +15,15 @@ set -euo pipefail
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 
-API_URL="${RAIL0_API_URL:-http://0.0.0.0:4567}"
+API_URL="${RAIL0_API_URL:-http://localhost:4567}"
 CHAIN="arc-testnet"
 TOKEN="USDC"
-AMOUNT=1000000        # 1 USDC (6 decimals)
-CAPTURE1=300000
-CAPTURE2=200000
-REFUND1=100000
-REFUND2=150000
-AUTHORIZATION_TTL="${POLICY_AUTHORIZATION_TTL:-604800}"
+AMOUNT="1.00"
+CAPTURE1="0.30"
+CAPTURE2="0.20"
+REFUND1="0.10"
+REFUND2="0.15"
+AUTHORIZATION_TTL="${POLICY_AUTHORIZATION_TTL:-30}"
 BUYER_ADDRESS="${BUYER_ADDRESS:-0xe3DD5ea618F74De4C95B0ff0EbF9921A06a694c4}"
 BUYER_PRIVATE_KEY="${BUYER_PRIVATE_KEY:-0x58cfb681b2a04e9dc0083d8258da8c19ac7cc1750f94bb1ab7651f606df5a4d6}"
 ACCOUNT_PRIVATE_KEY="${ACCOUNT_PRIVATE_KEY:-0x700e3be6cef3c28464d6c432eda04d87b5a0122424f4c0adeeea1e81c6137475}"
@@ -62,6 +62,12 @@ print(', '.join(f\"{t['operation']}:{t['status']}\" for t in ts) or '-')
   done
 }
 
+# ── Login (payee) ─────────────────────────────────────────────────────────────
+
+step "Login as payee"
+run auth login -p "$ACCOUNT_PRIVATE_KEY" $BASE > /dev/null
+ok "Logged in"
+
 # ── Resolve payee ─────────────────────────────────────────────────────────────
 
 step "Resolve payee for $TOKEN on $CHAIN"
@@ -77,7 +83,6 @@ ok "Payee: $PAYEE"
 # ── 1. Create + payer signs ───────────────────────────────────────────────────
 
 step "1. Create payment and sign (payer)"
-echo "  $ $RAIL0 payments create -F $BUYER_ADDRESS -T $PAYEE -t $TOKEN -a $AMOUNT -c $CHAIN -p <key> $BASE" >&2
 RAIL0_ID=$($RAIL0 payments create \
   -F "$BUYER_ADDRESS" \
   -T "$PAYEE" \
@@ -96,7 +101,7 @@ ok "Broadcast — polling for indexer confirmation…"
 poll_until "$RAIL0_ID" authorized
 ok "Authorized"
 
-# ── 3. Partial capture #1 (300k) ──────────────────────────────────────────────
+# ── 3. Partial capture #1 ─────────────────────────────────────────────────────
 
 step "3. Partial capture #1 ($CAPTURE1)"
 run payments capture "$RAIL0_ID" -a "$CAPTURE1" -p "$ACCOUNT_PRIVATE_KEY" $BASE > /dev/null
@@ -104,7 +109,7 @@ ok "Broadcast — polling…"
 poll_until "$RAIL0_ID" partially_captured
 ok "Partially captured"
 
-# ── 4. Partial capture #2 (200k) ──────────────────────────────────────────────
+# ── 4. Partial capture #2 ─────────────────────────────────────────────────────
 
 step "4. Partial capture #2 ($CAPTURE2)"
 run payments capture "$RAIL0_ID" -a "$CAPTURE2" -p "$ACCOUNT_PRIVATE_KEY" $BASE > /dev/null
@@ -112,7 +117,7 @@ ok "Broadcast — polling…"
 poll_until "$RAIL0_ID" partially_captured
 ok "Partially captured"
 
-# ── 5. Partial refund #1 (100k) ───────────────────────────────────────────────
+# ── 5. Partial refund #1 ──────────────────────────────────────────────────────
 
 step "5. Partial refund #1 ($REFUND1, EIP-3009)"
 run payments refund "$RAIL0_ID" -a "$REFUND1" -p "$ACCOUNT_PRIVATE_KEY" $BASE > /dev/null
@@ -120,7 +125,7 @@ ok "Broadcast — polling…"
 poll_until "$RAIL0_ID" partially_refunded
 ok "Partially refunded"
 
-# ── 6. Partial refund #2 (150k) ───────────────────────────────────────────────
+# ── 6. Partial refund #2 ──────────────────────────────────────────────────────
 
 step "6. Partial refund #2 ($REFUND2, EIP-3009)"
 run payments refund "$RAIL0_ID" -a "$REFUND2" -p "$ACCOUNT_PRIVATE_KEY" $BASE > /dev/null

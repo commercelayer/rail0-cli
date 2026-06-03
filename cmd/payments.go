@@ -221,7 +221,7 @@ Signing modes (one required):
 		rail0Id := args[0]
 		client := newClient()
 		ctx := context.Background()
-		prep, err := client.Payments.AuthorizePayload(ctx, rail0Id)
+		prep, err := client.Payments.AuthorizePrepare(ctx, rail0Id)
 		if err != nil {
 			return err
 		}
@@ -277,7 +277,7 @@ Signing modes (one required):
 		rail0Id := args[0]
 		client := newClient()
 		ctx := context.Background()
-		prep, err := client.Payments.ChargePayload(ctx, rail0Id)
+		prep, err := client.Payments.ChargePrepare(ctx, rail0Id)
 		if err != nil {
 			return err
 		}
@@ -334,7 +334,7 @@ Signing modes (one required):
 		rail0Id := args[0]
 		client := newClient()
 		ctx := context.Background()
-		prep, err := client.Payments.CapturePayload(ctx, rail0Id,
+		prep, err := client.Payments.CapturePrepare(ctx, rail0Id,
 			rail0.CapturePaymentRequest{Amount: captureAmount})
 		if err != nil {
 			return err
@@ -388,7 +388,7 @@ Signing modes (one required):
 		rail0Id := args[0]
 		client := newClient()
 		ctx := context.Background()
-		prep, err := client.Payments.VoidPayload(ctx, rail0Id)
+		prep, err := client.Payments.VoidPrepare(ctx, rail0Id)
 		if err != nil {
 			return err
 		}
@@ -448,7 +448,7 @@ Signing modes (one required):
 		rail0Id := args[0]
 		client := newClient()
 		ctx := context.Background()
-		prep, err := client.Payments.ReleasePayload(ctx, rail0Id,
+		prep, err := client.Payments.ReleasePrepare(ctx, rail0Id,
 			rail0.ReleaseRequest{CallerAddress: releaseCallerAddress})
 		if err != nil {
 			return err
@@ -510,7 +510,7 @@ Signing modes (one required):
 		client := newClient()
 		ctx := context.Background()
 		// Phase 1: get EIP-712 ReceiveWithAuthorization signing payload.
-		phase1, err := client.Payments.RefundPayload(ctx, rail0Id, rail0.RefundPayloadRequest{Amount: refundAmount})
+		phase1, err := client.Payments.RefundPrepare(ctx, rail0Id, rail0.RefundPayloadRequest{Amount: refundAmount})
 		if err != nil {
 			return err
 		}
@@ -525,7 +525,7 @@ Signing modes (one required):
 		}
 
 		// Phase 2: submit V/R/S → get unsigned transaction with EIP-3009 sig embedded.
-		phase2, err := client.Payments.RefundPayload(ctx, rail0Id, rail0.RefundPayloadRequest{
+		phase2, err := client.Payments.RefundPrepare(ctx, rail0Id, rail0.RefundPayloadRequest{
 			Amount: refundAmount,
 			V:      v,
 			R:      r,

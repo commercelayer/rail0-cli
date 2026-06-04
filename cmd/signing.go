@@ -9,13 +9,13 @@ import (
 
 // signEIP712FromCreate signs the EIP-3009 payload using the CreatePaymentResponse
 // returned directly by the create endpoint (no extra GET needed).
-func signEIP712FromCreate(resp *rail0.CreatePaymentResponse, privateKeyHex string) (string, error) {
+func signEIP712FromCreate(resp *rail0.CreatePaymentResponse, mode string, privateKeyHex string) (string, error) {
 	return signPayload(
 		resp.Payment,
 		resp.SigningPayload,
 		resp.Rail0Contract,
 		string(resp.Payment.Amount),
-		resp.Mode,
+		mode,
 		privateKeyHex,
 	)
 }

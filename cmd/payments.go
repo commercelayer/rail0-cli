@@ -75,15 +75,38 @@ Status values:
 
 // ── payments list ────────────────────────────────────────────────────────────
 
+var paymentsListSort string
+
 var paymentsListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List payments for the authenticated wallet (requires login)",
 	Long: `Returns all payments where your wallet is payer or payee.
 Requires authentication — run 'rail0 auth login -p 0xKey…' first.`,
-	Example: `  rail0 payments list`,
+	Example: `  rail0 payments list
+  rail0 payments list --sort -created_at
+  rail0 payments list --sort -amount,created_at`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return ui.RunAPI(func() (any, error) {
-			return newClient().Payments.List(context.Background())
+			p := rail0.ListPaymentsParams{Sort: paymentsListSort}
+			return newClient().Payments.List(context.Background(), p)
+		})
+	},
+}
+
+// ── payments transactions ─────────────────────────────────────────────────────
+
+var paymentsTransactionsSort string
+
+var paymentsTransactionsCmd = &cobra.Command{
+	Use:   "transactions <rail0Id>",
+	Short: "List on-chain transactions for a payment",
+	Args:  cobra.ExactArgs(1),
+	Example: `  rail0 payments transactions 0xabc123…
+  rail0 payments transactions 0xabc123… --sort -submitted_at`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return ui.RunAPI(func() (any, error) {
+			p := rail0.ListTransactionsParams{Sort: paymentsTransactionsSort}
+			return newClient().Payments.Transactions(context.Background(), args[0], p)
 		})
 	},
 }
@@ -142,7 +165,7 @@ sign it with eth_signTypedData_v4, then submit the result:
 		if err != nil {
 			return err
 		}
-		sig, err := signEIP712FromCreate(createResp, signPrivateKey)
+		sig, err := signEIP712FromCreate(createResp, req.Mode, signPrivateKey)
 		if err != nil {
 			return fmt.Errorf("sign: %w", err)
 		}
@@ -449,7 +472,7 @@ Signing modes (one required):
 		client := newClient()
 		ctx := context.Background()
 		prep, err := client.Payments.ReleasePrepare(ctx, rail0Id,
-			rail0.ReleaseRequest{CallerAddress: releaseCallerAddress})
+			rail0.ReleaseRequest{CallerAddress: &releaseCallerAddress})
 		if err != nil {
 			return err
 		}
@@ -566,7 +589,12 @@ func init() {
 	paymentsCmd.AddCommand(paymentsGetCmd)
 
 	// payments list
+	paymentsListCmd.Flags().StringVar(&paymentsListSort, "sort", "", "Sort fields (e.g. -created_at,amount)")
 	paymentsCmd.AddCommand(paymentsListCmd)
+
+	// payments transactions
+	paymentsTransactionsCmd.Flags().StringVar(&paymentsTransactionsSort, "sort", "", "Sort fields (e.g. -submitted_at,operation)")
+	paymentsCmd.AddCommand(paymentsTransactionsCmd)
 
 	// payments authorize
 	addSigningFlags(paymentsAuthorizeCmd, &authorizePrivateKey, &authorizePrepare)

@@ -184,12 +184,10 @@ func (f *createPaymentFlags) resolve() (rail0.CreatePaymentRequest, error) {
 	}
 
 	return rail0.CreatePaymentRequest{
-		Payment: rail0.PaymentInput{
-			Payer:  f.from,
-			Payee:  f.to,
-			Token:  tokenAddress,
-			Amount: f.amount,
-		},
+		Payer:   f.from,
+		Payee:   f.to,
+		Token:   tokenAddress,
+		Amount:  f.amount,
 		ChainId: chainID,
 		Mode:    f.mode,
 	}, nil

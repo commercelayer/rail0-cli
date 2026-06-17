@@ -90,12 +90,20 @@ Obtain a JWT via SIWE (Sign-In With Ethereum) and cache it in `~/.cache/rail0/to
 rail0 auth login -p 0xYourPrivateKey…
 ```
 
-#### `auth whoami`
+#### `auth status`
 
-Print the wallet address encoded in the cached JWT.
+Print the wallet address, account id, and expiry encoded in the cached JWT.
 
 ```sh
-rail0 auth whoami
+rail0 auth status
+```
+
+#### `auth logout`
+
+Remove the cached JWT.
+
+```sh
+rail0 auth logout
 ```
 
 ---
@@ -104,16 +112,18 @@ rail0 auth whoami
 
 #### `accounts wallets <account_id>`
 
-List all wallets registered to an account.
+List the account's wallet-token rows (one row per wallet/token pairing on a chain). Requires authentication.
 
 ```sh
 rail0 accounts wallets acct_abc123
-rail0 accounts wallets acct_abc123 --active true
+rail0 accounts wallets acct_abc123 --chain-id 5042002 --symbol USDC --active true
 ```
 
-| Flag | Description |
-|------|-------------|
-| `--active` | Filter by active flag (`true` or `false`) |
+| Flag | Short | Description |
+|------|-------|-------------|
+| `--chain-id` | — | Filter by chain id |
+| `--symbol` | `-s` | Filter by token symbol (e.g. `USDC`) |
+| `--active` | — | Filter by active flag (`true` or `false`) |
 
 ---
 
@@ -168,27 +178,11 @@ rail0 accounts delete-wallet acct_abc123 wlt_xyz789
 
 ---
 
-#### `accounts tokens <account_id> <wallet_id>`
-
-List the tokens accepted by a wallet. Each token includes the nested blockchain details.
-
-```sh
-rail0 accounts tokens acct_abc123 wlt_xyz789
-rail0 accounts tokens acct_abc123 wlt_xyz789 --symbol USDC
-```
-
-| Flag | Short | Description |
-|------|-------|-------------|
-| `--symbol` | `-s` | Filter by token symbol (e.g. `USDC`) |
-| `--active` | — | Filter by token active flag (`true` or `false`) |
-
----
-
 ### Chains
 
 #### `chains`
 
-List all supported blockchains. The `slug` field maps to `--chain` in `payments create`.
+List all supported blockchains. Use the `chain_id` field with `--chain-id` in `payments create`.
 
 ```sh
 rail0 chains
@@ -198,13 +192,56 @@ rail0 chains
 
 ### Tokens
 
-#### `tokens list`
+#### `tokens`
 
-List the flat token catalog (all tokens across all chains).
+List the token catalog. Filter by chain with `--chain-id`.
 
 ```sh
-rail0 tokens list
-rail0 tokens list --chain arc-testnet
+rail0 tokens
+rail0 tokens --chain-id 5042002
+```
+
+---
+
+### Webhooks
+
+Manage webhook subscriptions for the authenticated account. The shared secret used to verify delivery signatures is returned only once — on `create` and `rotate-secret`. All webhook commands require authentication.
+
+```sh
+rail0 webhooks list --topic payments.captured --active true
+rail0 webhooks get <webhook_id>
+rail0 webhooks create --name "capture hook" --callback-url https://example.com/hook --topic payments.captured
+rail0 webhooks update <webhook_id> --callback-url https://example.com/new
+rail0 webhooks enable <webhook_id>
+rail0 webhooks disable <webhook_id>
+rail0 webhooks rotate-secret <webhook_id>
+rail0 webhooks reset-circuit <webhook_id>
+rail0 webhooks event-callbacks <webhook_id> --status failed
+rail0 webhooks delete <webhook_id>
+```
+
+| Command | Description |
+|---------|-------------|
+| `list` | List webhooks (`--topic`, `--active`, `--circuit-state`, `--sort`) |
+| `get` | Fetch a single webhook |
+| `create` | Register a webhook (`--name`, `--callback-url`, `--topic`; returns shared secret) |
+| `update` | Patch `--name`, `--callback-url`, or `--topic` |
+| `enable` / `disable` | Toggle delivery |
+| `rotate-secret` | Issue a new shared secret (returned once) |
+| `reset-circuit` | Reset the delivery circuit breaker and re-enable |
+| `event-callbacks` | List delivery attempts (`--status`, `--sort`) |
+| `delete` | Remove a webhook |
+
+---
+
+### Health
+
+#### `health`
+
+Report gateway liveness/readiness, including database connectivity and active chain/contract counts.
+
+```sh
+rail0 health
 ```
 
 ---
@@ -219,21 +256,20 @@ Create a payment, sign the EIP-712 payload, and submit the payer's signature in 
 |------|-------|----------|---------|-------------|
 | `--from` | `-F` | yes | — | Payer wallet address (0x-prefixed) |
 | `--to` | `-T` | yes | — | Payee wallet address (0x-prefixed) |
-| `--token` | `-t` | yes | — | Token symbol as in `tokens list` (e.g. `USDC`) |
+| `--token` | `-t` | yes | — | Token symbol as in `tokens` (e.g. `USDC`) |
 | `--amount` | `-a` | yes | — | Amount in token base units (e.g. `1000000` for 1 USDC) |
-| `--chain` | `-c` | yes* | — | Chain slug (e.g. `arc-testnet`) — exclusive with `--chain-id` |
-| `--chain-id` | `-n` | yes* | — | EVM chain ID (e.g. `5042002`) — exclusive with `--chain` |
+| `--chain-id` | `-c` | yes | — | EVM chain ID as in `chains` (e.g. `5042002`) |
 | `--mode` | `-m` | no | `authorize` | `authorize` (escrow + capture) or `charge` (immediate) |
 | `--payment-file` | `-f` | no | — | JSON file with the full request body |
 | `--private-key` | `-p` | no* | — | Payer's key — creates and signs locally in one step |
 | `--signature` | `-s` | no* | — | Submit an externally-produced EIP-712 signature for an existing `<rail0Id>` |
 
-\* `--chain` or `--chain-id` required (mutually exclusive); one of `-p` or `-s` required (mutually exclusive)
+\* one of `-p` or `-s` required (mutually exclusive)
 
 ```sh
 # Payer with direct key access — create + sign in one step
 rail0 payments create \
-  -F 0xBuyer… -T 0xMerchant… -t USDC -a 1000000 -c arc-testnet \
+  -F 0xBuyer… -T 0xMerchant… -t USDC -a 1000000 -c 5042002 \
   -p 0xPayerKey…
 
 # Payer using MetaMask — submit externally-produced signature
@@ -374,7 +410,7 @@ export RAIL0_TOKEN=your_jwt_token
 
 # 1. Payer creates payment and signs EIP-712 locally
 RAIL0_ID=$(rail0 payments create \
-  -F 0xBuyer… -T 0xMerchant… -t USDC -a 1000000 -c arc-testnet \
+  -F 0xBuyer… -T 0xMerchant… -t USDC -a 1000000 -c 5042002 \
   -p 0xPayerKey… --json | jq -r .rail0_id)
 
 # 2. Payee authorizes (funds → escrow) and polls until confirmed
@@ -393,7 +429,7 @@ rail0 payments get "$RAIL0_ID"   # poll until payment=captured, capture:confirme
 ```sh
 # 1. Payer creates payment, gets signingPayload
 rail0 payments create \
-  -F 0xBuyer… -T 0xMerchant… -t USDC -a 1000000 -c arc-testnet \
+  -F 0xBuyer… -T 0xMerchant… -t USDC -a 1000000 -c 5042002 \
   --json
 # → note the rail0_id and signingPayload
 
@@ -417,7 +453,7 @@ rail0 payments get     <rail0Id>   # poll until captured
 
 ```sh
 RAIL0_ID=$(rail0 payments create \
-  -F 0xBuyer… -T 0xMerchant… -t USDC -a 1000000 -c arc-testnet -m charge \
+  -F 0xBuyer… -T 0xMerchant… -t USDC -a 1000000 -c 5042002 -m charge \
   -p 0xPayerKey… --json | jq -r .rail0_id)
 
 rail0 payments charge "$RAIL0_ID" -p 0xPayeeKey…

@@ -43,7 +43,7 @@ func init() {
 
 	cobra.OnInitialize(func() { ui.SetJSON(jsonOut) })
 
-	rootCmd.AddCommand(paymentsCmd, accountsCmd, chainsCmd, tokensCmd, authCmd)
+	rootCmd.AddCommand(paymentsCmd, accountsCmd, webhooksCmd, chainsCmd, tokensCmd, authCmd, healthCmd)
 }
 
 // newClient builds a RAIL0 API client.

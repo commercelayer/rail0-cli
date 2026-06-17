@@ -7,14 +7,26 @@ import (
 	rail0 "github.com/rail0/go-sdk"
 )
 
-// signEIP712FromCreate signs the EIP-3009 payload using the CreatePaymentResponse
-// returned directly by the create endpoint (no extra GET needed).
-func signEIP712FromCreate(resp *rail0.CreatePaymentResponse, mode string, privateKeyHex string) (string, error) {
+// signEIP712FromCreate signs the EIP-3009 payload using the Payment returned
+// directly by the create endpoint (no extra GET needed). The create response
+// carries the embedded signing_payload and rail0_contract needed to sign.
+func signEIP712FromCreate(p *rail0.Payment, mode string, privateKeyHex string) (string, error) {
+	if p.SigningPayload == nil {
+		return "", fmt.Errorf("create response did not include a signing_payload")
+	}
+	pc := rail0.PaymentConfig{
+		Amount:              string(p.Amount),
+		AuthorizationExpiry: p.AuthorizationExpiry,
+		Payee:               p.Payee,
+		Payer:               p.Payer,
+		RefundExpiry:        p.RefundExpiry,
+		Token:               p.Token,
+	}
 	return signPayload(
-		resp.Payment,
-		resp.SigningPayload,
-		resp.Rail0Contract,
-		string(resp.Payment.Amount),
+		pc,
+		*p.SigningPayload,
+		p.Rail0Contract,
+		string(p.Amount),
 		mode,
 		privateKeyHex,
 	)

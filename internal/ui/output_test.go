@@ -13,11 +13,11 @@ func TestPrintStyled(t *testing.T) {
 	}{
 		{
 			"chains (array of objects)",
-			`[{"chain_id":44787,"name":"Celo Sepolia","slug":"celo-sepolia","network_type":"testnet","explorer_url":"https://celo-alfajores.blockscout.com"},{"chain_id":5042002,"name":"Arc Testnet","slug":"arc-testnet","network_type":"testnet","explorer_url":""}]`,
+			`[{"chain_id":44787,"name":"Celo Sepolia","native_symbol":"CELO","network_type":"testnet","explorer_url":"https://celo-alfajores.blockscout.com"},{"chain_id":5042002,"name":"Arc Testnet","native_symbol":"ETH","network_type":"testnet","explorer_url":""}]`,
 		},
 		{
 			"tokens (array)",
-			`[{"chain_id":5042002,"chain_slug":"arc-testnet","symbol":"USDC","address":"0x3600000000000000000000000000000000000000","decimals":6}]`,
+			`[{"chain_id":5042002,"symbol":"USDC","address":"0x3600000000000000000000000000000000000000","decimals":6}]`,
 		},
 		{
 			"payment (single object)",

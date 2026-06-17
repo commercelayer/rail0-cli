@@ -17,14 +17,16 @@ var accountsCmd = &cobra.Command{
 // ── accounts wallets ──────────────────────────────────────────────────────────
 
 var accountsWalletsActive string
+var accountsWalletsChainID int
+var accountsWalletsSymbol string
 
 var accountsWalletsCmd = &cobra.Command{
 	Use:     "wallets <account_id>",
-	Short:   "List wallets for an account",
-	Example: `  rail0 accounts wallets acct_abc123`,
+	Short:   "List wallet-token rows for an account",
+	Example: `  rail0 accounts wallets acct_abc123 --chain-id 5042002 --symbol USDC`,
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		p := rail0.ListWalletsParams{}
+		p := rail0.ListWalletsParams{ChainID: accountsWalletsChainID, TokenSymbol: accountsWalletsSymbol}
 		if accountsWalletsActive != "" {
 			switch accountsWalletsActive {
 			case "true":
@@ -119,41 +121,13 @@ var accountsDeleteWalletCmd = &cobra.Command{
 	},
 }
 
-// ── accounts tokens ───────────────────────────────────────────────────────────
-
-var accountsTokensSymbol string
-var accountsTokensActive string
-
-var accountsTokensCmd = &cobra.Command{
-	Use:     "tokens <account_id> <wallet_id>",
-	Short:   "List tokens accepted by a wallet",
-	Example: `  rail0 accounts tokens acct_abc123 wlt_xyz789 --symbol USDC`,
-	Args:    cobra.ExactArgs(2),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		p := rail0.ListWalletTokensParams{Symbol: accountsTokensSymbol}
-		if accountsTokensActive != "" {
-			switch accountsTokensActive {
-			case "true":
-				t := true
-				p.Active = &t
-			case "false":
-				f := false
-				p.Active = &f
-			default:
-				return errors.New("--active must be 'true' or 'false'")
-			}
-		}
-		return ui.RunAPI(func() (any, error) {
-			return newClient().Wallets.Tokens(context.Background(), args[1], p)
-		})
-	},
-}
-
 // ── init ──────────────────────────────────────────────────────────────────────
 
 func init() {
 	// accounts wallets
 	accountsWalletsCmd.Flags().StringVar(&accountsWalletsActive, "active", "", "Filter by active flag ('true' or 'false')")
+	accountsWalletsCmd.Flags().IntVar(&accountsWalletsChainID, "chain-id", 0, "Filter by chain id")
+	accountsWalletsCmd.Flags().StringVarP(&accountsWalletsSymbol, "symbol", "s", "", "Filter by token symbol (e.g. USDC)")
 	accountsCmd.AddCommand(accountsWalletsCmd)
 
 	// accounts wallet
@@ -172,9 +146,4 @@ func init() {
 
 	// accounts delete-wallet
 	accountsCmd.AddCommand(accountsDeleteWalletCmd)
-
-	// accounts tokens
-	accountsTokensCmd.Flags().StringVarP(&accountsTokensSymbol, "symbol", "s", "", "Filter by token symbol (e.g. USDC)")
-	accountsTokensCmd.Flags().StringVar(&accountsTokensActive, "active", "", "Filter by token active flag ('true' or 'false')")
-	accountsCmd.AddCommand(accountsTokensCmd)
 }

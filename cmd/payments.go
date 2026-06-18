@@ -573,6 +573,60 @@ Signing modes (one required):
 	},
 }
 
+// ── payments dispute ───────────────────────────────────────────────────────
+
+var disputeReason string
+var closeDisputeReason string
+
+var paymentsDisputeCmd = &cobra.Command{
+	Use:   "dispute <rail0Id>",
+	Short: "Prepare a dispute transaction (payer-submitted, signal-only)",
+	Long: `Prepare the transaction that calls dispute() on the RAIL0 contract.
+
+Disputes are buyer-driven and signal-only: they move no money. Only the payer
+may dispute, while the refund window is open and the merchant holds captured
+funds. The returned unsigned transaction is for the payer to sign and broadcast
+directly — the gateway records the dispute when it sees the on-chain event.`,
+	Example: `  rail0 payments dispute 0xrail0Id… --reason 0x…`,
+	Args:    cobra.ExactArgs(1),
+	RunE: func(_ *cobra.Command, args []string) error {
+		client := newClient()
+		return ui.RunAPI(func() (any, error) {
+			if disputeReason != "" {
+				return client.Payments.DisputePrepare(context.Background(), args[0], disputeReason)
+			}
+			return client.Payments.DisputePrepare(context.Background(), args[0])
+		})
+	},
+}
+
+var paymentsDisputeCloseCmd = &cobra.Command{
+	Use:   "close <rail0Id>",
+	Short: "Prepare a close-dispute transaction (payer only)",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(_ *cobra.Command, args []string) error {
+		client := newClient()
+		return ui.RunAPI(func() (any, error) {
+			if closeDisputeReason != "" {
+				return client.Payments.CloseDisputePrepare(context.Background(), args[0], closeDisputeReason)
+			}
+			return client.Payments.CloseDisputePrepare(context.Background(), args[0])
+		})
+	},
+}
+
+var paymentsDisputesCmd = &cobra.Command{
+	Use:   "disputes <rail0Id>",
+	Short: "List a payment's dispute open/close history",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(_ *cobra.Command, args []string) error {
+		client := newClient()
+		return ui.RunAPI(func() (any, error) {
+			return client.Payments.Disputes(context.Background(), args[0])
+		})
+	},
+}
+
 // ── init ──────────────────────────────────────────────────────────────────────
 
 func init() {
@@ -630,4 +684,11 @@ func init() {
 	_ = paymentsRefundCmd.MarkFlagRequired("amount")
 	addSigningFlags(paymentsRefundCmd, &refundPrivateKey, &refundPrepare)
 	paymentsCmd.AddCommand(paymentsRefundCmd)
+
+	// payments dispute / dispute close / disputes
+	paymentsDisputeCmd.Flags().StringVar(&disputeReason, "reason", "", "bytes32 reason code (0x…); defaults to zero")
+	paymentsDisputeCloseCmd.Flags().StringVar(&closeDisputeReason, "reason", "", "bytes32 reason code (0x…); defaults to zero")
+	paymentsDisputeCmd.AddCommand(paymentsDisputeCloseCmd)
+	paymentsCmd.AddCommand(paymentsDisputeCmd)
+	paymentsCmd.AddCommand(paymentsDisputesCmd)
 }

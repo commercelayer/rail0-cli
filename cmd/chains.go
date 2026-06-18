@@ -9,7 +9,7 @@ import (
 
 var chainsCmd = &cobra.Command{
 	Use:     "chains",
-	Short:   "List supported blockchains (slugs used in --chain)",
+	Short:   "List supported blockchains (chain IDs used in --chain-id)",
 	Example: `  rail0 chains`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return ui.RunAPI(func() (any, error) {

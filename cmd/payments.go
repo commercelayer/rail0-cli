@@ -68,7 +68,13 @@ Status values:
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return ui.RunAPI(func() (any, error) {
-			return newClient().Payments.Get(context.Background(), args[0])
+			ctx := context.Background()
+			client := newClient()
+			id, err := resolvePaymentID(ctx, client, args[0])
+			if err != nil {
+				return nil, err
+			}
+			return client.Payments.Get(ctx, id)
 		})
 	},
 }
@@ -105,8 +111,14 @@ var paymentsTransactionsCmd = &cobra.Command{
   rail0 payments transactions 0xabc123… --sort -submitted_at`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return ui.RunAPI(func() (any, error) {
+			ctx := context.Background()
+			client := newClient()
+			id, err := resolvePaymentID(ctx, client, args[0])
+			if err != nil {
+				return nil, err
+			}
 			p := rail0.ListTransactionsParams{Sort: paymentsTransactionsSort}
-			return newClient().Payments.Transactions(context.Background(), args[0], p)
+			return client.Payments.Transactions(ctx, id, p)
 		})
 	},
 }
@@ -241,9 +253,12 @@ Signing modes (one required):
 		if err := requireSigningMode(authorizePrivateKey, authorizePrepare); err != nil {
 			return err
 		}
-		rail0Id := args[0]
 		client := newClient()
 		ctx := context.Background()
+		rail0Id, err := resolvePaymentID(ctx, client, args[0])
+		if err != nil {
+			return err
+		}
 		prep, err := client.Payments.AuthorizePrepare(ctx, rail0Id)
 		if err != nil {
 			return err
@@ -297,9 +312,12 @@ Signing modes (one required):
 		if err := requireSigningMode(chargePrivateKey, chargePrepare); err != nil {
 			return err
 		}
-		rail0Id := args[0]
 		client := newClient()
 		ctx := context.Background()
+		rail0Id, err := resolvePaymentID(ctx, client, args[0])
+		if err != nil {
+			return err
+		}
 		prep, err := client.Payments.ChargePrepare(ctx, rail0Id)
 		if err != nil {
 			return err
@@ -354,9 +372,12 @@ Signing modes (one required):
 		if err := requireSigningMode(capturePrivateKey, capturePrepare); err != nil {
 			return err
 		}
-		rail0Id := args[0]
 		client := newClient()
 		ctx := context.Background()
+		rail0Id, err := resolvePaymentID(ctx, client, args[0])
+		if err != nil {
+			return err
+		}
 		prep, err := client.Payments.CapturePrepare(ctx, rail0Id, captureAmount)
 		if err != nil {
 			return err
@@ -407,9 +428,12 @@ Signing modes (one required):
 		if err := requireSigningMode(voidPrivateKey, voidPrepare); err != nil {
 			return err
 		}
-		rail0Id := args[0]
 		client := newClient()
 		ctx := context.Background()
+		rail0Id, err := resolvePaymentID(ctx, client, args[0])
+		if err != nil {
+			return err
+		}
 		prep, err := client.Payments.VoidPrepare(ctx, rail0Id)
 		if err != nil {
 			return err
@@ -467,9 +491,12 @@ Signing modes (one required):
 		if err := requireSigningMode(releasePrivateKey, releasePrepare); err != nil {
 			return err
 		}
-		rail0Id := args[0]
 		client := newClient()
 		ctx := context.Background()
+		rail0Id, err := resolvePaymentID(ctx, client, args[0])
+		if err != nil {
+			return err
+		}
 		prep, err := client.Payments.ReleasePrepare(ctx, rail0Id, releaseCallerAddress)
 		if err != nil {
 			return err
@@ -527,9 +554,12 @@ Signing modes (one required):
 		if err := requireSigningMode(refundPrivateKey, refundPrepare); err != nil {
 			return err
 		}
-		rail0Id := args[0]
 		client := newClient()
 		ctx := context.Background()
+		rail0Id, err := resolvePaymentID(ctx, client, args[0])
+		if err != nil {
+			return err
+		}
 		// Phase 1: get the EIP-712 ReceiveWithAuthorization signing payload.
 		// Omitting the signature returns a Transaction whose SigningPayload is set.
 		phase1, err := client.Payments.RefundPrepare(ctx, rail0Id, rail0.PrepareRequest{Amount: refundAmount})

@@ -606,41 +606,84 @@ Signing modes (one required):
 // ── payments dispute ───────────────────────────────────────────────────────
 
 var disputeReason string
+var disputePrivateKey string
+var disputePrepare bool
 var closeDisputeReason string
+var closeDisputePrivateKey string
+var closeDisputePrepare bool
 
 var paymentsDisputeCmd = &cobra.Command{
 	Use:   "dispute <rail0Id>",
-	Short: "Prepare a dispute transaction (payer-submitted, signal-only)",
-	Long: `Prepare the transaction that calls dispute() on the RAIL0 contract.
+	Short: "Open a dispute (payer-submitted, signal-only): prepare, sign, broadcast",
+	Long: `Prepare the transaction that calls dispute() on the RAIL0 contract, then
+sign and submit it like any other operation (the gateway broadcasts it).
 
-Disputes are buyer-driven and signal-only: they move no money. Only the payer
-may dispute, while the refund window is open and the merchant holds captured
-funds. The returned unsigned transaction is for the payer to sign and broadcast
-directly — the gateway records the dispute when it sees the on-chain event.`,
-	Example: `  rail0 payments dispute 0xrail0Id… --reason 0x…`,
+Disputes are payer-driven and signal-only: they move no money. Only the payer
+may dispute, while the refund window is open and the merchant holds the funds.
+
+Signing modes (one required):
+
+  --private-key (-p)   Sign locally and broadcast in one step (payer key).
+  --prepare            Return the unsigned transaction only, for external signing.`,
+	Example: `  rail0 payments dispute 0xrail0Id… -p 0xPayerKey… --reason 0x…`,
 	Args:    cobra.ExactArgs(1),
 	RunE: func(_ *cobra.Command, args []string) error {
+		if err := requireSigningMode(disputePrivateKey, disputePrepare); err != nil {
+			return err
+		}
 		client := newClient()
+		ctx := context.Background()
+		rail0Id, err := resolvePaymentID(ctx, client, args[0])
+		if err != nil {
+			return err
+		}
+		prep, err := client.Payments.DisputePrepare(ctx, rail0Id, disputeReason)
+		if err != nil {
+			return err
+		}
+		if disputePrepare {
+			return ui.RunAPI(func() (any, error) { return prep, nil })
+		}
+		signedTx, err := signTx(prep.UnsignedTransaction, disputePrivateKey)
+		if err != nil {
+			return fmt.Errorf("sign: %w", err)
+		}
 		return ui.RunAPI(func() (any, error) {
-			if disputeReason != "" {
-				return client.Payments.DisputePrepare(context.Background(), args[0], disputeReason)
-			}
-			return client.Payments.DisputePrepare(context.Background(), args[0])
+			return client.Payments.Dispute(ctx, rail0Id,
+				rail0.SubmitTransactionRequest{SignedTransaction: signedTx})
 		})
 	},
 }
 
 var paymentsDisputeCloseCmd = &cobra.Command{
 	Use:   "close <rail0Id>",
-	Short: "Prepare a close-dispute transaction (payer only)",
+	Short: "Close a dispute (payer only): prepare, sign, broadcast",
 	Args:  cobra.ExactArgs(1),
+	Example: `  rail0 payments dispute close 0xrail0Id… -p 0xPayerKey…`,
 	RunE: func(_ *cobra.Command, args []string) error {
+		if err := requireSigningMode(closeDisputePrivateKey, closeDisputePrepare); err != nil {
+			return err
+		}
 		client := newClient()
+		ctx := context.Background()
+		rail0Id, err := resolvePaymentID(ctx, client, args[0])
+		if err != nil {
+			return err
+		}
+		prep, err := client.Payments.CloseDisputePrepare(ctx, rail0Id, closeDisputeReason)
+		if err != nil {
+			return err
+		}
+		if closeDisputePrepare {
+			return ui.RunAPI(func() (any, error) { return prep, nil })
+		}
+		signedTx, err := signTx(prep.UnsignedTransaction, closeDisputePrivateKey)
+		if err != nil {
+			return fmt.Errorf("sign: %w", err)
+		}
 		return ui.RunAPI(func() (any, error) {
-			if closeDisputeReason != "" {
-				return client.Payments.CloseDisputePrepare(context.Background(), args[0], closeDisputeReason)
-			}
-			return client.Payments.CloseDisputePrepare(context.Background(), args[0])
+			return client.Payments.CloseDispute(ctx, rail0Id,
+				rail0.SubmitTransactionRequest{SignedTransaction: signedTx})
 		})
 	},
 }
@@ -716,7 +759,9 @@ func init() {
 	paymentsCmd.AddCommand(paymentsRefundCmd)
 
 	// payments dispute / dispute close / disputes
+	addSigningFlags(paymentsDisputeCmd, &disputePrivateKey, &disputePrepare)
 	paymentsDisputeCmd.Flags().StringVar(&disputeReason, "reason", "", "bytes32 reason code (0x…); defaults to zero")
+	addSigningFlags(paymentsDisputeCloseCmd, &closeDisputePrivateKey, &closeDisputePrepare)
 	paymentsDisputeCloseCmd.Flags().StringVar(&closeDisputeReason, "reason", "", "bytes32 reason code (0x…); defaults to zero")
 	paymentsDisputeCmd.AddCommand(paymentsDisputeCloseCmd)
 	paymentsCmd.AddCommand(paymentsDisputeCmd)

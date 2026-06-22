@@ -237,7 +237,7 @@ Signing modes (one required):
                        then broadcast with 'payments submit'.`,
 	Example: `  # 1. Payer creates the payment and receives signingPayload
   rail0 payments create --from 0xBuyer… --to 0xMerchant… \
-    --token 0x3600… --amount 1000000 --chain-id 5042002
+    --token 0x3600… --amount 1.00 --chain-id 5042002
 
   # 2. Payer signs and submits the EIP-712 signature
   rail0 payments sign <rail0Id> --signature 0x1a2b…
@@ -362,10 +362,10 @@ Signing modes (one required):
   --prepare            Return the unsigned transaction for external signing,
                        then broadcast with 'payments submit'.`,
 	Example: `  # Direct key — full capture
-  rail0 payments capture 0xrail0Id… --amount 100000000 -p 0xPayeeKey…
+  rail0 payments capture 0xrail0Id… --amount 1.00 -p 0xPayeeKey…
 
   # External wallet — partial capture
-  rail0 payments capture 0xrail0Id… --amount 50000000 --prepare
+  rail0 payments capture 0xrail0Id… --amount 0.50 --prepare
   rail0 payments submit  0xrail0Id… --signed-tx 0x02f8…`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -544,10 +544,10 @@ Signing modes (one required):
   --prepare            Return the unsigned transaction for external signing,
                        then broadcast with 'payments submit'.`,
 	Example: `  # Direct key — full refund
-  rail0 payments refund 0xrail0Id… --amount 100000000 -p 0xPayeeKey…
+  rail0 payments refund 0xrail0Id… --amount 1.00 -p 0xPayeeKey…
 
   # External wallet — partial refund
-  rail0 payments refund  0xrail0Id… --amount 25000000 --prepare
+  rail0 payments refund  0xrail0Id… --amount 0.25 --prepare
   rail0 payments submit  0xrail0Id… --signed-tx 0x02f8…`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -693,7 +693,7 @@ func init() {
 
 	// payments capture
 	paymentsCaptureCmd.Flags().StringVarP(&captureAmount, "amount", "a", "",
-		"Amount to capture in token base units (> 0, ≤ capturableAmount)")
+		"Amount to capture as a decimal in token units (e.g. 1.00); > 0 and ≤ capturable")
 	_ = paymentsCaptureCmd.MarkFlagRequired("amount")
 	addSigningFlags(paymentsCaptureCmd, &capturePrivateKey, &capturePrepare)
 	paymentsCmd.AddCommand(paymentsCaptureCmd)
@@ -710,7 +710,7 @@ func init() {
 
 	// payments refund
 	paymentsRefundCmd.Flags().StringVarP(&refundAmount, "amount", "a", "",
-		"Amount to refund in token base units (> 0, ≤ refundableAmount)")
+		"Amount to refund as a decimal in token units (e.g. 1.00); > 0 and ≤ refundable")
 	_ = paymentsRefundCmd.MarkFlagRequired("amount")
 	addSigningFlags(paymentsRefundCmd, &refundPrivateKey, &refundPrepare)
 	paymentsCmd.AddCommand(paymentsRefundCmd)

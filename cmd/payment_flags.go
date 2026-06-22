@@ -38,7 +38,7 @@ func (f *createPaymentFlags) addTo(cmd *cobra.Command) {
 	cmd.Flags().StringVarP(&f.token, "token", "t", "",
 		"Token symbol as listed in GET /tokens (e.g. USDC)")
 	cmd.Flags().StringVarP(&f.amount, "amount", "a", "",
-		"Amount to pay in token base units (e.g. '1000000' for 1 USDC)")
+		"Amount as a decimal in token units (e.g. '1.00' for 1 USDC); the gateway converts to base units")
 	cmd.Flags().IntVarP(&f.chainID, "chain-id", "c", 0,
 		"EVM chain ID as listed in GET /blockchains (e.g. 5042002)")
 	cmd.Flags().StringVarP(&f.mode, "mode", "m", "authorize",
@@ -97,7 +97,7 @@ func (f *createPaymentFlags) buildInteractive() (rail0.CreatePaymentRequest, err
 				Value(&f.token),
 			huh.NewInput().
 				Title("Amount").
-				Description("Amount in token base units (e.g. 1000000 = 1 USDC with 6 decimals)").
+				Description("Amount as a decimal in token units (e.g. 1.00 = 1 USDC); the gateway converts to base units").
 				Value(&f.amount),
 		),
 		huh.NewGroup(

@@ -74,12 +74,13 @@ The JWT session token is **not** stored in the config file — it stays in the O
 
 ### Payer — `payments create`
 
-The payer creates the payment and signs the EIP-712 payload. Two modes:
+The payer creates the payment and signs the EIP-712 payload with their key
+(`--private-key` / `-p`, or `--account` / `-k`), submitting the signature in one
+step:
 
-| Mode | Command | Description |
-|------|---------|-------------|
-| Direct key | `payments create … -p 0xPayerKey…` | Creates the payment, signs locally, submits signature in one step |
-| External wallet | `payments create … -s 0x1a2b…` with `<rail0Id>` | Submit a signature produced by MetaMask / `eth_signTypedData_v4` |
+```sh
+rail0 payments create -F 0xBuyer… -T 0xMerchant… -t USDC -a 10.50 -c 5042002 -p 0xPayerKey…
+```
 
 ### Payee — action commands
 
@@ -297,30 +298,26 @@ rail0 health
 
 #### `payments create`
 
-Create a payment, sign the EIP-712 payload, and submit the payer's signature in one step.
+Create a payment, sign the EIP-712 payload with the payer's key, and submit the signature in one step.
 
 | Flag | Short | Required | Default | Description |
 |------|-------|----------|---------|-------------|
 | `--from` | `-F` | yes | — | Payer wallet address (0x-prefixed) |
 | `--to` | `-T` | yes | — | Payee wallet address (0x-prefixed) |
 | `--token` | `-t` | yes | — | Token symbol as in `tokens` (e.g. `USDC`) |
-| `--amount` | `-a` | yes | — | Amount in token base units (e.g. `1000000` for 1 USDC) |
+| `--amount` | `-a` | yes | — | Amount in token units (e.g. `10.50`) |
 | `--chain-id` | `-c` | yes | — | EVM chain ID as in `chains` (e.g. `5042002`) |
 | `--mode` | `-m` | no | `authorize` | `authorize` (escrow + capture) or `charge` (immediate) |
 | `--payment-file` | `-f` | no | — | JSON file with the full request body |
-| `--private-key` | `-p` | no* | — | Payer's key — creates and signs locally in one step |
-| `--signature` | `-s` | no* | — | Submit an externally-produced EIP-712 signature for an existing `<rail0Id>` |
+| `--private-key` | `-p` | yes\* | — | Payer's key — creates and signs locally in one step |
+| `--account` | `-k` | yes\* | — | Name of a key stored via `rail0 keys` to sign with |
 
-\* one of `-p` or `-s` required (mutually exclusive)
+\* one of `-p` or `-k` is required.
 
 ```sh
-# Payer with direct key access — create + sign in one step
 rail0 payments create \
-  -F 0xBuyer… -T 0xMerchant… -t USDC -a 1000000 -c 5042002 \
+  -F 0xBuyer… -T 0xMerchant… -t USDC -a 10.50 -c 5042002 \
   -p 0xPayerKey…
-
-# Payer using MetaMask — submit externally-produced signature
-rail0 payments create <rail0Id> -s 0x1a2b…(130 hex chars)
 ```
 
 If required flags are missing and stdin is a TTY, an interactive form launches automatically.
@@ -462,30 +459,6 @@ rail0 payments get "$RAIL0_ID"   # poll until payment=authorized, authorize:conf
 # 3. Payee captures
 rail0 payments capture "$RAIL0_ID" -a 1000000 -p 0xPayeeKey…
 rail0 payments get "$RAIL0_ID"   # poll until payment=captured, capture:confirmed
-```
-
----
-
-### Payer signs externally (MetaMask)
-
-The payer's EIP-712 signature can be produced by an external wallet and submitted
-separately — the payee's on-chain operations remain atomic (`-p`).
-
-```sh
-# 1. Payer creates payment, gets signingPayload
-rail0 payments create \
-  -F 0xBuyer… -T 0xMerchant… -t USDC -a 1000000 -c 5042002 \
-  --json
-# → note the rail0_id and signingPayload
-
-# 2. Payer signs with MetaMask (eth_signTypedData_v4) → SIGNATURE, then submits it
-rail0 payments create <rail0Id> -s "$SIGNATURE"
-
-# 3. Payee authorizes and captures with a direct key
-rail0 payments authorize <rail0Id> -p 0xPayeeKey…
-rail0 payments get       <rail0Id>   # poll until authorized
-rail0 payments capture   <rail0Id> -a 1000000 -p 0xPayeeKey…
-rail0 payments get       <rail0Id>   # poll until captured
 ```
 
 ---

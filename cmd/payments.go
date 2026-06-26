@@ -115,50 +115,27 @@ var paymentsTransactionsCmd = &cobra.Command{
 // ── payments sign ─────────────────────────────────────────────────────────────
 
 var signPrivateKey string
-var signSignature string
 var signCreateFlags createPaymentFlags
 
 var paymentsSignCmd = &cobra.Command{
 	Use:   "create",
-	Short: "Create a payment and sign it with the payer's key (or submit an external signature)",
-	Long: `Create a RAIL0 payment and sign the EIP-3009 payload with the payer's private
-key in one step. The API stores the signature; the payee can then authorize.
-
-  --private-key (-p)   Create the payment, sign the signingPayload locally,
-                       and submit the signature in one step.
-
-For external wallets (MetaMask): use 'payments get' to fetch the signingPayload,
-sign it with eth_signTypedData_v4, then submit the result:
-
-  rail0 payments create <rail0Id> --signature 0x1a2b…`,
-	Example: `  # Payer with direct key access — create + sign in one step
-  rail0 payments create \
-    -F 0xBuyer… -T 0xMerchant… -t 0x3600… -a 1000000 -c 5042002 \
-    -p 0xPayerKey…
-
-  # Payer using MetaMask — submit externally-produced signature
-  rail0 payments create <rail0Id> --signature 0x1a2b…(130 hex chars)`,
-	Args: cobra.RangeArgs(0, 1),
+	Short: "Create a payment and sign it with the payer's key",
+	Long: `Create a RAIL0 payment and sign the EIP-3009 payload with the payer's key in
+one step (--private-key / -p, or --account / -k). The API stores the signature;
+the payee can then authorize.`,
+	Example: `  rail0 payments create \
+    -F 0xBuyer… -T 0xMerchant… -t USDC -a 10.50 -c 5042002 \
+    -p 0xPayerKey…`,
+	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := context.Background()
 		client := newClient()
 
-		if len(args) == 1 {
-			// Submit-signature mode: payer signed externally (MetaMask).
-			if signSignature == "" {
-				return errors.New("provide --signature when passing a rail0Id")
-			}
-			return ui.RunAPI(func() (any, error) {
-				return client.Payments.Sign(ctx, args[0],
-					rail0.PayerSignatureRequest{Signature: signSignature})
-			})
-		}
-
-		// Create + sign mode: payer has direct key access (raw key, --account, or
-		// a profile/env default).
+		// Create + sign: payer signs the EIP-712 payload locally with the key
+		// (raw key, --account, or RAIL0_PRIVATE_KEY).
 		signingKey, err := resolveSigningKey(signPrivateKey, signingAccount)
 		if err != nil {
-			return errors.New("provide --private-key (-p) or --account (-k) to sign locally, or pass <rail0Id> --signature for an externally-produced signature")
+			return errors.New("provide --private-key (-p) or --account (-k) to create and sign the payment")
 		}
 		req, err := signCreateFlags.build()
 		if err != nil {
@@ -650,10 +627,6 @@ func init() {
 	_ = paymentsSignCmd.Flags().MarkHidden("pk")
 	paymentsSignCmd.Flags().StringVarP(&signingAccount, "account", "k", "",
 		"Name of a key stored via 'rail0 keys' to sign with (instead of --private-key)")
-	paymentsSignCmd.Flags().StringVarP(&signSignature, "signature", "s", "",
-		"65-byte EIP-712 signature (0x-prefixed 130-char hex) — used with <rail0Id> for external signing")
-	paymentsSignCmd.MarkFlagsMutuallyExclusive("private-key", "signature")
-	paymentsSignCmd.MarkFlagsMutuallyExclusive("pk", "signature")
 	paymentsCmd.AddCommand(paymentsSignCmd)
 
 	// payments get

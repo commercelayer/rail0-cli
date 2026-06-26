@@ -11,8 +11,9 @@ import (
 
 // walletsCmd manages the logged-in account's wallets. The account id is taken
 // from the session (JWT), never passed as an argument — run bare to list; the
-// verbs below act on a single wallet. A wallet is named by its id, its 0x
-// address (unique per account), or an @alias.
+// verbs below act on a single wallet, named by its id or its 0x address (the
+// wallet's own identity; unique per account). Address-book @aliases are for
+// external addresses in `payments`, not for your own wallets.
 
 var walletsActive string
 var walletsChainID int
@@ -24,10 +25,10 @@ var walletsCmd = &cobra.Command{
 	Long: `List and manage the wallets of the logged-in account.
 
 The account is taken from the login session — run 'rail0 auth login' first.
-Run bare to list; the verbs below act on one wallet, named by id, 0x address
-(unique per account), or @alias.`,
+Run bare to list; the verbs below act on one wallet, named by its id or 0x
+address (unique per account).`,
 	Example: `  rail0 wallets --chain-id 5042002 --symbol USDC
-  rail0 wallets get @payee
+  rail0 wallets get 0xABCD…
   rail0 wallets create --address 0xABCD…`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -58,20 +59,16 @@ Run bare to list; the verbs below act on one wallet, named by id, 0x address
 
 var walletsGetCmd = &cobra.Command{
 	Use:     "get <wallet>",
-	Short:   "Fetch a single wallet (by id, 0x address, or @alias)",
-	Example: "  rail0 wallets get 0xABCD…\n  rail0 wallets get @payee",
+	Short:   "Fetch a single wallet (by id or 0x address)",
+	Example: `  rail0 wallets get 0xABCD…`,
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		account, err := currentAccountID()
 		if err != nil {
 			return err
 		}
-		wallet, err := resolveAlias(args[0])
-		if err != nil {
-			return err
-		}
 		return ui.RunAPI(func() (any, error) {
-			return newClient().Accounts.GetWallet(context.Background(), account, wallet)
+			return newClient().Accounts.GetWallet(context.Background(), account, args[0])
 		})
 	},
 }
@@ -91,11 +88,7 @@ var walletsCreateCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		addr, err := resolveAlias(createWalletAddress)
-		if err != nil {
-			return err
-		}
-		req := rail0.CreateWalletRequest{Address: addr, Label: createWalletLabel}
+		req := rail0.CreateWalletRequest{Address: createWalletAddress, Label: createWalletLabel}
 		return ui.RunAPI(func() (any, error) {
 			return newClient().Accounts.CreateWallet(context.Background(), account, req)
 		})
@@ -109,18 +102,15 @@ var updateWalletActive string
 
 var walletsUpdateCmd = &cobra.Command{
 	Use:     "update <wallet>",
-	Short:   "Update label or active status on a wallet (by id, 0x address, or @alias)",
-	Example: `  rail0 wallets update @payee --label "New label" --active true`,
+	Short:   "Update label or active status on a wallet (by id or 0x address)",
+	Example: `  rail0 wallets update 0xABCD… --label "New label" --active true`,
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		account, err := currentAccountID()
 		if err != nil {
 			return err
 		}
-		wallet, err := resolveAlias(args[0])
-		if err != nil {
-			return err
-		}
+		wallet := args[0]
 		req := rail0.UpdateWalletRequest{Label: updateWalletLabel}
 		if updateWalletActive != "" {
 			switch updateWalletActive {
@@ -144,20 +134,16 @@ var walletsUpdateCmd = &cobra.Command{
 
 var walletsDeleteCmd = &cobra.Command{
 	Use:     "delete <wallet>",
-	Short:   "Remove a wallet from the account (by id, 0x address, or @alias)",
-	Example: `  rail0 wallets delete @payee`,
+	Short:   "Remove a wallet from the account (by id or 0x address)",
+	Example: `  rail0 wallets delete 0xABCD…`,
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		account, err := currentAccountID()
 		if err != nil {
 			return err
 		}
-		wallet, err := resolveAlias(args[0])
-		if err != nil {
-			return err
-		}
 		return ui.RunAPI(func() (any, error) {
-			return nil, newClient().Accounts.DeleteWallet(context.Background(), account, wallet)
+			return nil, newClient().Accounts.DeleteWallet(context.Background(), account, args[0])
 		})
 	},
 }
@@ -169,26 +155,22 @@ var balancesSymbol string
 
 var walletsBalancesCmd = &cobra.Command{
 	Use:   "balances <wallet>",
-	Short: "Read a wallet's live on-chain balances (by id, 0x address, or @alias)",
+	Short: "Read a wallet's live on-chain balances (by id or 0x address)",
 	Long: `Read a wallet's live on-chain balances across the configured chains.
 
 Each chain reports the native gas-token balance and the active token balances,
 or an error if that chain's RPC was unreachable (reported per chain, so one dead
 RPC never hides the others). Use --chain-id / --symbol to narrow the result.`,
-	Example: "  rail0 wallets balances @payee\n  rail0 wallets balances 0xABCD… --chain-id 84532 --symbol USDC",
+	Example: `  rail0 wallets balances 0xABCD… --chain-id 84532 --symbol USDC`,
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		account, err := currentAccountID()
 		if err != nil {
 			return err
 		}
-		wallet, err := resolveAlias(args[0])
-		if err != nil {
-			return err
-		}
 		p := rail0.WalletBalancesParams{ChainID: balancesChainID, TokenSymbol: balancesSymbol}
 		return ui.RunAPI(func() (any, error) {
-			return newClient().Accounts.Balances(context.Background(), account, wallet, p)
+			return newClient().Accounts.Balances(context.Background(), account, args[0], p)
 		})
 	},
 }
@@ -202,7 +184,7 @@ func init() {
 	walletsCmd.Flags().StringVarP(&walletsSymbol, "symbol", "s", "", "Filter by token symbol (e.g. USDC)")
 
 	// wallets create
-	walletsCreateCmd.Flags().StringVarP(&createWalletAddress, "address", "A", "", "EVM wallet address (0x-prefixed hex, or @alias)")
+	walletsCreateCmd.Flags().StringVarP(&createWalletAddress, "address", "A", "", "EVM wallet address (0x-prefixed hex)")
 	_ = walletsCreateCmd.MarkFlagRequired("address")
 	walletsCreateCmd.Flags().StringVarP(&createWalletLabel, "label", "l", "", "Human-readable wallet label")
 

@@ -125,7 +125,7 @@ rail0 auth logout
 
 ### Wallets
 
-`wallets` manages the **logged-in account's** wallets — the account is taken from the session (`auth login`), never passed as an argument; with no session the command errors. Run bare to list; the verbs act on one wallet, named by id, **0x address** (unique per account), or `@alias`.
+`wallets` manages the **logged-in account's** wallets — the account is taken from the session (`auth login`), never passed as an argument; with no session the command errors. Run bare to list; the verbs act on one wallet, named by its id or **0x address** (the wallet's own identity, unique per account). Address-book `@aliases` are for external addresses in `payments`, not for your own wallets.
 
 #### `wallets` — list
 
@@ -144,7 +144,7 @@ rail0 wallets --chain-id 5042002 --symbol USDC --active true
 
 ```sh
 rail0 wallets get 0xABCD…
-rail0 wallets get @payee
+rail0 wallets get <wallet_uuid>
 ```
 
 #### `wallets create`
@@ -157,13 +157,13 @@ rail0 wallets create --address 0xABCD… --label "Treasury"
 
 | Flag | Short | Required | Description |
 |------|-------|----------|-------------|
-| `--address` | `-A` | yes | EVM wallet address (0x-prefixed, or `@alias`) |
+| `--address` | `-A` | yes | EVM wallet address (0x-prefixed) |
 | `--label` | `-l` | no | Human-readable label |
 
 #### `wallets update <wallet>`
 
 ```sh
-rail0 wallets update @payee --label "New label" --active false
+rail0 wallets update 0xABCD… --label "New label" --active false
 ```
 
 | Flag | Short | Description |
@@ -174,7 +174,7 @@ rail0 wallets update @payee --label "New label" --active false
 #### `wallets delete <wallet>`
 
 ```sh
-rail0 wallets delete @payee
+rail0 wallets delete 0xABCD…
 ```
 
 #### `wallets balances <wallet>`
@@ -182,7 +182,6 @@ rail0 wallets delete @payee
 Read a wallet's live on-chain balances across the configured chains. Each chain reports the native gas-token balance and the active token balances, or an error if that chain's RPC was unreachable (reported per chain, so one dead RPC never hides the others).
 
 ```sh
-rail0 wallets balances @payee
 rail0 wallets balances 0xABCD… --chain-id 84532 --symbol USDC
 ```
 

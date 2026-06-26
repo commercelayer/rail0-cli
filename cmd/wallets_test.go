@@ -23,7 +23,7 @@ func TestWalletsCommandTree(t *testing.T) {
 	// no account id.
 	for _, verb := range []string{"get", "update", "delete", "balances"} {
 		sub, _, _ := walletsCmd.Find([]string{verb})
-		if err := sub.Args(sub, []string{"@payee"}); err != nil {
+		if err := sub.Args(sub, []string{"0xabc"}); err != nil {
 			t.Errorf("wallets %s should accept 1 arg, got %v", verb, err)
 		}
 		if err := sub.Args(sub, []string{"a", "b"}); err == nil {

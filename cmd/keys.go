@@ -13,16 +13,34 @@ import (
 	"golang.org/x/term"
 )
 
+// keysCmd lists the stored signing accounts when run bare, and holds the
+// import/address/rm verbs.
 var keysCmd = &cobra.Command{
 	Use:   "keys",
-	Short: "Manage signing keys stored in the OS keychain",
+	Short: "Signing keys in the OS keychain — list them, or manage with import/address/rm",
 	Long: `Store signing private keys in the OS keychain (macOS Keychain, Linux Secret
 Service, or Windows Credential Manager) and reference them by name with
 --account (-k) on any signing command — so the raw key never appears in your
 shell history.
 
+Run bare to list the stored accounts (names + derived addresses, never keys).
 Only the derived address is recorded in the config file; the private key itself
 lives in the keychain.`,
+	Example: `  rail0 keys
+  rail0 keys import payee
+  rail0 keys rm payee`,
+	Args: cobra.NoArgs,
+	RunE: func(_ *cobra.Command, _ []string) error {
+		cfg, err := config.Load()
+		if err != nil {
+			return err
+		}
+		rows := make([]map[string]any, 0, len(cfg.Keys))
+		for name, addr := range cfg.Keys {
+			rows = append(rows, map[string]any{"account": name, "address": addr})
+		}
+		return ui.RunAPI(func() (any, error) { return rows, nil })
+	},
 }
 
 var keysFromStdin bool
@@ -63,24 +81,6 @@ pipe it in for scripted setup.`,
 		return ui.RunAPI(func() (any, error) {
 			return map[string]any{"status": "stored", "account": name, "address": addr}, nil
 		})
-	},
-}
-
-var keysListCmd = &cobra.Command{
-	Use:     "ls",
-	Short:   "List stored signing accounts (names + addresses, never keys)",
-	Args:    cobra.NoArgs,
-	Aliases: []string{"list"},
-	RunE: func(_ *cobra.Command, _ []string) error {
-		cfg, err := config.Load()
-		if err != nil {
-			return err
-		}
-		rows := make([]map[string]any, 0, len(cfg.Keys))
-		for name, addr := range cfg.Keys {
-			rows = append(rows, map[string]any{"account": name, "address": addr})
-		}
-		return ui.RunAPI(func() (any, error) { return rows, nil })
 	},
 }
 
@@ -160,5 +160,5 @@ func addressFromKey(privateKeyHex string) (string, error) {
 
 func init() {
 	keysImportCmd.Flags().BoolVar(&keysFromStdin, "from-stdin", false, "Read the private key from stdin instead of a hidden prompt")
-	keysCmd.AddCommand(keysImportCmd, keysListCmd, keysAddressCmd, keysRemoveCmd)
+	keysCmd.AddCommand(keysImportCmd, keysAddressCmd, keysRemoveCmd)
 }

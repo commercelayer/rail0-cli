@@ -14,17 +14,19 @@ var accountsCmd = &cobra.Command{
 	Short: "Account wallet management",
 }
 
-// ── accounts wallets ──────────────────────────────────────────────────────────
+// ── accounts wallets (list + subcommand group) ─────────────────────────────────
+// Bare `accounts wallets <account_id>` lists; the verbs below act on a wallet.
 
 var accountsWalletsActive string
 var accountsWalletsChainID int
 var accountsWalletsSymbol string
 
 var accountsWalletsCmd = &cobra.Command{
-	Use:     "wallets <account_id>",
-	Short:   "List wallet-token rows for an account",
-	Example: `  rail0 accounts wallets acct_abc123 --chain-id 5042002 --symbol USDC`,
-	Args:    cobra.ExactArgs(1),
+	Use:   "wallets <account_id>",
+	Short: "List an account's wallet-token rows (or manage them — see subcommands)",
+	Example: `  rail0 accounts wallets acct_abc123 --chain-id 5042002 --symbol USDC
+  rail0 accounts wallets acct_abc123 create --address 0xABCD…`,
+	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		p := rail0.ListWalletsParams{ChainID: accountsWalletsChainID, TokenSymbol: accountsWalletsSymbol}
 		if accountsWalletsActive != "" {
@@ -45,12 +47,12 @@ var accountsWalletsCmd = &cobra.Command{
 	},
 }
 
-// ── accounts wallet ───────────────────────────────────────────────────────────
+// ── accounts wallets get ────────────────────────────────────────────────────
 
-var accountsWalletCmd = &cobra.Command{
-	Use:     "wallet <account_id> <wallet_id>",
+var accountsWalletsGetCmd = &cobra.Command{
+	Use:     "get <account_id> <wallet_id>",
 	Short:   "Fetch a single wallet",
-	Example: `  rail0 accounts wallet acct_abc123 wlt_xyz789`,
+	Example: `  rail0 accounts wallets get acct_abc123 wlt_xyz789`,
 	Args:    cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return ui.RunAPI(func() (any, error) {
@@ -59,33 +61,37 @@ var accountsWalletCmd = &cobra.Command{
 	},
 }
 
-// ── accounts create-wallet ────────────────────────────────────────────────────
+// ── accounts wallets create ───────────────────────────────────────────────────
 
 var createWalletAddress string
 var createWalletLabel string
 
-var accountsCreateWalletCmd = &cobra.Command{
-	Use:     "create-wallet <account_id>",
+var accountsWalletsCreateCmd = &cobra.Command{
+	Use:     "create <account_id>",
 	Short:   "Register a new EVM wallet address on an account",
-	Example: `  rail0 accounts create-wallet acct_abc123 --address 0xABCD… --label "Main wallet"`,
+	Example: `  rail0 accounts wallets create acct_abc123 --address 0xABCD… --label "Main wallet"`,
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		req := rail0.CreateWalletRequest{Address: createWalletAddress, Label: createWalletLabel}
+		addr, err := resolveAlias(createWalletAddress)
+		if err != nil {
+			return err
+		}
+		req := rail0.CreateWalletRequest{Address: addr, Label: createWalletLabel}
 		return ui.RunAPI(func() (any, error) {
 			return newClient().Accounts.CreateWallet(context.Background(), args[0], req)
 		})
 	},
 }
 
-// ── accounts update-wallet ────────────────────────────────────────────────────
+// ── accounts wallets update ───────────────────────────────────────────────────
 
 var updateWalletLabel string
 var updateWalletActive string
 
-var accountsUpdateWalletCmd = &cobra.Command{
-	Use:     "update-wallet <account_id> <wallet_id>",
+var accountsWalletsUpdateCmd = &cobra.Command{
+	Use:     "update <account_id> <wallet_id>",
 	Short:   "Update label or active status on a wallet",
-	Example: `  rail0 accounts update-wallet acct_abc123 wlt_xyz789 --label "New label" --active true`,
+	Example: `  rail0 accounts wallets update acct_abc123 wlt_xyz789 --label "New label" --active true`,
 	Args:    cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		req := rail0.UpdateWalletRequest{Label: updateWalletLabel}
@@ -107,12 +113,12 @@ var accountsUpdateWalletCmd = &cobra.Command{
 	},
 }
 
-// ── accounts delete-wallet ────────────────────────────────────────────────────
+// ── accounts wallets delete ───────────────────────────────────────────────────
 
-var accountsDeleteWalletCmd = &cobra.Command{
-	Use:     "delete-wallet <account_id> <wallet_id>",
+var accountsWalletsDeleteCmd = &cobra.Command{
+	Use:     "delete <account_id> <wallet_id>",
 	Short:   "Remove a wallet from an account",
-	Example: `  rail0 accounts delete-wallet acct_abc123 wlt_xyz789`,
+	Example: `  rail0 accounts wallets delete acct_abc123 wlt_xyz789`,
 	Args:    cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return ui.RunAPI(func() (any, error) {
@@ -121,12 +127,12 @@ var accountsDeleteWalletCmd = &cobra.Command{
 	},
 }
 
-// ── accounts balances ─────────────────────────────────────────────────────────
+// ── accounts wallets balances ─────────────────────────────────────────────────
 
 var balancesChainID int
 var balancesSymbol string
 
-var accountsBalancesCmd = &cobra.Command{
+var accountsWalletsBalancesCmd = &cobra.Command{
 	Use:   "balances <account_id> <wallet_id>",
 	Short: "Read a wallet's live on-chain balances",
 	Long: `Read a wallet's live on-chain balances across the configured chains.
@@ -134,8 +140,8 @@ var accountsBalancesCmd = &cobra.Command{
 Each chain reports the native gas-token balance and the active token balances,
 or an error if that chain's RPC was unreachable (reported per chain, so one dead
 RPC never hides the others). Use --chain-id / --symbol to narrow the result.`,
-	Example: `  rail0 accounts balances acct_abc123 wlt_xyz789
-  rail0 accounts balances acct_abc123 wlt_xyz789 --chain-id 84532 --symbol USDC`,
+	Example: `  rail0 accounts wallets balances acct_abc123 wlt_xyz789
+  rail0 accounts wallets balances acct_abc123 wlt_xyz789 --chain-id 84532 --symbol USDC`,
 	Args: cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		p := rail0.WalletBalancesParams{ChainID: balancesChainID, TokenSymbol: balancesSymbol}
@@ -148,31 +154,30 @@ RPC never hides the others). Use --chain-id / --symbol to narrow the result.`,
 // ── init ──────────────────────────────────────────────────────────────────────
 
 func init() {
-	// accounts wallets
+	// accounts wallets (list)
 	accountsWalletsCmd.Flags().StringVar(&accountsWalletsActive, "active", "", "Filter by active flag ('true' or 'false')")
 	accountsWalletsCmd.Flags().IntVar(&accountsWalletsChainID, "chain-id", 0, "Filter by chain id")
 	accountsWalletsCmd.Flags().StringVarP(&accountsWalletsSymbol, "symbol", "s", "", "Filter by token symbol (e.g. USDC)")
+
+	// accounts wallets create
+	accountsWalletsCreateCmd.Flags().StringVarP(&createWalletAddress, "address", "A", "", "EVM wallet address (0x-prefixed hex, or @alias)")
+	_ = accountsWalletsCreateCmd.MarkFlagRequired("address")
+	accountsWalletsCreateCmd.Flags().StringVarP(&createWalletLabel, "label", "l", "", "Human-readable wallet label")
+
+	// accounts wallets update
+	accountsWalletsUpdateCmd.Flags().StringVarP(&updateWalletLabel, "label", "l", "", "New wallet label")
+	accountsWalletsUpdateCmd.Flags().StringVar(&updateWalletActive, "active", "", "Set active flag ('true' or 'false')")
+
+	// accounts wallets balances
+	accountsWalletsBalancesCmd.Flags().IntVar(&balancesChainID, "chain-id", 0, "Restrict to one chain id")
+	accountsWalletsBalancesCmd.Flags().StringVarP(&balancesSymbol, "symbol", "s", "", "Restrict tokens to this symbol (e.g. USDC)")
+
+	accountsWalletsCmd.AddCommand(
+		accountsWalletsGetCmd,
+		accountsWalletsCreateCmd,
+		accountsWalletsUpdateCmd,
+		accountsWalletsDeleteCmd,
+		accountsWalletsBalancesCmd,
+	)
 	accountsCmd.AddCommand(accountsWalletsCmd)
-
-	// accounts wallet
-	accountsCmd.AddCommand(accountsWalletCmd)
-
-	// accounts create-wallet
-	accountsCreateWalletCmd.Flags().StringVarP(&createWalletAddress, "address", "A", "", "EVM wallet address (0x-prefixed hex, 20 bytes)")
-	_ = accountsCreateWalletCmd.MarkFlagRequired("address")
-	accountsCreateWalletCmd.Flags().StringVarP(&createWalletLabel, "label", "l", "", "Human-readable wallet label")
-	accountsCmd.AddCommand(accountsCreateWalletCmd)
-
-	// accounts update-wallet
-	accountsUpdateWalletCmd.Flags().StringVarP(&updateWalletLabel, "label", "l", "", "New wallet label")
-	accountsUpdateWalletCmd.Flags().StringVar(&updateWalletActive, "active", "", "Set active flag ('true' or 'false')")
-	accountsCmd.AddCommand(accountsUpdateWalletCmd)
-
-	// accounts delete-wallet
-	accountsCmd.AddCommand(accountsDeleteWalletCmd)
-
-	// accounts balances
-	accountsBalancesCmd.Flags().IntVar(&balancesChainID, "chain-id", 0, "Restrict to one chain id")
-	accountsBalancesCmd.Flags().StringVarP(&balancesSymbol, "symbol", "s", "", "Restrict tokens to this symbol (e.g. USDC)")
-	accountsCmd.AddCommand(accountsBalancesCmd)
 }

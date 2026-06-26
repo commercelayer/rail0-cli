@@ -55,13 +55,13 @@ Or use `rail0 auth login` to obtain and cache a JWT via SIWE authentication.
 ### Address book (aliases)
 
 Save frequently-used addresses and reference them as `@name` on any address flag
-(`--from` / `--to`). Stored in `config.yaml` in the OS config dir
+(`--from` / `--to` / `--address`). Stored in `config.yaml` in the OS config dir
 (`~/.config/rail0/` on Linux, `~/Library/Application Support/rail0/` on macOS).
 
 ```sh
-rail0 alias add payee 0xAbC123…
-rail0 alias add buyer 0xDeF456…
-rail0 alias ls
+rail0 aliases add payee 0xAbC123…
+rail0 aliases add buyer 0xDeF456…
+rail0 aliases                       # bare command lists the address book
 
 rail0 payments create --from @buyer --to @payee -t USDC -a 10.50 -c 84532 -p 0xPayerKey…
 ```
@@ -100,7 +100,7 @@ Store signing keys in the OS keychain (macOS Keychain, Linux Secret Service, Win
 ```sh
 rail0 keys import payee                       # hidden prompt for the key
 echo "$ACCOUNT_PRIVATE_KEY" | rail0 keys import ci --from-stdin
-rail0 keys ls                                 # names + addresses, never keys
+rail0 keys                                    # bare command lists names + addresses, never keys
 rail0 keys address payee
 rail0 keys rm payee
 
@@ -142,9 +142,11 @@ rail0 auth logout
 
 ### Accounts
 
-#### `accounts wallets <account_id>`
+Wallet operations are grouped under `accounts wallets`. The bare command lists; the verbs below act on a wallet. All require authentication.
 
-List the account's wallet-token rows (one row per wallet/token pairing on a chain). Requires authentication.
+#### `accounts wallets <account_id>` — list
+
+List the account's wallet-token rows (one row per wallet/token pairing on a chain).
 
 ```sh
 rail0 accounts wallets acct_abc123
@@ -157,40 +159,29 @@ rail0 accounts wallets acct_abc123 --chain-id 5042002 --symbol USDC --active tru
 | `--symbol` | `-s` | Filter by token symbol (e.g. `USDC`) |
 | `--active` | — | Filter by active flag (`true` or `false`) |
 
----
-
-#### `accounts wallet <account_id> <wallet_id>`
-
-Fetch a single wallet.
+#### `accounts wallets get <account_id> <wallet_id>`
 
 ```sh
-rail0 accounts wallet acct_abc123 wlt_xyz789
+rail0 accounts wallets get acct_abc123 wlt_xyz789
 ```
 
----
+#### `accounts wallets create <account_id>`
 
-#### `accounts create-wallet <account_id>`
-
-Register a new EVM wallet address on an account. Requires authentication.
+Register a new EVM wallet address on an account.
 
 ```sh
-rail0 accounts create-wallet acct_abc123 --address 0xABCD… --label "Treasury"
+rail0 accounts wallets create acct_abc123 --address 0xABCD… --label "Treasury"
 ```
 
 | Flag | Short | Required | Description |
 |------|-------|----------|-------------|
-| `--address` | `-A` | yes | EVM wallet address (0x-prefixed) |
+| `--address` | `-A` | yes | EVM wallet address (0x-prefixed, or `@alias`) |
 | `--label` | `-l` | no | Human-readable label |
 
----
-
-#### `accounts update-wallet <account_id> <wallet_id>`
-
-Update label or active status on a wallet. Requires authentication.
+#### `accounts wallets update <account_id> <wallet_id>`
 
 ```sh
-rail0 accounts update-wallet acct_abc123 wlt_xyz789 --label "New label"
-rail0 accounts update-wallet acct_abc123 wlt_xyz789 --active false
+rail0 accounts wallets update acct_abc123 wlt_xyz789 --label "New label" --active false
 ```
 
 | Flag | Short | Description |
@@ -198,25 +189,19 @@ rail0 accounts update-wallet acct_abc123 wlt_xyz789 --active false
 | `--label` | `-l` | New wallet label |
 | `--active` | — | Set active flag (`true` or `false`) |
 
----
-
-#### `accounts delete-wallet <account_id> <wallet_id>`
-
-Remove a wallet from an account. Requires authentication.
+#### `accounts wallets delete <account_id> <wallet_id>`
 
 ```sh
-rail0 accounts delete-wallet acct_abc123 wlt_xyz789
+rail0 accounts wallets delete acct_abc123 wlt_xyz789
 ```
 
----
+#### `accounts wallets balances <account_id> <wallet_id>`
 
-#### `accounts balances <account_id> <wallet_id>`
-
-Read a wallet's live on-chain balances across the configured chains. Each chain reports the native gas-token balance and the active token balances, or an error if that chain's RPC was unreachable (reported per chain, so one dead RPC never hides the others). Requires authentication.
+Read a wallet's live on-chain balances across the configured chains. Each chain reports the native gas-token balance and the active token balances, or an error if that chain's RPC was unreachable (reported per chain, so one dead RPC never hides the others).
 
 ```sh
-rail0 accounts balances acct_abc123 wlt_xyz789
-rail0 accounts balances acct_abc123 wlt_xyz789 --chain-id 84532 --symbol USDC
+rail0 accounts wallets balances acct_abc123 wlt_xyz789
+rail0 accounts wallets balances acct_abc123 wlt_xyz789 --chain-id 84532 --symbol USDC
 ```
 
 | Flag | Short | Description |

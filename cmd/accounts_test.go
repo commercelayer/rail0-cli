@@ -2,20 +2,27 @@ package cmd
 
 import "testing"
 
-func TestBalancesCommandRegistered(t *testing.T) {
-	sub, _, err := accountsCmd.Find([]string{"balances"})
-	if err != nil || sub == nil || sub.Name() != "balances" {
-		t.Fatalf("accounts balances: command not found (%v)", err)
+func TestWalletsCommandTree(t *testing.T) {
+	// Bare `accounts wallets <account_id>` lists; verbs hang off it.
+	wallets, _, err := accountsCmd.Find([]string{"wallets"})
+	if err != nil || wallets == nil || wallets.Name() != "wallets" {
+		t.Fatalf("accounts wallets: not found (%v)", err)
 	}
-	for _, flag := range []string{"chain-id", "symbol"} {
-		if sub.Flags().Lookup(flag) == nil {
-			t.Errorf("accounts balances: --%s flag missing", flag)
+	if err := wallets.Args(wallets, []string{"acct_1"}); err != nil {
+		t.Errorf("wallets list should accept 1 arg, got %v", err)
+	}
+
+	for _, verb := range []string{"get", "create", "update", "delete", "balances"} {
+		sub, _, err := accountsCmd.Find([]string{"wallets", verb})
+		if err != nil || sub == nil || sub.Name() != verb {
+			t.Errorf("accounts wallets %s: not found (%v)", verb, err)
 		}
 	}
-	if err := sub.Args(sub, []string{"acct_1"}); err == nil {
-		t.Error("accounts balances: expected 2 args to be required")
-	}
-	if err := sub.Args(sub, []string{"acct_1", "wlt_1"}); err != nil {
-		t.Errorf("accounts balances: 2 args should be accepted, got %v", err)
+
+	// The old hyphenated verbs must be gone.
+	for _, gone := range []string{"create-wallet", "update-wallet", "delete-wallet", "wallet"} {
+		if sub, _, _ := accountsCmd.Find([]string{gone}); sub != nil && sub.Name() == gone {
+			t.Errorf("accounts %s should no longer exist", gone)
+		}
 	}
 }

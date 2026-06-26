@@ -3,23 +3,19 @@ package cmd
 import "testing"
 
 func TestResolveSigningKey(t *testing.T) {
-	// Isolate config (profile fallback) and env for the test.
-	dir := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", dir)
-	t.Setenv("HOME", dir)
 	t.Setenv("RAIL0_PRIVATE_KEY", "")
 
 	// Explicit key wins.
-	if got, err := resolveSigningKey("0xexplicit", ""); err != nil || got != "0xexplicit" {
+	if got, err := resolveSigningKey("0xexplicit"); err != nil || got != "0xexplicit" {
 		t.Errorf("explicit: got %q err %v", got, err)
 	}
 	// No key anywhere → error.
-	if _, err := resolveSigningKey("", ""); err == nil {
+	if _, err := resolveSigningKey(""); err == nil {
 		t.Error("no key: expected error, got nil")
 	}
 	// RAIL0_PRIVATE_KEY fallback (CI).
 	t.Setenv("RAIL0_PRIVATE_KEY", "0xenvkey")
-	if got, err := resolveSigningKey("", ""); err != nil || got != "0xenvkey" {
+	if got, err := resolveSigningKey(""); err != nil || got != "0xenvkey" {
 		t.Errorf("env fallback: got %q err %v", got, err)
 	}
 }

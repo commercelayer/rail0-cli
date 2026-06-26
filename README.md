@@ -75,8 +75,7 @@ The JWT session token is **not** stored in the config file — it stays in the O
 ### Payer — `payments create`
 
 The payer creates the payment and signs the EIP-712 payload with their key
-(`--private-key` / `-p`, or `--account` / `-k`), submitting the signature in one
-step:
+(`--private-key` / `-p`), submitting the signature in one step:
 
 ```sh
 rail0 payments create -F 0xBuyer… -T 0xMerchant… -t USDC -a 10.50 -c 5042002 -p 0xPayerKey…
@@ -89,24 +88,8 @@ Every on-chain action command (`authorize`, `charge`, `capture`, `void`, `releas
 | Flag | Short | Description |
 |------|-------|-------------|
 | `--private-key` | `-p` | Caller's secp256k1 private key (0x-prefixed hex) |
-| `--account` | `-k` | Name of a key stored via `rail0 keys` to sign with (instead of `--private-key`) |
 
-The signing key is resolved in this order: `--private-key` > `--account` (keychain) > `RAIL0_PRIVATE_KEY` env var.
-
-### Secure key storage
-
-Store signing keys in the OS keychain (macOS Keychain, Linux Secret Service, Windows Credential Manager) so the raw key never appears in your shell history. Only the derived address is recorded in the config file — the key itself stays in the keychain.
-
-```sh
-rail0 keys import payee                       # hidden prompt for the key
-echo "$ACCOUNT_PRIVATE_KEY" | rail0 keys import ci --from-stdin
-rail0 keys                                    # bare command lists names + addresses, never keys
-rail0 keys address payee
-rail0 keys rm payee
-
-# Sign without exposing the key in shell history:
-rail0 payments capture <rail0Id> -a 1.00 --account payee
-```
+The signing key is resolved in this order: `--private-key` (`-p` / `--pk`) > `RAIL0_PRIVATE_KEY` env var.
 
 ---
 
@@ -294,10 +277,7 @@ Create a payment, sign the EIP-712 payload with the payer's key, and submit the 
 | `--chain-id` | `-c` | yes | — | EVM chain ID as in `chains` (e.g. `5042002`) |
 | `--mode` | `-m` | no | `authorize` | `authorize` (escrow + capture) or `charge` (immediate) |
 | `--payment-file` | `-f` | no | — | JSON file with the full request body |
-| `--private-key` | `-p` | yes\* | — | Payer's key — creates and signs locally in one step |
-| `--account` | `-k` | yes\* | — | Name of a key stored via `rail0 keys` to sign with |
-
-\* one of `-p` or `-k` is required.
+| `--private-key` | `-p` | yes | — | Payer's key — creates and signs locally in one step |
 
 ```sh
 rail0 payments create \

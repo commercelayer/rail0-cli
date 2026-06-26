@@ -83,11 +83,29 @@ The payer creates the payment and signs the EIP-712 payload. Two modes:
 
 ### Payee — action commands
 
-Every on-chain action command (`authorize`, `charge`, `capture`, `void`, `release`, `refund`, `dispute`) is **atomic**: pass `--private-key` (`-p`) and the CLI prepares the unsigned transaction, signs it locally, and broadcasts it in a single step.
+Every on-chain action command (`authorize`, `charge`, `capture`, `void`, `release`, `refund`, `dispute`) is **atomic**: it prepares the unsigned transaction, signs it locally, and broadcasts it in a single step.
 
 | Flag | Short | Description |
 |------|-------|-------------|
-| `--private-key` | `-p` | Caller's secp256k1 private key (0x-prefixed hex); signs and broadcasts in one step |
+| `--private-key` | `-p` | Caller's secp256k1 private key (0x-prefixed hex) |
+| `--account` | `-k` | Name of a key stored via `rail0 keys` to sign with (instead of `--private-key`) |
+
+The signing key is resolved in this order: `--private-key` > `--account` (keychain) > `RAIL0_PRIVATE_KEY` env var.
+
+### Secure key storage
+
+Store signing keys in the OS keychain (macOS Keychain, Linux Secret Service, Windows Credential Manager) so the raw key never appears in your shell history. Only the derived address is recorded in the config file — the key itself stays in the keychain.
+
+```sh
+rail0 keys import payee                       # hidden prompt for the key
+echo "$ACCOUNT_PRIVATE_KEY" | rail0 keys import ci --from-stdin
+rail0 keys ls                                 # names + addresses, never keys
+rail0 keys address payee
+rail0 keys rm payee
+
+# Sign without exposing the key in shell history:
+rail0 payments capture <rail0Id> -a 1.00 --account payee
+```
 
 ---
 

@@ -22,6 +22,11 @@ type Config struct {
 	// Aliases is the address book: name → 0x address, referenced as "@name" on
 	// address flags (--from / --to).
 	Aliases map[string]string `yaml:"aliases,omitempty"`
+	// Keys is the public index of signing accounts: name → derived 0x address.
+	// The private keys themselves live in the OS keychain (see the keystore
+	// package), never in this file. Kept here only so `keys ls` / `keys address`
+	// can work — the OS keyrings have no portable enumeration API.
+	Keys map[string]string `yaml:"keys,omitempty"`
 }
 
 // Path returns the config file path (config.yaml in the OS config dir).

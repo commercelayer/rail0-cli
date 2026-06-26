@@ -123,17 +123,15 @@ rail0 auth logout
 
 ---
 
-### Accounts
+### Wallets
 
-Wallet operations are grouped under `accounts wallets`. The bare command lists; the verbs below act on a wallet. All require authentication.
+`wallets` manages the **logged-in account's** wallets — the account is taken from the session (`auth login`), never passed as an argument; with no session the command errors. Run bare to list; the verbs act on one wallet, named by id, **0x address** (unique per account), or `@alias`.
 
-#### `accounts wallets <account_id>` — list
-
-List the account's wallet-token rows (one row per wallet/token pairing on a chain).
+#### `wallets` — list
 
 ```sh
-rail0 accounts wallets acct_abc123
-rail0 accounts wallets acct_abc123 --chain-id 5042002 --symbol USDC --active true
+rail0 wallets
+rail0 wallets --chain-id 5042002 --symbol USDC --active true
 ```
 
 | Flag | Short | Description |
@@ -142,21 +140,19 @@ rail0 accounts wallets acct_abc123 --chain-id 5042002 --symbol USDC --active tru
 | `--symbol` | `-s` | Filter by token symbol (e.g. `USDC`) |
 | `--active` | — | Filter by active flag (`true` or `false`) |
 
-#### `accounts wallets get <account_id> <wallet>`
-
-`<wallet>` is the wallet id (UUID), its **0x address** (unique per account), or an `@alias`.
+#### `wallets get <wallet>`
 
 ```sh
-rail0 accounts wallets get acct_abc123 0xABCD…
-rail0 accounts wallets get acct_abc123 @payee
+rail0 wallets get 0xABCD…
+rail0 wallets get @payee
 ```
 
-#### `accounts wallets create <account_id>`
+#### `wallets create`
 
-Register a new EVM wallet address on an account.
+Register a new EVM wallet address on the account.
 
 ```sh
-rail0 accounts wallets create acct_abc123 --address 0xABCD… --label "Treasury"
+rail0 wallets create --address 0xABCD… --label "Treasury"
 ```
 
 | Flag | Short | Required | Description |
@@ -164,12 +160,10 @@ rail0 accounts wallets create acct_abc123 --address 0xABCD… --label "Treasury"
 | `--address` | `-A` | yes | EVM wallet address (0x-prefixed, or `@alias`) |
 | `--label` | `-l` | no | Human-readable label |
 
-#### `accounts wallets update <account_id> <wallet>`
-
-`<wallet>` = id, 0x address, or `@alias`.
+#### `wallets update <wallet>`
 
 ```sh
-rail0 accounts wallets update acct_abc123 @payee --label "New label" --active false
+rail0 wallets update @payee --label "New label" --active false
 ```
 
 | Flag | Short | Description |
@@ -177,21 +171,19 @@ rail0 accounts wallets update acct_abc123 @payee --label "New label" --active fa
 | `--label` | `-l` | New wallet label |
 | `--active` | — | Set active flag (`true` or `false`) |
 
-#### `accounts wallets delete <account_id> <wallet>`
-
-`<wallet>` = id, 0x address, or `@alias`.
+#### `wallets delete <wallet>`
 
 ```sh
-rail0 accounts wallets delete acct_abc123 @payee
+rail0 wallets delete @payee
 ```
 
-#### `accounts wallets balances <account_id> <wallet>`
+#### `wallets balances <wallet>`
 
-Read a wallet's live on-chain balances across the configured chains. Each chain reports the native gas-token balance and the active token balances, or an error if that chain's RPC was unreachable (reported per chain, so one dead RPC never hides the others). `<wallet>` = id, 0x address, or `@alias`.
+Read a wallet's live on-chain balances across the configured chains. Each chain reports the native gas-token balance and the active token balances, or an error if that chain's RPC was unreachable (reported per chain, so one dead RPC never hides the others).
 
 ```sh
-rail0 accounts wallets balances acct_abc123 @payee
-rail0 accounts wallets balances acct_abc123 0xABCD… --chain-id 84532 --symbol USDC
+rail0 wallets balances @payee
+rail0 wallets balances 0xABCD… --chain-id 84532 --symbol USDC
 ```
 
 | Flag | Short | Description |

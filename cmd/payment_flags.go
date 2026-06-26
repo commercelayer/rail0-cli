@@ -34,7 +34,7 @@ func (f *createPaymentFlags) addTo(cmd *cobra.Command) {
 	cmd.Flags().StringVarP(&f.from, "from", "F", "",
 		"Payer wallet address (from) (0x-prefixed, funds are pulled from here)")
 	cmd.Flags().StringVarP(&f.to, "to", "T", "",
-		"Payee wallet address (to) (0x-prefixed, address from accounts wallets)")
+		"Payee wallet address (to) (0x-prefixed, address from 'wallets')")
 	cmd.Flags().StringVarP(&f.token, "token", "t", "",
 		"Token symbol as listed in GET /tokens (e.g. USDC)")
 	cmd.Flags().StringVarP(&f.amount, "amount", "a", "",
@@ -89,7 +89,7 @@ func (f *createPaymentFlags) buildInteractive() (rail0.CreatePaymentRequest, err
 				Value(&f.from),
 			huh.NewInput().
 				Title("To (payee)").
-				Description("Payee wallet address (0x-prefixed) — use address from accounts wallets").
+				Description("Payee wallet address (0x-prefixed) — use address from 'wallets'").
 				Value(&f.to),
 			huh.NewInput().
 				Title("Token").

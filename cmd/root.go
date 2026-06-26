@@ -2,6 +2,7 @@
 package cmd
 
 import (
+	"errors"
 	"os"
 
 	charmlog "github.com/charmbracelet/log"
@@ -43,7 +44,7 @@ func init() {
 
 	cobra.OnInitialize(func() { ui.SetJSON(jsonOut) })
 
-	rootCmd.AddCommand(paymentsCmd, accountsCmd, webhooksCmd, chainsCmd, tokensCmd, authCmd, healthCmd, aliasesCmd)
+	rootCmd.AddCommand(paymentsCmd, walletsCmd, webhooksCmd, chainsCmd, tokensCmd, authCmd, healthCmd, aliasesCmd)
 }
 
 // newClient builds a RAIL0 API client.
@@ -58,6 +59,26 @@ func newClient() *rail0.Client {
 		opts.Logger = makeDebugLogger()
 	}
 	return rail0.NewClient(opts)
+}
+
+// currentAccountID returns the account id of the logged-in session (the JWT
+// `account_id` claim). Wallet commands are scoped to the logged-in account, so
+// they derive it from the session instead of taking it as an argument; with no
+// (or an expired) session this errors, pointing the user at `auth login`.
+func currentAccountID() (string, error) {
+	t := token.Load()
+	if t == "" {
+		return "", errors.New("not logged in: run 'rail0 auth login -p 0xYourKey…'")
+	}
+	claims, err := parseJWTClaims(t)
+	if err != nil {
+		return "", errors.New("session invalid or expired: run 'rail0 auth login'")
+	}
+	id, _ := claims["account_id"].(string)
+	if id == "" {
+		return "", errors.New("session carries no account_id: re-run 'rail0 auth login'")
+	}
+	return id, nil
 }
 
 // resolveBaseURL picks the API base URL.

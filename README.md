@@ -52,6 +52,22 @@ export RAIL0_TOKEN=your_jwt_token
 
 Or use `rail0 auth login` to obtain and cache a JWT via SIWE authentication.
 
+### Address book (aliases)
+
+Save frequently-used addresses and reference them as `@name` on any address flag
+(`--from` / `--to`). Stored in `config.yaml` in the OS config dir
+(`~/.config/rail0/` on Linux, `~/Library/Application Support/rail0/` on macOS).
+
+```sh
+rail0 alias add payee 0xAbC123…
+rail0 alias add buyer 0xDeF456…
+rail0 alias ls
+
+rail0 payments create --from @buyer --to @payee -t USDC -a 10.50 -c 84532 -p 0xPayerKey…
+```
+
+The JWT session token is **not** stored in the config file — it stays in the OS cache dir (written by `rail0 auth login`).
+
 ---
 
 ## Signing modes

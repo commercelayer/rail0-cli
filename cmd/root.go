@@ -43,22 +43,14 @@ func init() {
 
 	cobra.OnInitialize(func() { ui.SetJSON(jsonOut) })
 
-	rootCmd.AddCommand(paymentsCmd, accountsCmd, webhooksCmd, chainsCmd, tokensCmd, authCmd, healthCmd)
+	rootCmd.AddCommand(paymentsCmd, accountsCmd, webhooksCmd, chainsCmd, tokensCmd, authCmd, healthCmd, aliasCmd)
 }
 
 // newClient builds a RAIL0 API client.
-// Priority: --base-url flag > RAIL0_BASE_URL env var > config.DefaultBaseURL.
 // If a JWT is stored (RAIL0_TOKEN env var or ~/.cache/rail0/token), it is sent
 // as Authorization: Bearer on every request.
 func newClient() *rail0.Client {
-	url := baseURL
-	if url == "" {
-		url = os.Getenv("RAIL0_BASE_URL")
-	}
-	if url == "" {
-		url = config.DefaultBaseURL
-	}
-	opts := rail0.ClientOptions{BaseURL: url}
+	opts := rail0.ClientOptions{BaseURL: resolveBaseURL()}
 	if t := token.Load(); t != "" {
 		opts.Headers = map[string]string{"Authorization": "Bearer " + t}
 	}
@@ -66,6 +58,18 @@ func newClient() *rail0.Client {
 		opts.Logger = makeDebugLogger()
 	}
 	return rail0.NewClient(opts)
+}
+
+// resolveBaseURL picks the API base URL.
+// Precedence: --base-url flag > RAIL0_BASE_URL env > config.DefaultBaseURL.
+func resolveBaseURL() string {
+	if baseURL != "" {
+		return baseURL
+	}
+	if env := os.Getenv("RAIL0_BASE_URL"); env != "" {
+		return env
+	}
+	return config.DefaultBaseURL
 }
 
 // makeDebugLogger returns a rail0.Logger that routes HTTP traces through

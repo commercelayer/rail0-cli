@@ -423,7 +423,11 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 		if err != nil {
 			return err
 		}
-		prep, err := client.Payments.ReleasePrepare(ctx, rail0Id, releaseCallerAddress)
+		caller, err := resolveAlias(releaseCallerAddress)
+		if err != nil {
+			return err
+		}
+		prep, err := client.Payments.ReleasePrepare(ctx, rail0Id, caller)
 		if err != nil {
 			return err
 		}

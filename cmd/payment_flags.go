@@ -151,6 +151,16 @@ func (f *createPaymentFlags) resolve() (rail0.CreatePaymentRequest, error) {
 	ctx := context.Background()
 	client := newClient()
 
+	// Resolve any "@name" address-book references to concrete addresses.
+	payer, err := resolveAlias(f.from)
+	if err != nil {
+		return rail0.CreatePaymentRequest{}, err
+	}
+	payee, err := resolveAlias(f.to)
+	if err != nil {
+		return rail0.CreatePaymentRequest{}, err
+	}
+
 	chainID := f.chainID
 
 	// Resolve token symbol → address on the selected chain.
@@ -175,8 +185,8 @@ func (f *createPaymentFlags) resolve() (rail0.CreatePaymentRequest, error) {
 	}
 
 	return rail0.CreatePaymentRequest{
-		Payer:   f.from,
-		Payee:   f.to,
+		Payer:   payer,
+		Payee:   payee,
 		Token:   tokenAddress,
 		Amount:  f.amount,
 		ChainID: chainID,

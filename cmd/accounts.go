@@ -65,10 +65,10 @@ var createWalletAddress string
 var createWalletLabel string
 
 var accountsCreateWalletCmd = &cobra.Command{
-	Use:   "create-wallet <account_id>",
-	Short: "Register a new EVM wallet address on an account",
+	Use:     "create-wallet <account_id>",
+	Short:   "Register a new EVM wallet address on an account",
 	Example: `  rail0 accounts create-wallet acct_abc123 --address 0xABCD… --label "Main wallet"`,
-	Args:  cobra.ExactArgs(1),
+	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		req := rail0.CreateWalletRequest{Address: createWalletAddress, Label: createWalletLabel}
 		return ui.RunAPI(func() (any, error) {
@@ -121,6 +121,30 @@ var accountsDeleteWalletCmd = &cobra.Command{
 	},
 }
 
+// ── accounts balances ─────────────────────────────────────────────────────────
+
+var balancesChainID int
+var balancesSymbol string
+
+var accountsBalancesCmd = &cobra.Command{
+	Use:   "balances <account_id> <wallet_id>",
+	Short: "Read a wallet's live on-chain balances",
+	Long: `Read a wallet's live on-chain balances across the configured chains.
+
+Each chain reports the native gas-token balance and the active token balances,
+or an error if that chain's RPC was unreachable (reported per chain, so one dead
+RPC never hides the others). Use --chain-id / --symbol to narrow the result.`,
+	Example: `  rail0 accounts balances acct_abc123 wlt_xyz789
+  rail0 accounts balances acct_abc123 wlt_xyz789 --chain-id 84532 --symbol USDC`,
+	Args: cobra.ExactArgs(2),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		p := rail0.WalletBalancesParams{ChainID: balancesChainID, TokenSymbol: balancesSymbol}
+		return ui.RunAPI(func() (any, error) {
+			return newClient().Accounts.Balances(context.Background(), args[0], args[1], p)
+		})
+	},
+}
+
 // ── init ──────────────────────────────────────────────────────────────────────
 
 func init() {
@@ -146,4 +170,9 @@ func init() {
 
 	// accounts delete-wallet
 	accountsCmd.AddCommand(accountsDeleteWalletCmd)
+
+	// accounts balances
+	accountsBalancesCmd.Flags().IntVar(&balancesChainID, "chain-id", 0, "Restrict to one chain id")
+	accountsBalancesCmd.Flags().StringVarP(&balancesSymbol, "symbol", "s", "", "Restrict tokens to this symbol (e.g. USDC)")
+	accountsCmd.AddCommand(accountsBalancesCmd)
 }

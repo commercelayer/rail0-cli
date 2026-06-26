@@ -67,14 +67,11 @@ The payer creates the payment and signs the EIP-712 payload. Two modes:
 
 ### Payee — action commands
 
-Every on-chain action command (`authorize`, `charge`, `capture`, `void`, `release`, `refund`) requires exactly one of:
+Every on-chain action command (`authorize`, `charge`, `capture`, `void`, `release`, `refund`, `dispute`) is **atomic**: pass `--private-key` (`-p`) and the CLI prepares the unsigned transaction, signs it locally, and broadcasts it in a single step.
 
 | Flag | Short | Description |
 |------|-------|-------------|
-| `--private-key` | `-p` | Sign locally and broadcast in one step |
-| `--prepare` | `-w` | Return the unsigned tx for external wallet signing, then broadcast with `payments submit` |
-
-`--private-key` and `--prepare` are mutually exclusive.
+| `--private-key` | `-p` | Caller's secp256k1 private key (0x-prefixed hex); signs and broadcasts in one step |
 
 ---
 
@@ -175,6 +172,22 @@ Remove a wallet from an account. Requires authentication.
 ```sh
 rail0 accounts delete-wallet acct_abc123 wlt_xyz789
 ```
+
+---
+
+#### `accounts balances <account_id> <wallet_id>`
+
+Read a wallet's live on-chain balances across the configured chains. Each chain reports the native gas-token balance and the active token balances, or an error if that chain's RPC was unreachable (reported per chain, so one dead RPC never hides the others). Requires authentication.
+
+```sh
+rail0 accounts balances acct_abc123 wlt_xyz789
+rail0 accounts balances acct_abc123 wlt_xyz789 --chain-id 84532 --symbol USDC
+```
+
+| Flag | Short | Description |
+|------|-------|-------------|
+| `--chain-id` | | Restrict to one chain id |
+| `--symbol` | `-s` | Restrict tokens to this symbol (e.g. USDC) |
 
 ---
 
@@ -330,12 +343,7 @@ rail0 payments transactions 0xabc123…
 Prepare the `authorize()` transaction pulling funds into escrow. Payer signature must be submitted first.
 
 ```sh
-# Direct key
 rail0 payments authorize <rail0Id> -p 0xPayeeKey…
-
-# External wallet
-rail0 payments authorize <rail0Id> --prepare
-rail0 payments submit    <rail0Id> --signed-tx 0x02f8…
 ```
 
 ---
@@ -424,7 +432,10 @@ rail0 payments get "$RAIL0_ID"   # poll until payment=captured, capture:confirme
 
 ---
 
-### Authorize-and-capture — external wallet (MetaMask)
+### Payer signs externally (MetaMask)
+
+The payer's EIP-712 signature can be produced by an external wallet and submitted
+separately — the payee's on-chain operations remain atomic (`-p`).
 
 ```sh
 # 1. Payer creates payment, gets signingPayload
@@ -433,18 +444,14 @@ rail0 payments create \
   --json
 # → note the rail0_id and signingPayload
 
-# 2. Payer signs with MetaMask (eth_signTypedData_v4) → SIGNATURE
+# 2. Payer signs with MetaMask (eth_signTypedData_v4) → SIGNATURE, then submits it
 rail0 payments create <rail0Id> -s "$SIGNATURE"
 
-# 3. Payee obtains unsigned authorize tx, signs with MetaMask, broadcasts
-rail0 payments authorize <rail0Id> --prepare
-rail0 payments submit    <rail0Id> --signed-tx "$SIGNED_TX"
+# 3. Payee authorizes and captures with a direct key
+rail0 payments authorize <rail0Id> -p 0xPayeeKey…
 rail0 payments get       <rail0Id>   # poll until authorized
-
-# 4. Payee captures
-rail0 payments capture <rail0Id> -a 1000000 --prepare
-rail0 payments submit  <rail0Id> --signed-tx "$SIGNED_TX"
-rail0 payments get     <rail0Id>   # poll until captured
+rail0 payments capture   <rail0Id> -a 1000000 -p 0xPayeeKey…
+rail0 payments get       <rail0Id>   # poll until captured
 ```
 
 ---

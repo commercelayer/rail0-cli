@@ -15,23 +15,10 @@ var paymentsCmd = &cobra.Command{
 	Short: "Payment lifecycle operations",
 	Long: `Manage the full RAIL0 payment lifecycle.
 
-Every on-chain operation supports two signing modes:
+Every on-chain operation is atomic: pass --private-key (-p) and the CLI prepares
+the unsigned transaction, signs it locally, and broadcasts it in a single step.
 
-  Direct key (automated)
-    Pass --private-key (-p) to any action command. The CLI prepares the
-    unsigned transaction, signs it locally, and broadcasts it in one step.
-
-      rail0 payments authorize <rail0Id> -p 0xYourPrivateKey…
-
-  External wallet (MetaMask, Ledger, hardware wallet)
-    Pass --prepare to obtain the unsigned transaction, sign it in your
-    wallet, then broadcast the result with 'submit'.
-
-      rail0 payments authorize <rail0Id> --prepare
-      # sign unsignedTransaction in MetaMask / cast / ethers.js
-      rail0 payments submit <rail0Id> --signed-tx 0x02f8…
-
-  --prepare and --private-key are mutually exclusive.
+  rail0 payments authorize <rail0Id> -p 0xYourPrivateKey…
 
 Authorize-and-capture flow:
   1. payments create -F 0xBuyer… -p 0xPayerKey…  — payer creates + signs
@@ -188,27 +175,22 @@ sign it with eth_signTypedData_v4, then submit the result:
 	},
 }
 
-
 // ── action command helpers ────────────────────────────────────────────────────
 
-// addSigningFlags attaches --prepare, --private-key / -p, and the hidden
-// alias --pk to cmd, and marks --prepare and --private-key mutually exclusive.
-func addSigningFlags(cmd *cobra.Command, privateKey *string, prepare *bool) {
+// addSigningFlags attaches --private-key / -p (and the hidden alias --pk) to cmd.
+// Every on-chain operation is atomic: the CLI prepares the unsigned transaction,
+// signs it locally with this key, and broadcasts it in a single call.
+func addSigningFlags(cmd *cobra.Command, privateKey *string) {
 	cmd.Flags().StringVarP(privateKey, "private-key", "p", "",
 		"Caller's secp256k1 private key (0x-prefixed hex); signs and broadcasts in one step")
 	cmd.Flags().StringVar(privateKey, "pk", "", "Alias for --private-key")
 	_ = cmd.Flags().MarkHidden("pk")
-	cmd.Flags().BoolVarP(prepare, "prepare", "w", false,
-		"Return the unsigned transaction only, for external wallet signing")
-	cmd.MarkFlagsMutuallyExclusive("private-key", "prepare")
-	cmd.MarkFlagsMutuallyExclusive("pk", "prepare")
 }
 
-// requireSigningMode returns an error when neither --private-key / --pk nor
-// --prepare was provided, giving the user a clear hint about the two options.
-func requireSigningMode(privateKey string, prepare bool) error {
-	if privateKey == "" && !prepare {
-		return errors.New("provide --private-key (-p / --pk) for automated signing, or --prepare for external wallet signing")
+// requirePrivateKey returns an error when no signing key was provided.
+func requirePrivateKey(privateKey string) error {
+	if privateKey == "" {
+		return errors.New("provide --private-key (-p / --pk) to sign and broadcast")
 	}
 	return nil
 }
@@ -216,7 +198,6 @@ func requireSigningMode(privateKey string, prepare bool) error {
 // ── payments authorize ────────────────────────────────────────────────────────
 
 var authorizePrivateKey string
-var authorizePrepare bool
 
 var paymentsAuthorizeCmd = &cobra.Command{
 	Use:   "authorize <rail0Id>",
@@ -230,11 +211,7 @@ rail0-indexer confirms the on-chain event and the API transitions it to
 "authorized". Poll 'payments get <rail0Id>' until payment=authorized
 and the authorize transaction shows confirmed.
 
-Signing modes (one required):
-
-  --private-key (-p)   Sign locally and broadcast in one step.
-  --prepare            Return the unsigned transaction for external signing,
-                       then broadcast with 'payments submit'.`,
+Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 	Example: `  # 1. Payer creates the payment and receives signingPayload
   rail0 payments create --from 0xBuyer… --to 0xMerchant… \
     --token 0x3600… --amount 1.00 --chain-id 5042002
@@ -242,15 +219,11 @@ Signing modes (one required):
   # 2. Payer signs and submits the EIP-712 signature
   rail0 payments sign <rail0Id> --signature 0x1a2b…
 
-  # 3. Payee authorizes — direct key
-  rail0 payments authorize <rail0Id> -p 0xPayeeKey…
-
-  # 3. Payee authorizes — external wallet
-  rail0 payments authorize <rail0Id> --prepare
-  rail0 payments submit    <rail0Id> --signed-tx 0x02f8…`,
+  # 3. Payee authorizes
+  rail0 payments authorize <rail0Id> -p 0xPayeeKey…`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := requireSigningMode(authorizePrivateKey, authorizePrepare); err != nil {
+		if err := requirePrivateKey(authorizePrivateKey); err != nil {
 			return err
 		}
 		client := newClient()
@@ -262,9 +235,6 @@ Signing modes (one required):
 		prep, err := client.Payments.AuthorizePrepare(ctx, rail0Id)
 		if err != nil {
 			return err
-		}
-		if authorizePrepare {
-			return ui.RunAPI(func() (any, error) { return prep, nil })
 		}
 		signedTx, err := signTx(prep.UnsignedTransaction, authorizePrivateKey)
 		if err != nil {
@@ -280,7 +250,6 @@ Signing modes (one required):
 // ── payments charge ───────────────────────────────────────────────────────────
 
 var chargePrivateKey string
-var chargePrepare bool
 
 var paymentsChargeCmd = &cobra.Command{
 	Use:   "charge <rail0Id>",
@@ -296,20 +265,11 @@ rail0-indexer confirms and the API transitions it to "charged".
 Poll 'payments get <rail0Id>' until payment=charged and the charge
 transaction shows confirmed.
 
-Signing modes (one required):
-
-  --private-key (-p)   Sign locally and broadcast in one step.
-  --prepare            Return the unsigned transaction for external signing,
-                       then broadcast with 'payments submit'.`,
-	Example: `  # Direct key
-  rail0 payments charge 0xrail0Id… -p 0xPayeeKey…
-
-  # External wallet
-  rail0 payments charge 0xrail0Id… --prepare
-  rail0 payments submit 0xrail0Id… --signed-tx 0x02f8…`,
-	Args: cobra.ExactArgs(1),
+Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
+	Example: `  rail0 payments charge 0xrail0Id… -p 0xPayeeKey…`,
+	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := requireSigningMode(chargePrivateKey, chargePrepare); err != nil {
+		if err := requirePrivateKey(chargePrivateKey); err != nil {
 			return err
 		}
 		client := newClient()
@@ -321,9 +281,6 @@ Signing modes (one required):
 		prep, err := client.Payments.ChargePrepare(ctx, rail0Id)
 		if err != nil {
 			return err
-		}
-		if chargePrepare {
-			return ui.RunAPI(func() (any, error) { return prep, nil })
 		}
 		signedTx, err := signTx(prep.UnsignedTransaction, chargePrivateKey)
 		if err != nil {
@@ -340,7 +297,6 @@ Signing modes (one required):
 
 var captureAmount string
 var capturePrivateKey string
-var capturePrepare bool
 
 var paymentsCaptureCmd = &cobra.Command{
 	Use:   "capture <rail0Id>",
@@ -356,20 +312,15 @@ rail0-indexer confirms and the API transitions it to "captured" or
 "partially_captured". Poll 'payments get <rail0Id>' until the payment
 reaches the expected state and the capture transaction shows confirmed.
 
-Signing modes (one required):
-
-  --private-key (-p)   Sign locally and broadcast in one step.
-  --prepare            Return the unsigned transaction for external signing,
-                       then broadcast with 'payments submit'.`,
-	Example: `  # Direct key — full capture
+Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
+	Example: `  # Full capture
   rail0 payments capture 0xrail0Id… --amount 1.00 -p 0xPayeeKey…
 
-  # External wallet — partial capture
-  rail0 payments capture 0xrail0Id… --amount 0.50 --prepare
-  rail0 payments submit  0xrail0Id… --signed-tx 0x02f8…`,
+  # Partial capture
+  rail0 payments capture 0xrail0Id… --amount 0.50 -p 0xPayeeKey…`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := requireSigningMode(capturePrivateKey, capturePrepare); err != nil {
+		if err := requirePrivateKey(capturePrivateKey); err != nil {
 			return err
 		}
 		client := newClient()
@@ -381,9 +332,6 @@ Signing modes (one required):
 		prep, err := client.Payments.CapturePrepare(ctx, rail0Id, captureAmount)
 		if err != nil {
 			return err
-		}
-		if capturePrepare {
-			return ui.RunAPI(func() (any, error) { return prep, nil })
 		}
 		signedTx, err := signTx(prep.UnsignedTransaction, capturePrivateKey)
 		if err != nil {
@@ -399,7 +347,6 @@ Signing modes (one required):
 // ── payments void ─────────────────────────────────────────────────────────────
 
 var voidPrivateKey string
-var voidPrepare bool
 
 var paymentsVoidCmd = &cobra.Command{
 	Use:   "void <rail0Id>",
@@ -412,20 +359,11 @@ authorizationExpiry, by the payee.
 The API returns 202 immediately; poll 'payments get <rail0Id>' until
 status advances to "voided".
 
-Signing modes (one required):
-
-  --private-key (-p)   Sign locally and broadcast in one step.
-  --prepare            Return the unsigned transaction for external signing,
-                       then broadcast with 'payments submit'.`,
-	Example: `  # Direct key
-  rail0 payments void 0xrail0Id… -p 0xPayeeKey…
-
-  # External wallet
-  rail0 payments void   0xrail0Id… --prepare
-  rail0 payments submit 0xrail0Id… --signed-tx 0x02f8…`,
-	Args: cobra.ExactArgs(1),
+Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
+	Example: `  rail0 payments void 0xrail0Id… -p 0xPayeeKey…`,
+	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := requireSigningMode(voidPrivateKey, voidPrepare); err != nil {
+		if err := requirePrivateKey(voidPrivateKey); err != nil {
 			return err
 		}
 		client := newClient()
@@ -437,9 +375,6 @@ Signing modes (one required):
 		prep, err := client.Payments.VoidPrepare(ctx, rail0Id)
 		if err != nil {
 			return err
-		}
-		if voidPrepare {
-			return ui.RunAPI(func() (any, error) { return prep, nil })
 		}
 		signedTx, err := signTx(prep.UnsignedTransaction, voidPrivateKey)
 		if err != nil {
@@ -456,7 +391,6 @@ Signing modes (one required):
 
 var releaseCallerAddress string
 var releasePrivateKey string
-var releasePrepare bool
 
 var paymentsReleaseCmd = &cobra.Command{
 	Use:   "release <rail0Id>",
@@ -472,23 +406,15 @@ build for the payee (default).
 The API returns 202 immediately; poll 'payments get <rail0Id>' until
 status advances to "released".
 
-Signing modes (one required):
-
-  --private-key (-p)   Sign locally and broadcast in one step.
-  --prepare            Return the unsigned transaction for external signing,
-                       then broadcast with 'payments submit'.`,
-	Example: `  # Payee releases — direct key
+Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
+	Example: `  # Payee releases
   rail0 payments release 0xrail0Id… -p 0xPayeeKey…
 
-  # Payer releases — direct key
-  rail0 payments release 0xrail0Id… --caller-address 0xBuyer… -p 0xBuyerKey…
-
-  # External wallet
-  rail0 payments release 0xrail0Id… --prepare
-  rail0 payments submit  0xrail0Id… --signed-tx 0x02f8…`,
+  # Payer releases
+  rail0 payments release 0xrail0Id… --caller-address 0xBuyer… -p 0xBuyerKey…`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := requireSigningMode(releasePrivateKey, releasePrepare); err != nil {
+		if err := requirePrivateKey(releasePrivateKey); err != nil {
 			return err
 		}
 		client := newClient()
@@ -500,9 +426,6 @@ Signing modes (one required):
 		prep, err := client.Payments.ReleasePrepare(ctx, rail0Id, releaseCallerAddress)
 		if err != nil {
 			return err
-		}
-		if releasePrepare {
-			return ui.RunAPI(func() (any, error) { return prep, nil })
 		}
 		signedTx, err := signTx(prep.UnsignedTransaction, releasePrivateKey)
 		if err != nil {
@@ -517,12 +440,10 @@ Signing modes (one required):
 
 // ── payments approve ──────────────────────────────────────────────────────────
 
-
 // ── payments refund ───────────────────────────────────────────────────────────
 
 var refundAmount string
 var refundPrivateKey string
-var refundPrepare bool
 
 var paymentsRefundCmd = &cobra.Command{
 	Use:   "refund <rail0Id>",
@@ -538,20 +459,15 @@ has insufficient allowance.
 The API returns 202 immediately; poll 'payments get <rail0Id>' until
 status advances to "refunded" or "partially_refunded".
 
-Signing modes (one required):
-
-  --private-key (-p)   Sign locally and broadcast in one step.
-  --prepare            Return the unsigned transaction for external signing,
-                       then broadcast with 'payments submit'.`,
-	Example: `  # Direct key — full refund
+Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
+	Example: `  # Full refund
   rail0 payments refund 0xrail0Id… --amount 1.00 -p 0xPayeeKey…
 
-  # External wallet — partial refund
-  rail0 payments refund  0xrail0Id… --amount 0.25 --prepare
-  rail0 payments submit  0xrail0Id… --signed-tx 0x02f8…`,
+  # Partial refund
+  rail0 payments refund 0xrail0Id… --amount 0.25 -p 0xPayeeKey…`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := requireSigningMode(refundPrivateKey, refundPrepare); err != nil {
+		if err := requirePrivateKey(refundPrivateKey); err != nil {
 			return err
 		}
 		client := newClient()
@@ -565,9 +481,6 @@ Signing modes (one required):
 		phase1, err := client.Payments.RefundPrepare(ctx, rail0Id, rail0.PrepareRequest{Amount: refundAmount})
 		if err != nil {
 			return err
-		}
-		if refundPrepare {
-			return ui.RunAPI(func() (any, error) { return phase1, nil })
 		}
 		if phase1.SigningPayload == nil {
 			return errors.New("refund prepare did not return a signing_payload")
@@ -607,10 +520,8 @@ Signing modes (one required):
 
 var disputeReason string
 var disputePrivateKey string
-var disputePrepare bool
 var closeDisputeReason string
 var closeDisputePrivateKey string
-var closeDisputePrepare bool
 
 var paymentsDisputeCmd = &cobra.Command{
 	Use:   "dispute <rail0Id>",
@@ -621,14 +532,11 @@ sign and submit it like any other operation (the gateway broadcasts it).
 Disputes are payer-driven and signal-only: they move no money. Only the payer
 may dispute, while the refund window is open and the merchant holds the funds.
 
-Signing modes (one required):
-
-  --private-key (-p)   Sign locally and broadcast in one step (payer key).
-  --prepare            Return the unsigned transaction only, for external signing.`,
+Pass --private-key (-p): the CLI signs locally with the payer key and broadcasts.`,
 	Example: `  rail0 payments dispute 0xrail0Id… -p 0xPayerKey… --reason 0x…`,
 	Args:    cobra.ExactArgs(1),
 	RunE: func(_ *cobra.Command, args []string) error {
-		if err := requireSigningMode(disputePrivateKey, disputePrepare); err != nil {
+		if err := requirePrivateKey(disputePrivateKey); err != nil {
 			return err
 		}
 		client := newClient()
@@ -640,9 +548,6 @@ Signing modes (one required):
 		prep, err := client.Payments.DisputePrepare(ctx, rail0Id, disputeReason)
 		if err != nil {
 			return err
-		}
-		if disputePrepare {
-			return ui.RunAPI(func() (any, error) { return prep, nil })
 		}
 		signedTx, err := signTx(prep.UnsignedTransaction, disputePrivateKey)
 		if err != nil {
@@ -656,12 +561,12 @@ Signing modes (one required):
 }
 
 var paymentsDisputeCloseCmd = &cobra.Command{
-	Use:   "close <rail0Id>",
-	Short: "Close a dispute (payer only): prepare, sign, broadcast",
-	Args:  cobra.ExactArgs(1),
+	Use:     "close <rail0Id>",
+	Short:   "Close a dispute (payer only): prepare, sign, broadcast",
+	Args:    cobra.ExactArgs(1),
 	Example: `  rail0 payments dispute close 0xrail0Id… -p 0xPayerKey…`,
 	RunE: func(_ *cobra.Command, args []string) error {
-		if err := requireSigningMode(closeDisputePrivateKey, closeDisputePrepare); err != nil {
+		if err := requirePrivateKey(closeDisputePrivateKey); err != nil {
 			return err
 		}
 		client := newClient()
@@ -673,9 +578,6 @@ var paymentsDisputeCloseCmd = &cobra.Command{
 		prep, err := client.Payments.CloseDisputePrepare(ctx, rail0Id, closeDisputeReason)
 		if err != nil {
 			return err
-		}
-		if closeDisputePrepare {
-			return ui.RunAPI(func() (any, error) { return prep, nil })
 		}
 		signedTx, err := signTx(prep.UnsignedTransaction, closeDisputePrivateKey)
 		if err != nil {
@@ -727,41 +629,41 @@ func init() {
 	paymentsCmd.AddCommand(paymentsTransactionsCmd)
 
 	// payments authorize
-	addSigningFlags(paymentsAuthorizeCmd, &authorizePrivateKey, &authorizePrepare)
+	addSigningFlags(paymentsAuthorizeCmd, &authorizePrivateKey)
 	paymentsCmd.AddCommand(paymentsAuthorizeCmd)
 
 	// payments charge
-	addSigningFlags(paymentsChargeCmd, &chargePrivateKey, &chargePrepare)
+	addSigningFlags(paymentsChargeCmd, &chargePrivateKey)
 	paymentsCmd.AddCommand(paymentsChargeCmd)
 
 	// payments capture
 	paymentsCaptureCmd.Flags().StringVarP(&captureAmount, "amount", "a", "",
 		"Amount to capture as a decimal in token units (e.g. 1.00); > 0 and ≤ capturable")
 	_ = paymentsCaptureCmd.MarkFlagRequired("amount")
-	addSigningFlags(paymentsCaptureCmd, &capturePrivateKey, &capturePrepare)
+	addSigningFlags(paymentsCaptureCmd, &capturePrivateKey)
 	paymentsCmd.AddCommand(paymentsCaptureCmd)
 
 	// payments void
-	addSigningFlags(paymentsVoidCmd, &voidPrivateKey, &voidPrepare)
+	addSigningFlags(paymentsVoidCmd, &voidPrivateKey)
 	paymentsCmd.AddCommand(paymentsVoidCmd)
 
 	// payments release
 	paymentsReleaseCmd.Flags().StringVarP(&releaseCallerAddress, "caller-address", "C", "",
 		"Address that will sign the tx (default: payee on record)")
-	addSigningFlags(paymentsReleaseCmd, &releasePrivateKey, &releasePrepare)
+	addSigningFlags(paymentsReleaseCmd, &releasePrivateKey)
 	paymentsCmd.AddCommand(paymentsReleaseCmd)
 
 	// payments refund
 	paymentsRefundCmd.Flags().StringVarP(&refundAmount, "amount", "a", "",
 		"Amount to refund as a decimal in token units (e.g. 1.00); > 0 and ≤ refundable")
 	_ = paymentsRefundCmd.MarkFlagRequired("amount")
-	addSigningFlags(paymentsRefundCmd, &refundPrivateKey, &refundPrepare)
+	addSigningFlags(paymentsRefundCmd, &refundPrivateKey)
 	paymentsCmd.AddCommand(paymentsRefundCmd)
 
 	// payments dispute / dispute close / disputes
-	addSigningFlags(paymentsDisputeCmd, &disputePrivateKey, &disputePrepare)
+	addSigningFlags(paymentsDisputeCmd, &disputePrivateKey)
 	paymentsDisputeCmd.Flags().StringVar(&disputeReason, "reason", "", "bytes32 reason code (0x…); defaults to zero")
-	addSigningFlags(paymentsDisputeCloseCmd, &closeDisputePrivateKey, &closeDisputePrepare)
+	addSigningFlags(paymentsDisputeCloseCmd, &closeDisputePrivateKey)
 	paymentsDisputeCloseCmd.Flags().StringVar(&closeDisputeReason, "reason", "", "bytes32 reason code (0x…); defaults to zero")
 	paymentsDisputeCmd.AddCommand(paymentsDisputeCloseCmd)
 	paymentsCmd.AddCommand(paymentsDisputeCmd)

@@ -157,7 +157,7 @@ rail0 wallets create --address 0xABCD… --label "Treasury"
 
 | Flag | Short | Required | Description |
 |------|-------|----------|-------------|
-| `--address` | `-A` | yes | EVM wallet address (0x-prefixed) |
+| `--address` | `-A` | yes | EVM wallet address (0x-prefixed, or `@alias`) |
 | `--label` | `-l` | no | Human-readable label |
 
 #### `wallets update <wallet>`

@@ -12,8 +12,9 @@ import (
 // walletsCmd manages the logged-in account's wallets. The account id is taken
 // from the session (JWT), never passed as an argument — run bare to list; the
 // verbs below act on a single wallet, named by its id or its 0x address (the
-// wallet's own identity; unique per account). Address-book @aliases are for
-// external addresses in `payments`, not for your own wallets.
+// wallet's own identity; unique per account) — no @alias there, a wallet
+// already has its own address. (create --address does accept an @alias: it
+// names the address to register.)
 
 var walletsActive string
 var walletsChainID int
@@ -88,7 +89,13 @@ var walletsCreateCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		req := rail0.CreateWalletRequest{Address: createWalletAddress, Label: createWalletLabel}
+		// Resolve @alias here: create names the address to register, so pointing
+		// at a saved address is meaningful (unlike addressing an existing wallet).
+		addr, err := resolveAlias(createWalletAddress)
+		if err != nil {
+			return err
+		}
+		req := rail0.CreateWalletRequest{Address: addr, Label: createWalletLabel}
 		return ui.RunAPI(func() (any, error) {
 			return newClient().Accounts.CreateWallet(context.Background(), account, req)
 		})
@@ -184,7 +191,7 @@ func init() {
 	walletsCmd.Flags().StringVarP(&walletsSymbol, "symbol", "s", "", "Filter by token symbol (e.g. USDC)")
 
 	// wallets create
-	walletsCreateCmd.Flags().StringVarP(&createWalletAddress, "address", "A", "", "EVM wallet address (0x-prefixed hex)")
+	walletsCreateCmd.Flags().StringVarP(&createWalletAddress, "address", "A", "", "EVM wallet address (0x-prefixed hex, or @alias)")
 	_ = walletsCreateCmd.MarkFlagRequired("address")
 	walletsCreateCmd.Flags().StringVarP(&createWalletLabel, "label", "l", "", "Human-readable wallet label")
 

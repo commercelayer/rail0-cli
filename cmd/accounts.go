@@ -50,13 +50,18 @@ var accountsWalletsCmd = &cobra.Command{
 // ── accounts wallets get ────────────────────────────────────────────────────
 
 var accountsWalletsGetCmd = &cobra.Command{
-	Use:     "get <account_id> <wallet_id>",
-	Short:   "Fetch a single wallet",
-	Example: `  rail0 accounts wallets get acct_abc123 wlt_xyz789`,
-	Args:    cobra.ExactArgs(2),
+	Use:   "get <account_id> <wallet>",
+	Short: "Fetch a single wallet (by id, 0x address, or @alias)",
+	Example: `  rail0 accounts wallets get acct_abc123 0xABCD…
+  rail0 accounts wallets get acct_abc123 @payee`,
+	Args: cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		wallet, err := resolveAlias(args[1])
+		if err != nil {
+			return err
+		}
 		return ui.RunAPI(func() (any, error) {
-			return newClient().Accounts.GetWallet(context.Background(), args[0], args[1])
+			return newClient().Accounts.GetWallet(context.Background(), args[0], wallet)
 		})
 	},
 }
@@ -89,11 +94,15 @@ var updateWalletLabel string
 var updateWalletActive string
 
 var accountsWalletsUpdateCmd = &cobra.Command{
-	Use:     "update <account_id> <wallet_id>",
-	Short:   "Update label or active status on a wallet",
-	Example: `  rail0 accounts wallets update acct_abc123 wlt_xyz789 --label "New label" --active true`,
+	Use:     "update <account_id> <wallet>",
+	Short:   "Update label or active status on a wallet (by id, 0x address, or @alias)",
+	Example: `  rail0 accounts wallets update acct_abc123 @payee --label "New label" --active true`,
 	Args:    cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		wallet, err := resolveAlias(args[1])
+		if err != nil {
+			return err
+		}
 		req := rail0.UpdateWalletRequest{Label: updateWalletLabel}
 		if updateWalletActive != "" {
 			switch updateWalletActive {
@@ -108,7 +117,7 @@ var accountsWalletsUpdateCmd = &cobra.Command{
 			}
 		}
 		return ui.RunAPI(func() (any, error) {
-			return newClient().Accounts.UpdateWallet(context.Background(), args[0], args[1], req)
+			return newClient().Accounts.UpdateWallet(context.Background(), args[0], wallet, req)
 		})
 	},
 }
@@ -116,13 +125,17 @@ var accountsWalletsUpdateCmd = &cobra.Command{
 // ── accounts wallets delete ───────────────────────────────────────────────────
 
 var accountsWalletsDeleteCmd = &cobra.Command{
-	Use:     "delete <account_id> <wallet_id>",
-	Short:   "Remove a wallet from an account",
-	Example: `  rail0 accounts wallets delete acct_abc123 wlt_xyz789`,
+	Use:     "delete <account_id> <wallet>",
+	Short:   "Remove a wallet from an account (by id, 0x address, or @alias)",
+	Example: `  rail0 accounts wallets delete acct_abc123 @payee`,
 	Args:    cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		wallet, err := resolveAlias(args[1])
+		if err != nil {
+			return err
+		}
 		return ui.RunAPI(func() (any, error) {
-			return nil, newClient().Accounts.DeleteWallet(context.Background(), args[0], args[1])
+			return nil, newClient().Accounts.DeleteWallet(context.Background(), args[0], wallet)
 		})
 	},
 }
@@ -133,20 +146,24 @@ var balancesChainID int
 var balancesSymbol string
 
 var accountsWalletsBalancesCmd = &cobra.Command{
-	Use:   "balances <account_id> <wallet_id>",
-	Short: "Read a wallet's live on-chain balances",
+	Use:   "balances <account_id> <wallet>",
+	Short: "Read a wallet's live on-chain balances (by id, 0x address, or @alias)",
 	Long: `Read a wallet's live on-chain balances across the configured chains.
 
 Each chain reports the native gas-token balance and the active token balances,
 or an error if that chain's RPC was unreachable (reported per chain, so one dead
 RPC never hides the others). Use --chain-id / --symbol to narrow the result.`,
-	Example: `  rail0 accounts wallets balances acct_abc123 wlt_xyz789
-  rail0 accounts wallets balances acct_abc123 wlt_xyz789 --chain-id 84532 --symbol USDC`,
+	Example: `  rail0 accounts wallets balances acct_abc123 @payee
+  rail0 accounts wallets balances acct_abc123 0xABCD… --chain-id 84532 --symbol USDC`,
 	Args: cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		wallet, err := resolveAlias(args[1])
+		if err != nil {
+			return err
+		}
 		p := rail0.WalletBalancesParams{ChainID: balancesChainID, TokenSymbol: balancesSymbol}
 		return ui.RunAPI(func() (any, error) {
-			return newClient().Accounts.Balances(context.Background(), args[0], args[1], p)
+			return newClient().Accounts.Balances(context.Background(), args[0], wallet, p)
 		})
 	},
 }

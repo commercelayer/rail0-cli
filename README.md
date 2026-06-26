@@ -142,10 +142,13 @@ rail0 accounts wallets acct_abc123 --chain-id 5042002 --symbol USDC --active tru
 | `--symbol` | `-s` | Filter by token symbol (e.g. `USDC`) |
 | `--active` | — | Filter by active flag (`true` or `false`) |
 
-#### `accounts wallets get <account_id> <wallet_id>`
+#### `accounts wallets get <account_id> <wallet>`
+
+`<wallet>` is the wallet id (UUID), its **0x address** (unique per account), or an `@alias`.
 
 ```sh
-rail0 accounts wallets get acct_abc123 wlt_xyz789
+rail0 accounts wallets get acct_abc123 0xABCD…
+rail0 accounts wallets get acct_abc123 @payee
 ```
 
 #### `accounts wallets create <account_id>`
@@ -161,10 +164,12 @@ rail0 accounts wallets create acct_abc123 --address 0xABCD… --label "Treasury"
 | `--address` | `-A` | yes | EVM wallet address (0x-prefixed, or `@alias`) |
 | `--label` | `-l` | no | Human-readable label |
 
-#### `accounts wallets update <account_id> <wallet_id>`
+#### `accounts wallets update <account_id> <wallet>`
+
+`<wallet>` = id, 0x address, or `@alias`.
 
 ```sh
-rail0 accounts wallets update acct_abc123 wlt_xyz789 --label "New label" --active false
+rail0 accounts wallets update acct_abc123 @payee --label "New label" --active false
 ```
 
 | Flag | Short | Description |
@@ -172,19 +177,21 @@ rail0 accounts wallets update acct_abc123 wlt_xyz789 --label "New label" --activ
 | `--label` | `-l` | New wallet label |
 | `--active` | — | Set active flag (`true` or `false`) |
 
-#### `accounts wallets delete <account_id> <wallet_id>`
+#### `accounts wallets delete <account_id> <wallet>`
+
+`<wallet>` = id, 0x address, or `@alias`.
 
 ```sh
-rail0 accounts wallets delete acct_abc123 wlt_xyz789
+rail0 accounts wallets delete acct_abc123 @payee
 ```
 
-#### `accounts wallets balances <account_id> <wallet_id>`
+#### `accounts wallets balances <account_id> <wallet>`
 
-Read a wallet's live on-chain balances across the configured chains. Each chain reports the native gas-token balance and the active token balances, or an error if that chain's RPC was unreachable (reported per chain, so one dead RPC never hides the others).
+Read a wallet's live on-chain balances across the configured chains. Each chain reports the native gas-token balance and the active token balances, or an error if that chain's RPC was unreachable (reported per chain, so one dead RPC never hides the others). `<wallet>` = id, 0x address, or `@alias`.
 
 ```sh
-rail0 accounts wallets balances acct_abc123 wlt_xyz789
-rail0 accounts wallets balances acct_abc123 wlt_xyz789 --chain-id 84532 --symbol USDC
+rail0 accounts wallets balances acct_abc123 @payee
+rail0 accounts wallets balances acct_abc123 0xABCD… --chain-id 84532 --symbol USDC
 ```
 
 | Flag | Short | Description |

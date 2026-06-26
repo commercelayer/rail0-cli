@@ -52,26 +52,44 @@ export RAIL0_TOKEN=your_jwt_token
 
 Or use `rail0 auth login` to obtain and cache a JWT via SIWE authentication.
 
+### Address book (aliases)
+
+Save frequently-used addresses and reference them as `@name` on any address flag
+(`--from` / `--to` / `--address`). Stored in `config.yaml` in the OS config dir
+(`~/.config/rail0/` on Linux, `~/Library/Application Support/rail0/` on macOS).
+
+```sh
+rail0 aliases add payee 0xAbC123…
+rail0 aliases add buyer 0xDeF456…
+rail0 aliases                       # bare command lists the address book
+
+rail0 payments create --from @buyer --to @payee -t USDC -a 10.50 -c 84532 -p 0xPayerKey…
+```
+
+The JWT session token is **not** stored in the config file — it stays in the OS cache dir (written by `rail0 auth login`).
+
 ---
 
 ## Signing modes
 
 ### Payer — `payments create`
 
-The payer creates the payment and signs the EIP-712 payload. Two modes:
+The payer creates the payment and signs the EIP-712 payload with their key
+(`--private-key` / `-p`), submitting the signature in one step:
 
-| Mode | Command | Description |
-|------|---------|-------------|
-| Direct key | `payments create … -p 0xPayerKey…` | Creates the payment, signs locally, submits signature in one step |
-| External wallet | `payments create … -s 0x1a2b…` with `<rail0Id>` | Submit a signature produced by MetaMask / `eth_signTypedData_v4` |
+```sh
+rail0 payments create -F 0xBuyer… -T 0xMerchant… -t USDC -a 10.50 -c 5042002 -p 0xPayerKey…
+```
 
 ### Payee — action commands
 
-Every on-chain action command (`authorize`, `charge`, `capture`, `void`, `release`, `refund`, `dispute`) is **atomic**: pass `--private-key` (`-p`) and the CLI prepares the unsigned transaction, signs it locally, and broadcasts it in a single step.
+Every on-chain action command (`authorize`, `charge`, `capture`, `void`, `release`, `refund`, `dispute`) is **atomic**: it prepares the unsigned transaction, signs it locally, and broadcasts it in a single step.
 
 | Flag | Short | Description |
 |------|-------|-------------|
-| `--private-key` | `-p` | Caller's secp256k1 private key (0x-prefixed hex); signs and broadcasts in one step |
+| `--private-key` | `-p` | Caller's secp256k1 private key (0x-prefixed hex) |
+
+The signing key is resolved in this order: `--private-key` (`-p` / `--pk`) > `RAIL0_PRIVATE_KEY` env var.
 
 ---
 
@@ -105,15 +123,15 @@ rail0 auth logout
 
 ---
 
-### Accounts
+### Wallets
 
-#### `accounts wallets <account_id>`
+`wallets` manages the **logged-in account's** wallets — the account is taken from the session (`auth login`), never passed as an argument; with no session the command errors. Run bare to list; the verbs act on one wallet, named by its id or **0x address** (the wallet's own identity, unique per account). Address-book `@aliases` are for external addresses in `payments`, not for your own wallets.
 
-List the account's wallet-token rows (one row per wallet/token pairing on a chain). Requires authentication.
+#### `wallets` — list
 
 ```sh
-rail0 accounts wallets acct_abc123
-rail0 accounts wallets acct_abc123 --chain-id 5042002 --symbol USDC --active true
+rail0 wallets
+rail0 wallets --chain-id 5042002 --symbol USDC --active true
 ```
 
 | Flag | Short | Description |
@@ -122,40 +140,30 @@ rail0 accounts wallets acct_abc123 --chain-id 5042002 --symbol USDC --active tru
 | `--symbol` | `-s` | Filter by token symbol (e.g. `USDC`) |
 | `--active` | — | Filter by active flag (`true` or `false`) |
 
----
-
-#### `accounts wallet <account_id> <wallet_id>`
-
-Fetch a single wallet.
+#### `wallets get <wallet>`
 
 ```sh
-rail0 accounts wallet acct_abc123 wlt_xyz789
+rail0 wallets get 0xABCD…
+rail0 wallets get <wallet_uuid>
 ```
 
----
+#### `wallets create`
 
-#### `accounts create-wallet <account_id>`
-
-Register a new EVM wallet address on an account. Requires authentication.
+Register a new EVM wallet address on the account.
 
 ```sh
-rail0 accounts create-wallet acct_abc123 --address 0xABCD… --label "Treasury"
+rail0 wallets create --address 0xABCD… --label "Treasury"
 ```
 
 | Flag | Short | Required | Description |
 |------|-------|----------|-------------|
-| `--address` | `-A` | yes | EVM wallet address (0x-prefixed) |
+| `--address` | `-A` | yes | EVM wallet address (0x-prefixed, or `@alias`) |
 | `--label` | `-l` | no | Human-readable label |
 
----
-
-#### `accounts update-wallet <account_id> <wallet_id>`
-
-Update label or active status on a wallet. Requires authentication.
+#### `wallets update <wallet>`
 
 ```sh
-rail0 accounts update-wallet acct_abc123 wlt_xyz789 --label "New label"
-rail0 accounts update-wallet acct_abc123 wlt_xyz789 --active false
+rail0 wallets update 0xABCD… --label "New label" --active false
 ```
 
 | Flag | Short | Description |
@@ -163,25 +171,18 @@ rail0 accounts update-wallet acct_abc123 wlt_xyz789 --active false
 | `--label` | `-l` | New wallet label |
 | `--active` | — | Set active flag (`true` or `false`) |
 
----
-
-#### `accounts delete-wallet <account_id> <wallet_id>`
-
-Remove a wallet from an account. Requires authentication.
+#### `wallets delete <wallet>`
 
 ```sh
-rail0 accounts delete-wallet acct_abc123 wlt_xyz789
+rail0 wallets delete 0xABCD…
 ```
 
----
+#### `wallets balances <wallet>`
 
-#### `accounts balances <account_id> <wallet_id>`
-
-Read a wallet's live on-chain balances across the configured chains. Each chain reports the native gas-token balance and the active token balances, or an error if that chain's RPC was unreachable (reported per chain, so one dead RPC never hides the others). Requires authentication.
+Read a wallet's live on-chain balances across the configured chains. Each chain reports the native gas-token balance and the active token balances, or an error if that chain's RPC was unreachable (reported per chain, so one dead RPC never hides the others).
 
 ```sh
-rail0 accounts balances acct_abc123 wlt_xyz789
-rail0 accounts balances acct_abc123 wlt_xyz789 --chain-id 84532 --symbol USDC
+rail0 wallets balances 0xABCD… --chain-id 84532 --symbol USDC
 ```
 
 | Flag | Short | Description |
@@ -263,30 +264,23 @@ rail0 health
 
 #### `payments create`
 
-Create a payment, sign the EIP-712 payload, and submit the payer's signature in one step.
+Create a payment, sign the EIP-712 payload with the payer's key, and submit the signature in one step.
 
 | Flag | Short | Required | Default | Description |
 |------|-------|----------|---------|-------------|
 | `--from` | `-F` | yes | — | Payer wallet address (0x-prefixed) |
 | `--to` | `-T` | yes | — | Payee wallet address (0x-prefixed) |
 | `--token` | `-t` | yes | — | Token symbol as in `tokens` (e.g. `USDC`) |
-| `--amount` | `-a` | yes | — | Amount in token base units (e.g. `1000000` for 1 USDC) |
+| `--amount` | `-a` | yes | — | Amount in token units (e.g. `10.50`) |
 | `--chain-id` | `-c` | yes | — | EVM chain ID as in `chains` (e.g. `5042002`) |
 | `--mode` | `-m` | no | `authorize` | `authorize` (escrow + capture) or `charge` (immediate) |
 | `--payment-file` | `-f` | no | — | JSON file with the full request body |
-| `--private-key` | `-p` | no* | — | Payer's key — creates and signs locally in one step |
-| `--signature` | `-s` | no* | — | Submit an externally-produced EIP-712 signature for an existing `<rail0Id>` |
-
-\* one of `-p` or `-s` required (mutually exclusive)
+| `--private-key` | `-p` | yes | — | Payer's key — creates and signs locally in one step |
 
 ```sh
-# Payer with direct key access — create + sign in one step
 rail0 payments create \
-  -F 0xBuyer… -T 0xMerchant… -t USDC -a 1000000 -c 5042002 \
+  -F 0xBuyer… -T 0xMerchant… -t USDC -a 10.50 -c 5042002 \
   -p 0xPayerKey…
-
-# Payer using MetaMask — submit externally-produced signature
-rail0 payments create <rail0Id> -s 0x1a2b…(130 hex chars)
 ```
 
 If required flags are missing and stdin is a TTY, an interactive form launches automatically.
@@ -428,30 +422,6 @@ rail0 payments get "$RAIL0_ID"   # poll until payment=authorized, authorize:conf
 # 3. Payee captures
 rail0 payments capture "$RAIL0_ID" -a 1000000 -p 0xPayeeKey…
 rail0 payments get "$RAIL0_ID"   # poll until payment=captured, capture:confirmed
-```
-
----
-
-### Payer signs externally (MetaMask)
-
-The payer's EIP-712 signature can be produced by an external wallet and submitted
-separately — the payee's on-chain operations remain atomic (`-p`).
-
-```sh
-# 1. Payer creates payment, gets signingPayload
-rail0 payments create \
-  -F 0xBuyer… -T 0xMerchant… -t USDC -a 1000000 -c 5042002 \
-  --json
-# → note the rail0_id and signingPayload
-
-# 2. Payer signs with MetaMask (eth_signTypedData_v4) → SIGNATURE, then submits it
-rail0 payments create <rail0Id> -s "$SIGNATURE"
-
-# 3. Payee authorizes and captures with a direct key
-rail0 payments authorize <rail0Id> -p 0xPayeeKey…
-rail0 payments get       <rail0Id>   # poll until authorized
-rail0 payments capture   <rail0Id> -a 1000000 -p 0xPayeeKey…
-rail0 payments get       <rail0Id>   # poll until captured
 ```
 
 ---

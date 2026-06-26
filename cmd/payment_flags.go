@@ -34,7 +34,7 @@ func (f *createPaymentFlags) addTo(cmd *cobra.Command) {
 	cmd.Flags().StringVarP(&f.from, "from", "F", "",
 		"Payer wallet address (from) (0x-prefixed, funds are pulled from here)")
 	cmd.Flags().StringVarP(&f.to, "to", "T", "",
-		"Payee wallet address (to) (0x-prefixed, address from accounts wallets)")
+		"Payee wallet address (to) (0x-prefixed, address from 'wallets')")
 	cmd.Flags().StringVarP(&f.token, "token", "t", "",
 		"Token symbol as listed in GET /tokens (e.g. USDC)")
 	cmd.Flags().StringVarP(&f.amount, "amount", "a", "",
@@ -89,7 +89,7 @@ func (f *createPaymentFlags) buildInteractive() (rail0.CreatePaymentRequest, err
 				Value(&f.from),
 			huh.NewInput().
 				Title("To (payee)").
-				Description("Payee wallet address (0x-prefixed) — use address from accounts wallets").
+				Description("Payee wallet address (0x-prefixed) — use address from 'wallets'").
 				Value(&f.to),
 			huh.NewInput().
 				Title("Token").
@@ -151,6 +151,16 @@ func (f *createPaymentFlags) resolve() (rail0.CreatePaymentRequest, error) {
 	ctx := context.Background()
 	client := newClient()
 
+	// Resolve any "@name" address-book references to concrete addresses.
+	payer, err := resolveAlias(f.from)
+	if err != nil {
+		return rail0.CreatePaymentRequest{}, err
+	}
+	payee, err := resolveAlias(f.to)
+	if err != nil {
+		return rail0.CreatePaymentRequest{}, err
+	}
+
 	chainID := f.chainID
 
 	// Resolve token symbol → address on the selected chain.
@@ -175,8 +185,8 @@ func (f *createPaymentFlags) resolve() (rail0.CreatePaymentRequest, error) {
 	}
 
 	return rail0.CreatePaymentRequest{
-		Payer:   f.from,
-		Payee:   f.to,
+		Payer:   payer,
+		Payee:   payee,
 		Token:   tokenAddress,
 		Amount:  f.amount,
 		ChainID: chainID,

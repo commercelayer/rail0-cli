@@ -2,6 +2,7 @@
 package cmd
 
 import (
+	"errors"
 	"os"
 
 	charmlog "github.com/charmbracelet/log"
@@ -43,22 +44,14 @@ func init() {
 
 	cobra.OnInitialize(func() { ui.SetJSON(jsonOut) })
 
-	rootCmd.AddCommand(paymentsCmd, accountsCmd, webhooksCmd, chainsCmd, tokensCmd, authCmd, healthCmd)
+	rootCmd.AddCommand(paymentsCmd, walletsCmd, webhooksCmd, chainsCmd, tokensCmd, authCmd, healthCmd, aliasesCmd)
 }
 
 // newClient builds a RAIL0 API client.
-// Priority: --base-url flag > RAIL0_BASE_URL env var > config.DefaultBaseURL.
 // If a JWT is stored (RAIL0_TOKEN env var or ~/.cache/rail0/token), it is sent
 // as Authorization: Bearer on every request.
 func newClient() *rail0.Client {
-	url := baseURL
-	if url == "" {
-		url = os.Getenv("RAIL0_BASE_URL")
-	}
-	if url == "" {
-		url = config.DefaultBaseURL
-	}
-	opts := rail0.ClientOptions{BaseURL: url}
+	opts := rail0.ClientOptions{BaseURL: resolveBaseURL()}
 	if t := token.Load(); t != "" {
 		opts.Headers = map[string]string{"Authorization": "Bearer " + t}
 	}
@@ -66,6 +59,38 @@ func newClient() *rail0.Client {
 		opts.Logger = makeDebugLogger()
 	}
 	return rail0.NewClient(opts)
+}
+
+// currentAccountID returns the account id of the logged-in session (the JWT
+// `account_id` claim). Wallet commands are scoped to the logged-in account, so
+// they derive it from the session instead of taking it as an argument; with no
+// (or an expired) session this errors, pointing the user at `auth login`.
+func currentAccountID() (string, error) {
+	t := token.Load()
+	if t == "" {
+		return "", errors.New("not logged in: run 'rail0 auth login -p 0xYourKey…'")
+	}
+	claims, err := parseJWTClaims(t)
+	if err != nil {
+		return "", errors.New("session invalid or expired: run 'rail0 auth login'")
+	}
+	id, _ := claims["account_id"].(string)
+	if id == "" {
+		return "", errors.New("session carries no account_id: re-run 'rail0 auth login'")
+	}
+	return id, nil
+}
+
+// resolveBaseURL picks the API base URL.
+// Precedence: --base-url flag > RAIL0_BASE_URL env > config.DefaultBaseURL.
+func resolveBaseURL() string {
+	if baseURL != "" {
+		return baseURL
+	}
+	if env := os.Getenv("RAIL0_BASE_URL"); env != "" {
+		return env
+	}
+	return config.DefaultBaseURL
 }
 
 // makeDebugLogger returns a rail0.Logger that routes HTTP traces through

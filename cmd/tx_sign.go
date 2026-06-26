@@ -2,7 +2,9 @@ package cmd
 
 import (
 	"fmt"
+	"strings"
 
+	ethcrypto "github.com/ethereum/go-ethereum/crypto"
 	rail0 "github.com/rail0/go-sdk"
 )
 
@@ -19,4 +21,15 @@ func signTx(unsignedJSON, privateKeyHex string) (string, error) {
 		return "", fmt.Errorf("invalid private key: %w", err)
 	}
 	return rail0.SignTransaction(unsignedJSON, key)
+}
+
+// addressFromKey derives the 0x checksummed EVM address for a hex private key,
+// validating the key in the process. Used to set the on-chain caller (e.g. for
+// release) from the signing key rather than a separate flag.
+func addressFromKey(privateKeyHex string) (string, error) {
+	key, err := ethcrypto.HexToECDSA(strings.TrimPrefix(privateKeyHex, "0x"))
+	if err != nil {
+		return "", fmt.Errorf("invalid private key: %w", err)
+	}
+	return ethcrypto.PubkeyToAddress(key.PublicKey).Hex(), nil
 }

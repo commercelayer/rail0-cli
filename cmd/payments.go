@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 
 	"github.com/rail0/cli/internal/ui"
 	rail0 "github.com/rail0/go-sdk"
@@ -113,48 +114,27 @@ var paymentsTransactionsCmd = &cobra.Command{
 // ── payments sign ─────────────────────────────────────────────────────────────
 
 var signPrivateKey string
-var signSignature string
 var signCreateFlags createPaymentFlags
 
 var paymentsSignCmd = &cobra.Command{
 	Use:   "create",
-	Short: "Create a payment and sign it with the payer's key (or submit an external signature)",
-	Long: `Create a RAIL0 payment and sign the EIP-3009 payload with the payer's private
-key in one step. The API stores the signature; the payee can then authorize.
-
-  --private-key (-p)   Create the payment, sign the signingPayload locally,
-                       and submit the signature in one step.
-
-For external wallets (MetaMask): use 'payments get' to fetch the signingPayload,
-sign it with eth_signTypedData_v4, then submit the result:
-
-  rail0 payments create <rail0Id> --signature 0x1a2b…`,
-	Example: `  # Payer with direct key access — create + sign in one step
-  rail0 payments create \
-    -F 0xBuyer… -T 0xMerchant… -t 0x3600… -a 1000000 -c 5042002 \
-    -p 0xPayerKey…
-
-  # Payer using MetaMask — submit externally-produced signature
-  rail0 payments create <rail0Id> --signature 0x1a2b…(130 hex chars)`,
-	Args: cobra.RangeArgs(0, 1),
+	Short: "Create a payment and sign it with the payer's key",
+	Long: `Create a RAIL0 payment and sign the EIP-3009 payload with the payer's key in
+one step (--private-key / -p). The API stores the signature; the payee can then
+authorize.`,
+	Example: `  rail0 payments create \
+    -F 0xBuyer… -T 0xMerchant… -t USDC -a 10.50 -c 5042002 \
+    -p 0xPayerKey…`,
+	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := context.Background()
 		client := newClient()
 
-		if len(args) == 1 {
-			// Submit-signature mode: payer signed externally (MetaMask).
-			if signSignature == "" {
-				return errors.New("provide --signature when passing a rail0Id")
-			}
-			return ui.RunAPI(func() (any, error) {
-				return client.Payments.Sign(ctx, args[0],
-					rail0.PayerSignatureRequest{Signature: signSignature})
-			})
-		}
-
-		// Create + sign mode: payer has direct key access.
-		if signPrivateKey == "" {
-			return errors.New("provide --private-key (-p) to sign locally, or pass <rail0Id> --signature for an externally-produced signature")
+		// Create + sign: payer signs the EIP-712 payload locally with the key
+		// (--private-key, or RAIL0_PRIVATE_KEY).
+		signingKey, err := resolveSigningKey(signPrivateKey)
+		if err != nil {
+			return errors.New("provide --private-key (-p) to create and sign the payment")
 		}
 		req, err := signCreateFlags.build()
 		if err != nil {
@@ -164,7 +144,7 @@ sign it with eth_signTypedData_v4, then submit the result:
 		if err != nil {
 			return err
 		}
-		sig, err := signEIP712FromCreate(created, req.Mode, signPrivateKey)
+		sig, err := signEIP712FromCreate(created, req.Mode, signingKey)
 		if err != nil {
 			return fmt.Errorf("sign: %w", err)
 		}
@@ -177,9 +157,10 @@ sign it with eth_signTypedData_v4, then submit the result:
 
 // ── action command helpers ────────────────────────────────────────────────────
 
-// addSigningFlags attaches --private-key / -p (and the hidden alias --pk) to cmd.
-// Every on-chain operation is atomic: the CLI prepares the unsigned transaction,
-// signs it locally with this key, and broadcasts it in a single call.
+// addSigningFlags attaches the signing-key flags to cmd: --private-key / -p and
+// the hidden alias --pk. Every on-chain operation is atomic: the CLI prepares
+// the unsigned transaction, signs it locally with this key, and broadcasts it in
+// a single call.
 func addSigningFlags(cmd *cobra.Command, privateKey *string) {
 	cmd.Flags().StringVarP(privateKey, "private-key", "p", "",
 		"Caller's secp256k1 private key (0x-prefixed hex); signs and broadcasts in one step")
@@ -187,12 +168,17 @@ func addSigningFlags(cmd *cobra.Command, privateKey *string) {
 	_ = cmd.Flags().MarkHidden("pk")
 }
 
-// requirePrivateKey returns an error when no signing key was provided.
-func requirePrivateKey(privateKey string) error {
-	if privateKey == "" {
-		return errors.New("provide --private-key (-p / --pk) to sign and broadcast")
+// resolveSigningKey determines the private key to sign with.
+// Precedence: --private-key / --pk (explicit) > RAIL0_PRIVATE_KEY env var.
+// Returns a clear error when none is available.
+func resolveSigningKey(explicitKey string) (string, error) {
+	if explicitKey != "" {
+		return explicitKey, nil
 	}
-	return nil
+	if env := os.Getenv("RAIL0_PRIVATE_KEY"); env != "" {
+		return env, nil
+	}
+	return "", errors.New("no signing key: pass --private-key (-p / --pk), or set RAIL0_PRIVATE_KEY")
 }
 
 // ── payments authorize ────────────────────────────────────────────────────────
@@ -223,7 +209,8 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
   rail0 payments authorize <rail0Id> -p 0xPayeeKey…`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := requirePrivateKey(authorizePrivateKey); err != nil {
+		signingKey, err := resolveSigningKey(authorizePrivateKey)
+		if err != nil {
 			return err
 		}
 		client := newClient()
@@ -236,7 +223,7 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 		if err != nil {
 			return err
 		}
-		signedTx, err := signTx(prep.UnsignedTransaction, authorizePrivateKey)
+		signedTx, err := signTx(prep.UnsignedTransaction, signingKey)
 		if err != nil {
 			return fmt.Errorf("sign: %w", err)
 		}
@@ -269,7 +256,8 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 	Example: `  rail0 payments charge 0xrail0Id… -p 0xPayeeKey…`,
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := requirePrivateKey(chargePrivateKey); err != nil {
+		signingKey, err := resolveSigningKey(chargePrivateKey)
+		if err != nil {
 			return err
 		}
 		client := newClient()
@@ -282,7 +270,7 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 		if err != nil {
 			return err
 		}
-		signedTx, err := signTx(prep.UnsignedTransaction, chargePrivateKey)
+		signedTx, err := signTx(prep.UnsignedTransaction, signingKey)
 		if err != nil {
 			return fmt.Errorf("sign: %w", err)
 		}
@@ -320,7 +308,8 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
   rail0 payments capture 0xrail0Id… --amount 0.50 -p 0xPayeeKey…`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := requirePrivateKey(capturePrivateKey); err != nil {
+		signingKey, err := resolveSigningKey(capturePrivateKey)
+		if err != nil {
 			return err
 		}
 		client := newClient()
@@ -333,7 +322,7 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 		if err != nil {
 			return err
 		}
-		signedTx, err := signTx(prep.UnsignedTransaction, capturePrivateKey)
+		signedTx, err := signTx(prep.UnsignedTransaction, signingKey)
 		if err != nil {
 			return fmt.Errorf("sign: %w", err)
 		}
@@ -363,7 +352,8 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 	Example: `  rail0 payments void 0xrail0Id… -p 0xPayeeKey…`,
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := requirePrivateKey(voidPrivateKey); err != nil {
+		signingKey, err := resolveSigningKey(voidPrivateKey)
+		if err != nil {
 			return err
 		}
 		client := newClient()
@@ -376,7 +366,7 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 		if err != nil {
 			return err
 		}
-		signedTx, err := signTx(prep.UnsignedTransaction, voidPrivateKey)
+		signedTx, err := signTx(prep.UnsignedTransaction, signingKey)
 		if err != nil {
 			return fmt.Errorf("sign: %w", err)
 		}
@@ -389,7 +379,6 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 
 // ── payments release ──────────────────────────────────────────────────────────
 
-var releaseCallerAddress string
 var releasePrivateKey string
 
 var paymentsReleaseCmd = &cobra.Command{
@@ -398,11 +387,9 @@ var paymentsReleaseCmd = &cobra.Command{
 	Long: `Prepare the transaction that calls release() on the RAIL0 contract.
 
 Release is only available after authorizationExpiry has passed on-chain.
-Returns the remaining escrowed balance to the payer. Permissionless —
-both payer and payee can call it.
-
-Use --caller-address to build the transaction for the payer. Omit it to
-build for the payee (default).
+Returns the remaining escrowed balance to the payer. Permissionless — both
+payer and payee can call it; the caller is whoever the signing key belongs to
+(derived from the key), so pass the payer's key to release as the payer.
 The API returns 202 immediately; poll 'payments get <rail0Id>' until
 status advances to "released".
 
@@ -410,11 +397,18 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 	Example: `  # Payee releases
   rail0 payments release 0xrail0Id… -p 0xPayeeKey…
 
-  # Payer releases
-  rail0 payments release 0xrail0Id… --caller-address 0xBuyer… -p 0xBuyerKey…`,
+  # Payer releases (just use the payer's key)
+  rail0 payments release 0xrail0Id… -p 0xPayerKey…`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := requirePrivateKey(releasePrivateKey); err != nil {
+		signingKey, err := resolveSigningKey(releasePrivateKey)
+		if err != nil {
+			return err
+		}
+		// The on-chain caller is whoever signs, so derive it from the signing key
+		// rather than taking a separate flag.
+		caller, err := addressFromKey(signingKey)
+		if err != nil {
 			return err
 		}
 		client := newClient()
@@ -423,11 +417,11 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 		if err != nil {
 			return err
 		}
-		prep, err := client.Payments.ReleasePrepare(ctx, rail0Id, releaseCallerAddress)
+		prep, err := client.Payments.ReleasePrepare(ctx, rail0Id, caller)
 		if err != nil {
 			return err
 		}
-		signedTx, err := signTx(prep.UnsignedTransaction, releasePrivateKey)
+		signedTx, err := signTx(prep.UnsignedTransaction, signingKey)
 		if err != nil {
 			return fmt.Errorf("sign: %w", err)
 		}
@@ -467,7 +461,8 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
   rail0 payments refund 0xrail0Id… --amount 0.25 -p 0xPayeeKey…`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := requirePrivateKey(refundPrivateKey); err != nil {
+		signingKey, err := resolveSigningKey(refundPrivateKey)
+		if err != nil {
 			return err
 		}
 		client := newClient()
@@ -487,7 +482,7 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 		}
 
 		// Sign the EIP-3009 ReceiveWithAuthorization payload (payee key).
-		v, r, s, err := signRefundPayload(phase1.SigningPayload, refundPrivateKey)
+		v, r, s, err := signRefundPayload(phase1.SigningPayload, signingKey)
 		if err != nil {
 			return fmt.Errorf("sign refund payload: %w", err)
 		}
@@ -505,7 +500,7 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 		}
 
 		// Sign the unsigned EIP-1559 transaction and broadcast.
-		signedTx, err := signTx(phase2.UnsignedTransaction, refundPrivateKey)
+		signedTx, err := signTx(phase2.UnsignedTransaction, signingKey)
 		if err != nil {
 			return fmt.Errorf("sign tx: %w", err)
 		}
@@ -536,7 +531,8 @@ Pass --private-key (-p): the CLI signs locally with the payer key and broadcasts
 	Example: `  rail0 payments dispute 0xrail0Id… -p 0xPayerKey… --reason 0x…`,
 	Args:    cobra.ExactArgs(1),
 	RunE: func(_ *cobra.Command, args []string) error {
-		if err := requirePrivateKey(disputePrivateKey); err != nil {
+		signingKey, err := resolveSigningKey(disputePrivateKey)
+		if err != nil {
 			return err
 		}
 		client := newClient()
@@ -549,7 +545,7 @@ Pass --private-key (-p): the CLI signs locally with the payer key and broadcasts
 		if err != nil {
 			return err
 		}
-		signedTx, err := signTx(prep.UnsignedTransaction, disputePrivateKey)
+		signedTx, err := signTx(prep.UnsignedTransaction, signingKey)
 		if err != nil {
 			return fmt.Errorf("sign: %w", err)
 		}
@@ -566,7 +562,8 @@ var paymentsDisputeCloseCmd = &cobra.Command{
 	Args:    cobra.ExactArgs(1),
 	Example: `  rail0 payments dispute close 0xrail0Id… -p 0xPayerKey…`,
 	RunE: func(_ *cobra.Command, args []string) error {
-		if err := requirePrivateKey(closeDisputePrivateKey); err != nil {
+		signingKey, err := resolveSigningKey(closeDisputePrivateKey)
+		if err != nil {
 			return err
 		}
 		client := newClient()
@@ -579,7 +576,7 @@ var paymentsDisputeCloseCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		signedTx, err := signTx(prep.UnsignedTransaction, closeDisputePrivateKey)
+		signedTx, err := signTx(prep.UnsignedTransaction, signingKey)
 		if err != nil {
 			return fmt.Errorf("sign: %w", err)
 		}
@@ -611,10 +608,6 @@ func init() {
 		"Payer's secp256k1 private key (0x-prefixed hex); creates the payment and signs locally")
 	paymentsSignCmd.Flags().StringVar(&signPrivateKey, "pk", "", "Alias for --private-key")
 	_ = paymentsSignCmd.Flags().MarkHidden("pk")
-	paymentsSignCmd.Flags().StringVarP(&signSignature, "signature", "s", "",
-		"65-byte EIP-712 signature (0x-prefixed 130-char hex) — used with <rail0Id> for external signing")
-	paymentsSignCmd.MarkFlagsMutuallyExclusive("private-key", "signature")
-	paymentsSignCmd.MarkFlagsMutuallyExclusive("pk", "signature")
 	paymentsCmd.AddCommand(paymentsSignCmd)
 
 	// payments get
@@ -648,8 +641,6 @@ func init() {
 	paymentsCmd.AddCommand(paymentsVoidCmd)
 
 	// payments release
-	paymentsReleaseCmd.Flags().StringVarP(&releaseCallerAddress, "caller-address", "C", "",
-		"Address that will sign the tx (default: payee on record)")
 	addSigningFlags(paymentsReleaseCmd, &releasePrivateKey)
 	paymentsCmd.AddCommand(paymentsReleaseCmd)
 

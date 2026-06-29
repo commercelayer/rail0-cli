@@ -148,19 +148,21 @@ rail0 auth logout
 
 ### Wallets
 
-`wallets` manages the **logged-in account's** wallets — the account is taken from the session (`auth login`), never passed as an argument; with no session the command errors. Run bare to list; the verbs act on one wallet, named by its id or **0x address** (the wallet's own identity, unique per account). Address-book `@aliases` are for external addresses in `payments`, not for your own wallets.
+`wallets` manages an account's wallets. When **listing**, the account is `--account` if given, otherwise the **logged-in session's** account (`auth login`) — one of the two must be present, else the command errors. Run bare to list; the verbs act on one wallet, named by its id or **0x address** (the wallet's own identity, unique per account). Address-book `@aliases` are for external addresses in `payments`, not for your own wallets.
 
 #### `wallets` — list
 
 Lists the account's wallets, each with its token holdings nested under `tokens`. A wallet with no tokens still appears (with an empty `tokens`), so it is never hidden just because nothing is associated.
 
 ```sh
-rail0 wallets
+rail0 wallets                                   # logged-in session account
+rail0 wallets --account 019e748b-…              # a specific account by id
 rail0 wallets --chain-id 5042002 --symbol USDC --active true
 ```
 
 | Flag | Short | Description |
 |------|-------|-------------|
+| `--account` | — | Account id to list; defaults to the logged-in session account (one of the two is required) |
 | `--chain-id` | — | Restrict the nested tokens to this chain id (wallets still listed) |
 | `--symbol` | `-s` | Restrict the nested tokens to this symbol, e.g. `USDC` (wallets still listed) |
 | `--active` | — | Filter the wallets by active flag (`true` or `false`) |

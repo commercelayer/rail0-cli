@@ -3,6 +3,7 @@ package cmd
 
 import (
 	"errors"
+	"fmt"
 	"os"
 
 	charmlog "github.com/charmbracelet/log"
@@ -76,6 +77,21 @@ func currentAccountID() (string, error) {
 	id, _ := claims["account_id"].(string)
 	if id == "" {
 		return "", errors.New("session carries no account_id: re-run 'rail0 auth login'")
+	}
+	return id, nil
+}
+
+// resolveAccountID returns the explicit --account value when given, otherwise
+// the logged-in session's account id. One of the two MUST be present: with no
+// flag and no session it errors, so a wallets query always has an account to
+// scope to.
+func resolveAccountID(explicit string) (string, error) {
+	if explicit != "" {
+		return explicit, nil
+	}
+	id, err := currentAccountID()
+	if err != nil {
+		return "", fmt.Errorf("%w (or pass --account <id>)", err)
 	}
 	return id, nil
 }

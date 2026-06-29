@@ -16,6 +16,7 @@ import (
 // already has its own address. (create --address does accept an @alias: it
 // names the address to register.)
 
+var walletsAccount string
 var walletsActive string
 var walletsChainID int
 var walletsSymbol string
@@ -23,17 +24,19 @@ var walletsSymbol string
 var walletsCmd = &cobra.Command{
 	Use:   "wallets",
 	Short: "Manage the logged-in account's wallets (lists when run bare)",
-	Long: `List and manage the wallets of the logged-in account.
+	Long: `List and manage the wallets of an account.
 
-The account is taken from the login session — run 'rail0 auth login' first.
-Run bare to list; the verbs below act on one wallet, named by its id or 0x
-address (unique per account).`,
-	Example: `  rail0 wallets --chain-id 5042002 --symbol USDC
+When listing, the account is --account if given, otherwise the logged-in
+session's account ('rail0 auth login'); one of the two must be present, else it
+errors. The verbs below act on one wallet (id or 0x address) of the session
+account.`,
+	Example: `  rail0 wallets                                   # session account
+  rail0 wallets --account 019e748b-… --chain-id 5042002 --symbol USDC
   rail0 wallets get 0xABCD…
   rail0 wallets create --address 0xABCD…`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		account, err := currentAccountID()
+		account, err := resolveAccountID(walletsAccount)
 		if err != nil {
 			return err
 		}
@@ -206,8 +209,11 @@ var walletsAliasCmd = &cobra.Command{
 
 func init() {
 	// wallets (list) — each wallet lists its tokens nested under "tokens".
+	// --account targets a specific account; without it the logged-in session's
+	// account is used (one of the two must be present, else error).
 	// --active filters the wallets; --chain-id/--symbol narrow the nested tokens
 	// (a wallet still appears, possibly with no tokens).
+	walletsCmd.Flags().StringVar(&walletsAccount, "account", "", "Account id to list (default: the logged-in session account)")
 	walletsCmd.Flags().StringVar(&walletsActive, "active", "", "Filter wallets by active flag ('true' or 'false')")
 	walletsCmd.Flags().IntVar(&walletsChainID, "chain-id", 0, "Restrict nested tokens to this chain id")
 	walletsCmd.Flags().StringVarP(&walletsSymbol, "symbol", "s", "", "Restrict nested tokens to this symbol (e.g. USDC)")

@@ -228,12 +228,13 @@ rail0 payments create --to @treasury -t USDC -a 10.50 -c 84532 -p 0xPayerKey…
 
 ### Chains
 
-#### `chains`
+#### `chains` (alias: `blockchains`)
 
 List all supported blockchains. Use the `chain_id` field with `--chain-id` in `payments create`.
 
 ```sh
 rail0 chains
+rail0 blockchains   # alias
 ```
 
 ---

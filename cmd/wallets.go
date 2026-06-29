@@ -3,7 +3,6 @@ package cmd
 import (
 	"context"
 	"errors"
-	"fmt"
 
 	"github.com/rail0/cli/internal/ui"
 	rail0 "github.com/rail0/go-sdk"
@@ -22,28 +21,16 @@ var walletsActive string
 var walletsChainID int
 var walletsSymbol string
 
-// walletTokenRow is one accepted token of a wallet, flattened (token + chain
-// fields promoted up) so it renders as a clean sub-table row under the wallet.
-type walletTokenRow struct {
-	ChainID  int    `json:"chain_id"`
-	Symbol   string `json:"symbol"`
-	Address  string `json:"address"`
-	Decimals int    `json:"decimals"`
-	Active   bool   `json:"active"`
-	Default  bool   `json:"default"`
-}
-
 // walletListItem is the CLI's view of a wallet in the list: the SDK's
-// WalletWithTokens minus account_id (redundant — the list is account-scoped),
-// with each token holding flattened into a walletTokenRow.
+// WalletWithTokens minus account_id (redundant — the list is account-scoped).
 type walletListItem struct {
-	ID        string           `json:"id"`
-	Address   string           `json:"address"`
-	Label     string           `json:"label,omitempty"`
-	Active    bool             `json:"active"`
-	Tokens    []walletTokenRow `json:"tokens,omitempty"`
-	CreatedAt string           `json:"created_at,omitempty"`
-	UpdatedAt string           `json:"updated_at,omitempty"`
+	ID        string                     `json:"id"`
+	Address   string                     `json:"address"`
+	Label     string                     `json:"label,omitempty"`
+	Active    bool                       `json:"active"`
+	Tokens    []rail0.WalletTokenHolding `json:"tokens,omitempty"`
+	CreatedAt string                     `json:"created_at,omitempty"`
+	UpdatedAt string                     `json:"updated_at,omitempty"`
 }
 
 var walletsCmd = &cobra.Command{
@@ -78,72 +65,23 @@ account.`,
 				return errors.New("--active must be 'true' or 'false'")
 			}
 		}
-		// JSON (or piped) → bare array; on a TTY → one card per wallet with a
-		// nested token sub-table (see renderWalletsStyled).
-		return ui.RunAPIStyled(
-			func() (any, error) {
-				resp, err := newClient().Wallets.List(context.Background(), account, p)
-				if err != nil {
-					return nil, err
-				}
-				// Drop account_id (the list is already scoped to one account) and
-				// flatten each token holding for a clean view.
-				rows := make([]walletListItem, len(resp.Data))
-				for i, w := range resp.Data {
-					toks := make([]walletTokenRow, len(w.Tokens))
-					for j, h := range w.Tokens {
-						toks[j] = walletTokenRow{
-							ChainID: h.Token.ChainID, Symbol: h.Token.Symbol,
-							Address: string(h.Token.Address), Decimals: h.Token.Decimals,
-							Active: h.Active, Default: h.Default,
-						}
-					}
-					rows[i] = walletListItem{
-						ID: w.ID, Address: w.Address, Label: w.Label, Active: w.Active,
-						Tokens: toks, CreatedAt: w.CreatedAt, UpdatedAt: w.UpdatedAt,
-					}
-				}
-				return rows, nil
-			},
-			func(v any) { renderWalletsStyled(v.([]walletListItem)) },
-		)
-	},
-}
-
-// renderWalletsStyled prints one card per wallet — a header line (address ·
-// state, label) followed by a sub-table of its token/chain holdings — for the
-// TTY/styled output of `rail0 wallets`.
-func renderWalletsStyled(wallets []walletListItem) {
-	if len(wallets) == 0 {
-		fmt.Println("\n  " + ui.DimStyle.Render("(no wallets)") + "\n")
-		return
-	}
-	cols := []string{"symbol", "chain_id", "address", "decimals", "default"}
-	for _, w := range wallets {
-		state := ui.TrueStyle.Render("active")
-		if !w.Active {
-			state = ui.FalseStyle.Render("inactive")
-		}
-		header := "\n  " + ui.HexStyle.Render(w.Address) + "  " + ui.DimStyle.Render("·") + " " + state
-		if w.Label != "" {
-			header += "  " + ui.DimStyle.Render("("+w.Label+")")
-		}
-		fmt.Println(header)
-
-		if len(w.Tokens) == 0 {
-			fmt.Println("    " + ui.DimStyle.Render("(no tokens)"))
-			continue
-		}
-		rows := make([]map[string]any, len(w.Tokens))
-		for i, t := range w.Tokens {
-			rows[i] = map[string]any{
-				"symbol": t.Symbol, "chain_id": t.ChainID, "address": t.Address,
-				"decimals": t.Decimals, "default": t.Default,
+		return ui.RunAPI(func() (any, error) {
+			resp, err := newClient().Wallets.List(context.Background(), account, p)
+			if err != nil {
+				return nil, err
 			}
-		}
-		ui.PrintTable(rows, cols, 4)
-	}
-	fmt.Println()
+			// Drop account_id from the output: the list is already scoped to one
+			// account, so repeating it on every row is noise.
+			rows := make([]walletListItem, len(resp.Data))
+			for i, w := range resp.Data {
+				rows[i] = walletListItem{
+					ID: w.ID, Address: w.Address, Label: w.Label, Active: w.Active,
+					Tokens: w.Tokens, CreatedAt: w.CreatedAt, UpdatedAt: w.UpdatedAt,
+				}
+			}
+			return rows, nil
+		})
+	},
 }
 
 // ── wallets get ───────────────────────────────────────────────────────────────

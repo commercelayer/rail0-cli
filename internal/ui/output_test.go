@@ -41,10 +41,6 @@ func TestPrintStyled(t *testing.T) {
 			"transactions (array with status)",
 			`[{"operation":"authorize","status":"confirmed","transaction_hash":"0xaaa"},{"operation":"capture","status":"submitted","transaction_hash":"0xbbb"}]`,
 		},
-		{
-			"wallets (array; each with a tokens sub-table)",
-			`[{"id":"019ef568","address":"0xe3dd","active":true,"created_at":"2026-06-23T16:55:15Z","tokens":[{"chain_id":5042002,"symbol":"USDC","address":"0x3600","decimals":6,"active":true,"default":false},{"chain_id":5042002,"symbol":"EURC","address":"0x89B5","decimals":6,"active":true,"default":false}]},{"id":"019ef569","address":"0x2d2b","active":true,"created_at":"2026-06-23T16:55:15Z"}]`,
-		},
 	}
 
 	for _, tc := range cases {

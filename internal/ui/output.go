@@ -115,69 +115,9 @@ func sortFields(names []string) {
 	})
 }
 
-// printArray renders a JSON array. When elements carry nested arrays/objects
-// (e.g. wallets with their tokens), a flat table can't show them, so each
-// element is printed as its own record block with sub-tables; otherwise it
-// prints a flat table.
+// printArray renders a JSON array. If every element is an object it prints a
+// table; otherwise it falls back to one-line-per-item.
 func printArray(arr []any) {
-	if hasNestedObjects(arr) {
-		printRecords(arr)
-		return
-	}
-	printTable(arr, 2)
-}
-
-// hasNestedObjects reports whether any element has a value that is itself an
-// array or object — i.e. it won't fit a single table cell.
-func hasNestedObjects(arr []any) bool {
-	for _, item := range arr {
-		m, ok := item.(map[string]any)
-		if !ok {
-			continue
-		}
-		for _, v := range m {
-			switch v.(type) {
-			case []any, map[string]any:
-				return true
-			}
-		}
-	}
-	return false
-}
-
-// printRecords prints each element as an indented key/value block (nested
-// collections become sub-tables via printMap), separated by a blank line.
-func printRecords(arr []any) {
-	for i, item := range arr {
-		if m, ok := item.(map[string]any); ok {
-			printMap(m, 2)
-		} else {
-			fmt.Printf("  %v\n", item)
-		}
-		if i < len(arr)-1 {
-			fmt.Println()
-		}
-	}
-}
-
-// isObjectArray reports whether a is a non-empty array whose every element is an
-// object (so it can be rendered as a sub-table).
-func isObjectArray(a []any) bool {
-	if len(a) == 0 {
-		return false
-	}
-	for _, x := range a {
-		if _, ok := x.(map[string]any); !ok {
-			return false
-		}
-	}
-	return true
-}
-
-// printTable renders an array of objects as an aligned table, left-indented by
-// `indent` spaces, with columns ordered by sortFields.
-func printTable(arr []any, indent int) {
-	pad := strings.Repeat(" ", indent)
 	// Collect all keys in order of first appearance.
 	seen := map[string]bool{}
 	var cols []string
@@ -194,7 +134,7 @@ func printTable(arr []any, indent int) {
 	sortFields(cols)
 	if len(cols) == 0 {
 		for _, item := range arr {
-			fmt.Printf("%s%v\n", pad, item)
+			fmt.Printf("  %v\n", item)
 		}
 		return
 	}
@@ -219,8 +159,8 @@ func printTable(arr []any, indent int) {
 	}
 
 	// Header.
-	header := pad
-	sep := pad
+	header := "  "
+	sep := "  "
 	for i, c := range cols {
 		header += HeaderStyle.Render(padRight(strings.ToUpper(c), widths[i]))
 		sep += strings.Repeat("─", widths[i])
@@ -234,7 +174,7 @@ func printTable(arr []any, indent int) {
 
 	// Rows.
 	for _, row := range rows {
-		line := pad
+		line := "  "
 		for i, cell := range row {
 			line += renderCell(cols[i], cell, widths[i])
 			if i < len(row)-1 {
@@ -308,10 +248,11 @@ func printMap(m map[string]any, indent int) {
 			printMap(val, indent+4)
 		case []any:
 			fmt.Println(label)
-			if isObjectArray(val) {
-				printTable(val, indent+4) // nested collection → sub-table
-			} else {
-				for _, item := range val {
+			for _, item := range val {
+				if sub, ok := item.(map[string]any); ok {
+					printMap(sub, indent+4)
+					fmt.Println()
+				} else {
 					fmt.Printf("%s    %v\n", pad, item)
 				}
 			}

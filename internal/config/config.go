@@ -22,6 +22,11 @@ type Config struct {
 	// Aliases is the address book: name → 0x address, referenced as "@name" on
 	// address flags (--from / --to).
 	Aliases map[string]string `yaml:"aliases,omitempty"`
+	// Settings holds persisted CLI defaults (e.g. "base-url"), managed by the
+	// `config` command. Resolution precedence in the commands is
+	// flag > env > this file > built-in default. Only non-sensitive values are
+	// ever stored here — never private keys or tokens (CLAUDE.md rule 8).
+	Settings map[string]string `yaml:"settings,omitempty"`
 }
 
 // Path returns the config file path (config.yaml in the OS config dir).

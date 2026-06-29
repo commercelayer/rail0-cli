@@ -6,7 +6,6 @@ import (
 	"os"
 
 	charmlog "github.com/charmbracelet/log"
-	"github.com/rail0/cli/internal/config"
 	"github.com/rail0/cli/internal/token"
 	"github.com/rail0/cli/internal/ui"
 	rail0 "github.com/rail0/go-sdk"
@@ -44,7 +43,7 @@ func init() {
 
 	cobra.OnInitialize(func() { ui.SetJSON(jsonOut) })
 
-	rootCmd.AddCommand(paymentsCmd, walletsCmd, webhooksCmd, chainsCmd, tokensCmd, authCmd, healthCmd, aliasesCmd)
+	rootCmd.AddCommand(paymentsCmd, walletsCmd, webhooksCmd, chainsCmd, tokensCmd, authCmd, healthCmd, aliasesCmd, configCmd)
 }
 
 // newClient builds a RAIL0 API client.
@@ -81,16 +80,13 @@ func currentAccountID() (string, error) {
 	return id, nil
 }
 
-// resolveBaseURL picks the API base URL.
-// Precedence: --base-url flag > RAIL0_BASE_URL env > config.DefaultBaseURL.
+// resolveBaseURL picks the API base URL. Precedence:
+// --base-url flag > RAIL0_BASE_URL env > config file (`config set base-url`) >
+// config.DefaultBaseURL. Single source of truth shared with the `config`
+// command via effectiveSetting.
 func resolveBaseURL() string {
-	if baseURL != "" {
-		return baseURL
-	}
-	if env := os.Getenv("RAIL0_BASE_URL"); env != "" {
-		return env
-	}
-	return config.DefaultBaseURL
+	value, _ := effectiveSetting(configKeys["base-url"])
+	return value
 }
 
 // makeDebugLogger returns a rail0.Logger that routes HTTP traces through

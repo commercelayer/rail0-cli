@@ -34,7 +34,8 @@ mv rail0 /usr/local/bin/
 
 ## Configuration
 
-Set the API endpoint and credentials via environment variables or flags. Flags take priority over environment variables.
+Set the API endpoint and credentials via flags, environment variables, or the
+config file. Precedence is: **flag  >  env var  >  config file  >  built-in default**.
 
 | Flag         | Environment variable | Description                                      |
 |--------------|----------------------|--------------------------------------------------|
@@ -51,6 +52,23 @@ export RAIL0_TOKEN=your_jwt_token
 ```
 
 Or use `rail0 auth login` to obtain and cache a JWT via SIWE authentication.
+
+### Persisted defaults (`config`)
+
+Persist non-sensitive defaults in the config file so you don't repeat them on
+every command. Run bare to see each setting's effective value and where it comes
+from. (Secrets like private keys are never stored here.)
+
+```sh
+rail0 config                                  # list settings + origin (flag/env/file/default)
+rail0 config set base-url http://localhost:9292
+rail0 config get base-url                      # effective value + origin
+rail0 config unset base-url
+rail0 config path                              # config file location
+```
+
+A stored value is the lowest-priority source, so `--base-url` or `RAIL0_BASE_URL`
+still override it for a single command.
 
 ### Address book (aliases)
 

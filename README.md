@@ -58,10 +58,15 @@ Save frequently-used addresses and reference them as `@name` on any address flag
 (`--from` / `--to` / `--address`). Stored in `config.yaml` in the OS config dir
 (`~/.config/rail0/` on Linux, `~/Library/Application Support/rail0/` on macOS).
 
+Alias **names are unique**: adding a name that already exists is rejected — `rm`
+it first to repoint it. The same address may carry more than one name.
+
 ```sh
 rail0 aliases add payee 0xAbC123…
 rail0 aliases add buyer 0xDeF456…
-rail0 aliases                       # bare command lists the address book
+rail0 wallets alias 0xAbC123… payee  # same as 'aliases add', address-first order
+rail0 aliases                        # bare command lists the address book
+rail0 aliases rm payee               # remove (e.g. to repoint a name)
 
 rail0 payments create --from @buyer --to @payee -t USDC -a 10.50 -c 84532 -p 0xPayerKey…
 ```
@@ -129,6 +134,8 @@ rail0 auth logout
 
 #### `wallets` — list
 
+Lists the account's wallets, each with its token holdings nested under `tokens`. A wallet with no tokens still appears (with an empty `tokens`), so it is never hidden just because nothing is associated.
+
 ```sh
 rail0 wallets
 rail0 wallets --chain-id 5042002 --symbol USDC --active true
@@ -136,9 +143,9 @@ rail0 wallets --chain-id 5042002 --symbol USDC --active true
 
 | Flag | Short | Description |
 |------|-------|-------------|
-| `--chain-id` | — | Filter by chain id |
-| `--symbol` | `-s` | Filter by token symbol (e.g. `USDC`) |
-| `--active` | — | Filter by active flag (`true` or `false`) |
+| `--chain-id` | — | Restrict the nested tokens to this chain id (wallets still listed) |
+| `--symbol` | `-s` | Restrict the nested tokens to this symbol, e.g. `USDC` (wallets still listed) |
+| `--active` | — | Filter the wallets by active flag (`true` or `false`) |
 
 #### `wallets get <wallet>`
 
@@ -189,6 +196,15 @@ rail0 wallets balances 0xABCD… --chain-id 84532 --symbol USDC
 |------|-------|-------------|
 | `--chain-id` | | Restrict to one chain id |
 | `--symbol` | `-s` | Restrict tokens to this symbol (e.g. USDC) |
+
+#### `wallets alias <address> <name>`
+
+Save an address-book alias, in address-first order — handy right after copying an address out of `wallets`. It's the same as [`aliases add <name> <address>`](#address-book-aliases) (arguments reversed) and obeys the same **unique-name** rule: an existing name is rejected, `rm` it first.
+
+```sh
+rail0 wallets alias 0xABCD… treasury
+rail0 payments create --to @treasury -t USDC -a 10.50 -c 84532 -p 0xPayerKey…
+```
 
 ---
 

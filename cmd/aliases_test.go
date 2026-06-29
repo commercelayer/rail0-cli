@@ -34,6 +34,50 @@ func TestResolveAlias(t *testing.T) {
 	}
 }
 
+func TestAddAliasIsUniqueByName(t *testing.T) {
+	// Point the config dir at a temp location.
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	t.Setenv("HOME", dir)
+
+	// First add succeeds and persists.
+	if err := addAlias("payee", "0xAbC123"); err != nil {
+		t.Fatalf("first add: unexpected error %v", err)
+	}
+	if cfg, _ := config.Load(); cfg.Aliases["payee"] != "0xAbC123" {
+		t.Fatalf("alias not saved: %v", cfg.Aliases)
+	}
+
+	// Re-using the name is rejected (unique-by-name) and leaves the value intact.
+	if err := addAlias("payee", "0xDifferent"); err == nil {
+		t.Error("duplicate name: expected error, got nil")
+	}
+	if cfg, _ := config.Load(); cfg.Aliases["payee"] != "0xAbC123" {
+		t.Errorf("duplicate add must not overwrite: %v", cfg.Aliases)
+	}
+
+	// The same address under a different name is allowed (uniqueness is name-only).
+	if err := addAlias("merchant", "0xAbC123"); err != nil {
+		t.Errorf("same address, new name: unexpected error %v", err)
+	}
+
+	// A leading '@' in the name is rejected (sigil is reserved for referencing).
+	if err := addAlias("@oops", "0xAbC123"); err == nil {
+		t.Error("'@'-prefixed name: expected error, got nil")
+	}
+}
+
+func TestWalletsAliasCommand(t *testing.T) {
+	// `wallets alias <address> <name>` is wired and takes exactly two args.
+	sub, _, err := walletsCmd.Find([]string{"alias"})
+	if err != nil || sub == nil || sub.Name() != "alias" {
+		t.Fatalf("wallets alias: not found (%v)", err)
+	}
+	if got := sub.Use; got != "alias <address> <name>" {
+		t.Errorf("wallets alias arg order: got %q", got)
+	}
+}
+
 func TestAliasesCommandTree(t *testing.T) {
 	// Bare `aliases` lists (has its own RunE) and takes no args.
 	if aliasesCmd.RunE == nil {

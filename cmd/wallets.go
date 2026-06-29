@@ -51,7 +51,7 @@ address (unique per account).`,
 			}
 		}
 		return ui.RunAPI(func() (any, error) {
-			return newClient().Accounts.Wallets(context.Background(), account, p)
+			return newClient().Wallets.List(context.Background(), account, p)
 		})
 	},
 }
@@ -69,7 +69,7 @@ var walletsGetCmd = &cobra.Command{
 			return err
 		}
 		return ui.RunAPI(func() (any, error) {
-			return newClient().Accounts.GetWallet(context.Background(), account, args[0])
+			return newClient().Wallets.Get(context.Background(), account, args[0])
 		})
 	},
 }
@@ -97,7 +97,7 @@ var walletsCreateCmd = &cobra.Command{
 		}
 		req := rail0.CreateWalletRequest{Address: addr, Label: createWalletLabel}
 		return ui.RunAPI(func() (any, error) {
-			return newClient().Accounts.CreateWallet(context.Background(), account, req)
+			return newClient().Wallets.Create(context.Background(), account, req)
 		})
 	},
 }
@@ -132,7 +132,7 @@ var walletsUpdateCmd = &cobra.Command{
 			}
 		}
 		return ui.RunAPI(func() (any, error) {
-			return newClient().Accounts.UpdateWallet(context.Background(), account, wallet, req)
+			return newClient().Wallets.Update(context.Background(), account, wallet, req)
 		})
 	},
 }
@@ -150,7 +150,7 @@ var walletsDeleteCmd = &cobra.Command{
 			return err
 		}
 		return ui.RunAPI(func() (any, error) {
-			return nil, newClient().Accounts.DeleteWallet(context.Background(), account, args[0])
+			return nil, newClient().Wallets.Delete(context.Background(), account, args[0])
 		})
 	},
 }
@@ -177,7 +177,27 @@ RPC never hides the others). Use --chain-id / --symbol to narrow the result.`,
 		}
 		p := rail0.WalletBalancesParams{ChainID: balancesChainID, TokenSymbol: balancesSymbol}
 		return ui.RunAPI(func() (any, error) {
-			return newClient().Accounts.Balances(context.Background(), account, args[0], p)
+			return newClient().Wallets.Balances(context.Background(), account, args[0], p)
+		})
+	},
+}
+
+// walletsAliasCmd is a convenience alias of `aliases add` with the arguments in
+// wallet-first order (<address> <name>), reading naturally after copying an
+// address out of `wallets`. It shares addAlias, so the same name-uniqueness
+// rule applies (an existing name is rejected — rm it first).
+var walletsAliasCmd = &cobra.Command{
+	Use:     "alias <address> <name>",
+	Short:   "Save a unique address-book alias for an address (like 'aliases add', args reversed)",
+	Example: `  rail0 wallets alias 0xAbC123… payee`,
+	Args:    cobra.ExactArgs(2),
+	RunE: func(_ *cobra.Command, args []string) error {
+		addr, name := args[0], args[1]
+		if err := addAlias(name, addr); err != nil {
+			return err
+		}
+		return ui.RunAPI(func() (any, error) {
+			return map[string]any{"status": "saved", "alias": name, "address": addr}, nil
 		})
 	},
 }
@@ -185,10 +205,12 @@ RPC never hides the others). Use --chain-id / --symbol to narrow the result.`,
 // ── init ──────────────────────────────────────────────────────────────────────
 
 func init() {
-	// wallets (list)
-	walletsCmd.Flags().StringVar(&walletsActive, "active", "", "Filter by active flag ('true' or 'false')")
-	walletsCmd.Flags().IntVar(&walletsChainID, "chain-id", 0, "Filter by chain id")
-	walletsCmd.Flags().StringVarP(&walletsSymbol, "symbol", "s", "", "Filter by token symbol (e.g. USDC)")
+	// wallets (list) — each wallet lists its tokens nested under "tokens".
+	// --active filters the wallets; --chain-id/--symbol narrow the nested tokens
+	// (a wallet still appears, possibly with no tokens).
+	walletsCmd.Flags().StringVar(&walletsActive, "active", "", "Filter wallets by active flag ('true' or 'false')")
+	walletsCmd.Flags().IntVar(&walletsChainID, "chain-id", 0, "Restrict nested tokens to this chain id")
+	walletsCmd.Flags().StringVarP(&walletsSymbol, "symbol", "s", "", "Restrict nested tokens to this symbol (e.g. USDC)")
 
 	// wallets create
 	walletsCreateCmd.Flags().StringVarP(&createWalletAddress, "address", "A", "", "EVM wallet address (0x-prefixed hex, or @alias)")
@@ -209,5 +231,6 @@ func init() {
 		walletsUpdateCmd,
 		walletsDeleteCmd,
 		walletsBalancesCmd,
+		walletsAliasCmd,
 	)
 }

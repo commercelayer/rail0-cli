@@ -20,7 +20,8 @@ Run bare to list the saved aliases. Once an alias is set, reference it as
 raw 0x address.`,
 	Example: `  rail0 aliases
   rail0 aliases add payee 0xAbC123…
-  rail0 aliases rm payee`,
+  rail0 aliases rm payee
+  rail0 wallets alias 0xAbC123… payee`,
 	Args: cobra.NoArgs,
 	RunE: func(_ *cobra.Command, _ []string) error {
 		cfg, err := config.Load()
@@ -37,29 +38,42 @@ raw 0x address.`,
 
 var aliasesAddCmd = &cobra.Command{
 	Use:     "add <name> <address>",
-	Short:   "Add or update an address alias",
+	Short:   "Add an address alias (names must be unique — rm to replace)",
 	Example: `  rail0 aliases add payee 0xAbC123…`,
 	Args:    cobra.ExactArgs(2),
 	RunE: func(_ *cobra.Command, args []string) error {
 		name, addr := args[0], args[1]
-		if strings.HasPrefix(name, "@") {
-			return fmt.Errorf("alias name must not include the leading '@'")
-		}
-		cfg, err := config.Load()
-		if err != nil {
-			return err
-		}
-		if cfg.Aliases == nil {
-			cfg.Aliases = map[string]string{}
-		}
-		cfg.Aliases[name] = addr
-		if err := cfg.Save(); err != nil {
+		if err := addAlias(name, addr); err != nil {
 			return err
 		}
 		return ui.RunAPI(func() (any, error) {
 			return map[string]any{"status": "saved", "alias": name, "address": addr}, nil
 		})
 	},
+}
+
+// addAlias stores name → addr in the address book, enforcing that alias names
+// are unique: an existing name is rejected (the caller must `aliases rm` it
+// first) rather than silently overwritten, so a name always points at exactly
+// one address. The "@" sigil is reserved for *referencing* an alias on an
+// address flag, so it must never be part of a stored name. Shared by
+// `aliases add` and `wallets alias` (which only differ in argument order).
+func addAlias(name, addr string) error {
+	if strings.HasPrefix(name, "@") {
+		return fmt.Errorf("alias name must not include the leading '@'")
+	}
+	cfg, err := config.Load()
+	if err != nil {
+		return err
+	}
+	if _, exists := cfg.Aliases[name]; exists {
+		return fmt.Errorf("alias %q already exists; remove it first with 'rail0 aliases rm %s'", name, name)
+	}
+	if cfg.Aliases == nil {
+		cfg.Aliases = map[string]string{}
+	}
+	cfg.Aliases[name] = addr
+	return cfg.Save()
 }
 
 var aliasesRemoveCmd = &cobra.Command{

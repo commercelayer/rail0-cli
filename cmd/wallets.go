@@ -21,6 +21,18 @@ var walletsActive string
 var walletsChainID int
 var walletsSymbol string
 
+// walletListItem is the CLI's view of a wallet in the list: the SDK's
+// WalletWithTokens minus account_id (redundant — the list is account-scoped).
+type walletListItem struct {
+	ID        string                     `json:"id"`
+	Address   string                     `json:"address"`
+	Label     string                     `json:"label,omitempty"`
+	Active    bool                       `json:"active"`
+	Tokens    []rail0.WalletTokenHolding `json:"tokens,omitempty"`
+	CreatedAt string                     `json:"created_at,omitempty"`
+	UpdatedAt string                     `json:"updated_at,omitempty"`
+}
+
 var walletsCmd = &cobra.Command{
 	Use:   "wallets",
 	Short: "Manage the logged-in account's wallets (lists when run bare)",
@@ -58,7 +70,16 @@ account.`,
 			if err != nil {
 				return nil, err
 			}
-			return resp.Data, nil // the API returns a bare array; pagination is in headers
+			// Drop account_id from the output: the list is already scoped to one
+			// account, so repeating it on every row is noise.
+			rows := make([]walletListItem, len(resp.Data))
+			for i, w := range resp.Data {
+				rows[i] = walletListItem{
+					ID: w.ID, Address: w.Address, Label: w.Label, Active: w.Active,
+					Tokens: w.Tokens, CreatedAt: w.CreatedAt, UpdatedAt: w.UpdatedAt,
+				}
+			}
+			return rows, nil
 		})
 	},
 }
@@ -217,12 +238,14 @@ func init() {
 	// account is used (one of the two must be present, else error).
 	// --active filters the wallets; --chain-id/--symbol narrow the nested tokens
 	// (a wallet still appears, possibly with no tokens).
+	// Keep declaration order in --help (no alpha sort) so --active stays last.
+	walletsCmd.Flags().SortFlags = false
 	walletsCmd.Flags().StringVar(&walletsAccount, "account", "", "Account id to list (default: the logged-in session account)")
-	walletsCmd.Flags().StringVar(&walletsActive, "active", "", "Filter wallets by active flag ('true' or 'false')")
 	walletsCmd.Flags().IntVar(&walletsChainID, "chain-id", 0, "Restrict nested tokens to this chain id")
 	walletsCmd.Flags().StringVarP(&walletsSymbol, "symbol", "s", "", "Restrict nested tokens to this symbol, e.g. USDC (alias: --token)")
 	walletsCmd.Flags().StringVar(&walletsSymbol, "token", "", "Alias for --symbol")
 	_ = walletsCmd.Flags().MarkHidden("token")
+	walletsCmd.Flags().StringVar(&walletsActive, "active", "", "Filter wallets by active flag ('true' or 'false')")
 
 	// wallets create
 	walletsCreateCmd.Flags().StringVarP(&createWalletAddress, "address", "A", "", "EVM wallet address (0x-prefixed hex, or @alias)")

@@ -43,30 +43,6 @@ func RunAPI(fn func() (any, error)) error {
 	return printStyled(fm.result.data)
 }
 
-// RunAPIStyled is like RunAPI but renders the result with a caller-supplied
-// styled printer on a TTY (for resources that need a bespoke layout, e.g. the
-// wallet cards). With --json or when piped it prints plain JSON, unchanged.
-func RunAPIStyled(fn func() (any, error), styled func(any)) error {
-	if jsonMode || !isTerminal(os.Stdout) {
-		data, err := fn()
-		if err != nil {
-			return err
-		}
-		return printJSON(data)
-	}
-	p := tea.NewProgram(newFetchModel(fn), tea.WithOutput(os.Stderr))
-	final, err := p.Run()
-	if err != nil {
-		return err
-	}
-	fm := final.(fetchModel)
-	if fm.result.err != nil {
-		return fm.result.err
-	}
-	styled(fm.result.data)
-	return nil
-}
-
 func printJSON(v any) error {
 	b, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {
@@ -201,6 +177,7 @@ func isObjectArray(a []any) bool {
 // printTable renders an array of objects as an aligned table, left-indented by
 // `indent` spaces, with columns ordered by sortFields.
 func printTable(arr []any, indent int) {
+	pad := strings.Repeat(" ", indent)
 	// Collect all keys in order of first appearance.
 	seen := map[string]bool{}
 	var cols []string
@@ -216,29 +193,12 @@ func printTable(arr []any, indent int) {
 	}
 	sortFields(cols)
 	if len(cols) == 0 {
-		pad := strings.Repeat(" ", indent)
 		for _, item := range arr {
 			fmt.Printf("%s%v\n", pad, item)
 		}
 		return
 	}
-	printTableWith(arr, cols, indent)
-}
 
-// PrintTable renders rows as an aligned table with the given column order
-// (headers are the uppercased names), left-indented by `indent` spaces. For
-// custom styled renderers that need explicit columns (e.g. the wallet cards).
-func PrintTable(rows []map[string]any, cols []string, indent int) {
-	arr := make([]any, len(rows))
-	for i, r := range rows {
-		arr[i] = r
-	}
-	printTableWith(arr, cols, indent)
-}
-
-// printTableWith renders arr (objects) as a table with the given column order.
-func printTableWith(arr []any, cols []string, indent int) {
-	pad := strings.Repeat(" ", indent)
 	// Compute column widths.
 	widths := make([]int, len(cols))
 	for i, c := range cols {

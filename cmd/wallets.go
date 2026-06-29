@@ -21,16 +21,28 @@ var walletsActive string
 var walletsChainID int
 var walletsSymbol string
 
+// walletTokenRow is one accepted token of a wallet, flattened (token + chain
+// fields promoted up) so it renders as a clean sub-table row under the wallet.
+type walletTokenRow struct {
+	ChainID  int    `json:"chain_id"`
+	Symbol   string `json:"symbol"`
+	Address  string `json:"address"`
+	Decimals int    `json:"decimals"`
+	Active   bool   `json:"active"`
+	Default  bool   `json:"default"`
+}
+
 // walletListItem is the CLI's view of a wallet in the list: the SDK's
-// WalletWithTokens minus account_id (redundant — the list is account-scoped).
+// WalletWithTokens minus account_id (redundant — the list is account-scoped),
+// with each token holding flattened into a walletTokenRow.
 type walletListItem struct {
-	ID        string                     `json:"id"`
-	Address   string                     `json:"address"`
-	Label     string                     `json:"label,omitempty"`
-	Active    bool                       `json:"active"`
-	Tokens    []rail0.WalletTokenHolding `json:"tokens,omitempty"`
-	CreatedAt string                     `json:"created_at,omitempty"`
-	UpdatedAt string                     `json:"updated_at,omitempty"`
+	ID        string           `json:"id"`
+	Address   string           `json:"address"`
+	Label     string           `json:"label,omitempty"`
+	Active    bool             `json:"active"`
+	Tokens    []walletTokenRow `json:"tokens,omitempty"`
+	CreatedAt string           `json:"created_at,omitempty"`
+	UpdatedAt string           `json:"updated_at,omitempty"`
 }
 
 var walletsCmd = &cobra.Command{
@@ -74,9 +86,17 @@ account.`,
 			// account, so repeating it on every row is noise.
 			rows := make([]walletListItem, len(resp.Data))
 			for i, w := range resp.Data {
+				toks := make([]walletTokenRow, len(w.Tokens))
+				for j, h := range w.Tokens {
+					toks[j] = walletTokenRow{
+						ChainID: h.Token.ChainID, Symbol: h.Token.Symbol,
+						Address: string(h.Token.Address), Decimals: h.Token.Decimals,
+						Active: h.Active, Default: h.Default,
+					}
+				}
 				rows[i] = walletListItem{
 					ID: w.ID, Address: w.Address, Label: w.Label, Active: w.Active,
-					Tokens: w.Tokens, CreatedAt: w.CreatedAt, UpdatedAt: w.UpdatedAt,
+					Tokens: toks, CreatedAt: w.CreatedAt, UpdatedAt: w.UpdatedAt,
 				}
 			}
 			return rows, nil

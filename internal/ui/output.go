@@ -7,8 +7,8 @@ import (
 	"sort"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
 	"charm.land/lipgloss/v2"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/term"
 )
 
@@ -80,6 +80,32 @@ func printStyled(v any) error {
 	return nil
 }
 
+// fieldPriority lists the identity / human-name fields that should lead a table
+// or object view; everything else follows alphabetically.
+var fieldPriority = map[string]int{
+	"id": 0, "slug": 1, "name": 2, "label": 3, "symbol": 4, "address": 5, "title": 6,
+}
+
+// sortFields orders field names with the priority identity/name fields first (in
+// fieldPriority order), then the rest alphabetically — so id and slug/name/label
+// lead the columns of a table (and the keys of an object view).
+func sortFields(names []string) {
+	sort.SliceStable(names, func(i, j int) bool {
+		pi, oki := fieldPriority[names[i]]
+		pj, okj := fieldPriority[names[j]]
+		switch {
+		case oki && okj:
+			return pi < pj
+		case oki:
+			return true
+		case okj:
+			return false
+		default:
+			return names[i] < names[j]
+		}
+	})
+}
+
 // printArray renders a JSON array. If every element is an object it prints a
 // table; otherwise it falls back to one-line-per-item.
 func printArray(arr []any) {
@@ -96,7 +122,7 @@ func printArray(arr []any) {
 			}
 		}
 	}
-	sort.Strings(cols)
+	sortFields(cols)
 	if len(cols) == 0 {
 		for _, item := range arr {
 			fmt.Printf("  %v\n", item)
@@ -202,7 +228,7 @@ func printMap(m map[string]any, indent int) {
 	for k := range m {
 		keys = append(keys, k)
 	}
-	sort.Strings(keys)
+	sortFields(keys)
 
 	pad := strings.Repeat(" ", indent)
 	for _, k := range keys {

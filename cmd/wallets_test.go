@@ -36,3 +36,14 @@ func TestWalletsCommandTree(t *testing.T) {
 		t.Error("top-level 'accounts' should no longer exist; use 'wallets'")
 	}
 }
+
+func TestWalletsSymbolHasTokenAlias(t *testing.T) {
+	// --token is a hidden alias of --symbol on the list and balances commands.
+	if walletsCmd.Flags().Lookup("token") == nil {
+		t.Error("wallets: --token should alias --symbol")
+	}
+	balances, _, _ := walletsCmd.Find([]string{"balances"})
+	if balances == nil || balances.Flags().Lookup("token") == nil {
+		t.Error("wallets balances: --token should alias --symbol")
+	}
+}

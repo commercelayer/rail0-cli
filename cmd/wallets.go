@@ -220,7 +220,9 @@ func init() {
 	walletsCmd.Flags().StringVar(&walletsAccount, "account", "", "Account id to list (default: the logged-in session account)")
 	walletsCmd.Flags().StringVar(&walletsActive, "active", "", "Filter wallets by active flag ('true' or 'false')")
 	walletsCmd.Flags().IntVar(&walletsChainID, "chain-id", 0, "Restrict nested tokens to this chain id")
-	walletsCmd.Flags().StringVarP(&walletsSymbol, "symbol", "s", "", "Restrict nested tokens to this symbol (e.g. USDC)")
+	walletsCmd.Flags().StringVarP(&walletsSymbol, "symbol", "s", "", "Restrict nested tokens to this symbol, e.g. USDC (alias: --token)")
+	walletsCmd.Flags().StringVar(&walletsSymbol, "token", "", "Alias for --symbol")
+	_ = walletsCmd.Flags().MarkHidden("token")
 
 	// wallets create
 	walletsCreateCmd.Flags().StringVarP(&createWalletAddress, "address", "A", "", "EVM wallet address (0x-prefixed hex, or @alias)")
@@ -233,7 +235,9 @@ func init() {
 
 	// wallets balances
 	walletsBalancesCmd.Flags().IntVar(&balancesChainID, "chain-id", 0, "Restrict to one chain id")
-	walletsBalancesCmd.Flags().StringVarP(&balancesSymbol, "symbol", "s", "", "Restrict tokens to this symbol (e.g. USDC)")
+	walletsBalancesCmd.Flags().StringVarP(&balancesSymbol, "symbol", "s", "", "Restrict tokens to this symbol, e.g. USDC (alias: --token)")
+	walletsBalancesCmd.Flags().StringVar(&balancesSymbol, "token", "", "Alias for --symbol")
+	_ = walletsBalancesCmd.Flags().MarkHidden("token")
 
 	walletsCmd.AddCommand(
 		walletsGetCmd,

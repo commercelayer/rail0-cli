@@ -43,7 +43,11 @@ var webhooksListCmd = &cobra.Command{
 		}
 		p.Active = active
 		return ui.RunAPI(func() (any, error) {
-			return newClient().Webhooks.List(context.Background(), p)
+			resp, err := newClient().Webhooks.List(context.Background(), p)
+			if err != nil {
+				return nil, err
+			}
+			return resp.Data, nil // bare array; pagination is in headers
 		})
 	},
 }
@@ -171,7 +175,11 @@ var webhooksEventCallbacksCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		p := rail0.ListEventCallbacksParams{Status: webhooksEventsStatus, Sort: webhooksEventsSort}
 		return ui.RunAPI(func() (any, error) {
-			return newClient().Webhooks.EventCallbacks(context.Background(), args[0], p)
+			resp, err := newClient().Webhooks.EventCallbacks(context.Background(), args[0], p)
+			if err != nil {
+				return nil, err
+			}
+			return resp.Data, nil // bare array; pagination is in headers
 		})
 	},
 }

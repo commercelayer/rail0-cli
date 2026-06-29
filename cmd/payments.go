@@ -82,7 +82,11 @@ Requires authentication — run 'rail0 auth login -p 0xKey…' first.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return ui.RunAPI(func() (any, error) {
 			p := rail0.ListPaymentsParams{Sort: paymentsListSort}
-			return newClient().Payments.List(context.Background(), p)
+			resp, err := newClient().Payments.List(context.Background(), p)
+			if err != nil {
+				return nil, err
+			}
+			return resp.Data, nil // bare array; pagination is in headers
 		})
 	},
 }
@@ -106,7 +110,11 @@ var paymentsTransactionsCmd = &cobra.Command{
 				return nil, err
 			}
 			p := rail0.ListTransactionsParams{Sort: paymentsTransactionsSort}
-			return client.Payments.Transactions(ctx, id, p)
+			resp, err := client.Payments.Transactions(ctx, id, p)
+			if err != nil {
+				return nil, err
+			}
+			return resp.Data, nil // bare array; pagination is in headers
 		})
 	},
 }

@@ -54,7 +54,11 @@ account.`,
 			}
 		}
 		return ui.RunAPI(func() (any, error) {
-			return newClient().Wallets.List(context.Background(), account, p)
+			resp, err := newClient().Wallets.List(context.Background(), account, p)
+			if err != nil {
+				return nil, err
+			}
+			return resp.Data, nil // the API returns a bare array; pagination is in headers
 		})
 	},
 }

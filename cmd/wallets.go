@@ -238,14 +238,12 @@ func init() {
 	// account is used (one of the two must be present, else error).
 	// --active filters the wallets; --chain-id/--symbol narrow the nested tokens
 	// (a wallet still appears, possibly with no tokens).
-	// Keep declaration order in --help (no alpha sort) so --active stays last.
-	walletsCmd.Flags().SortFlags = false
 	walletsCmd.Flags().StringVar(&walletsAccount, "account", "", "Account id to list (default: the logged-in session account)")
+	walletsCmd.Flags().StringVar(&walletsActive, "active", "", "Filter wallets by active flag ('true' or 'false')")
 	walletsCmd.Flags().IntVar(&walletsChainID, "chain-id", 0, "Restrict nested tokens to this chain id")
 	walletsCmd.Flags().StringVarP(&walletsSymbol, "symbol", "s", "", "Restrict nested tokens to this symbol, e.g. USDC (alias: --token)")
 	walletsCmd.Flags().StringVar(&walletsSymbol, "token", "", "Alias for --symbol")
 	_ = walletsCmd.Flags().MarkHidden("token")
-	walletsCmd.Flags().StringVar(&walletsActive, "active", "", "Filter wallets by active flag ('true' or 'false')")
 
 	// wallets create
 	walletsCreateCmd.Flags().StringVarP(&createWalletAddress, "address", "A", "", "EVM wallet address (0x-prefixed hex, or @alias)")

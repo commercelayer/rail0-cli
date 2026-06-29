@@ -7,11 +7,12 @@ import (
 )
 
 func TestSortFields(t *testing.T) {
-	in := []string{"updated_at", "address", "active", "name", "id", "created_at", "label"}
+	in := []string{"updated_at", "status", "address", "active", "name", "id", "created_at", "label"}
 	sortFields(in)
-	// Priority (id, slug, name, label, symbol, address, title) first, then the
-	// rest alphabetically.
-	want := []string{"id", "name", "label", "address", "active", "created_at", "updated_at"}
+	// Identity/name first (priority order), then the rest alphabetically, with
+	// timestamps (…_at) always trailing — note "status" comes before the dates
+	// even though it sorts after "created_at" alphabetically.
+	want := []string{"id", "name", "label", "address", "active", "status", "created_at", "updated_at"}
 	for i := range want {
 		if in[i] != want[i] {
 			t.Fatalf("position %d: got %q, want %q (full: %v)", i, in[i], want[i], in)

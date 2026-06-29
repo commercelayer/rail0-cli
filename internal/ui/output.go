@@ -81,28 +81,37 @@ func printStyled(v any) error {
 }
 
 // fieldPriority lists the identity / human-name fields that should lead a table
-// or object view; everything else follows alphabetically.
+// or object view.
 var fieldPriority = map[string]int{
 	"id": 0, "slug": 1, "name": 2, "label": 3, "symbol": 4, "address": 5, "title": 6,
 }
 
-// sortFields orders field names with the priority identity/name fields first (in
-// fieldPriority order), then the rest alphabetically — so id and slug/name/label
-// lead the columns of a table (and the keys of an object view).
+// fieldGroup buckets a field for ordering: identity/name fields first (0),
+// timestamps (…_at, e.g. created_at/updated_at) always last (2), everything
+// else in between (1).
+func fieldGroup(name string) int {
+	if _, ok := fieldPriority[name]; ok {
+		return 0
+	}
+	if strings.HasSuffix(name, "_at") {
+		return 2
+	}
+	return 1
+}
+
+// sortFields orders field names so id and slug/name/label lead, timestamps trail
+// (consistently across every resource), and the rest sit alphabetically between
+// — applied to both table columns and object-view keys.
 func sortFields(names []string) {
 	sort.SliceStable(names, func(i, j int) bool {
-		pi, oki := fieldPriority[names[i]]
-		pj, okj := fieldPriority[names[j]]
-		switch {
-		case oki && okj:
-			return pi < pj
-		case oki:
-			return true
-		case okj:
-			return false
-		default:
-			return names[i] < names[j]
+		gi, gj := fieldGroup(names[i]), fieldGroup(names[j])
+		if gi != gj {
+			return gi < gj
 		}
+		if gi == 0 { // identity group: by defined priority
+			return fieldPriority[names[i]] < fieldPriority[names[j]]
+		}
+		return names[i] < names[j] // middle & timestamps: alphabetical
 	})
 }
 

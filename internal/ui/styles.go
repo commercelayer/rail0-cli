@@ -39,7 +39,7 @@ var (
 func StatusStyle(status string) lipgloss.Style {
 	switch status {
 	case "authorized", "captured", "charged", "refunded":
-		return lipgloss.NewStyle().Foreground(lipgloss.Color("82")).Bold(true)
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("82"))
 	case "partially_captured", "partially_refunded":
 		return lipgloss.NewStyle().Foreground(lipgloss.Color("215"))
 	case "failed":

@@ -63,10 +63,7 @@ func paymentHistory(p *rail0.Payment) []any {
 		fields map[string]any
 	}
 	events := []event{
-		{p.CreatedAt, map[string]any{
-			"at": p.CreatedAt, "event": "created", "mode": p.Mode, "amount": string(p.Amount),
-			"from": string(p.Payer), "to": string(p.Payee),
-		}},
+		{p.CreatedAt, map[string]any{"at": p.CreatedAt, "event": "created", "mode": p.Mode, "amount": string(p.Amount)}},
 	}
 	// The payer's offline signing. Use signed_at when known; otherwise (payment
 	// signed before signed_at was tracked) still record it — any status past

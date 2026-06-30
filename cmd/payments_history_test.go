@@ -14,8 +14,6 @@ func TestPaymentHistory(t *testing.T) {
 		SignedAt:  "2026-06-30T08:01:00Z",
 		Mode:      "authorize",
 		Amount:    rail0.Uint256String("1000000"),
-		Payer:     rail0.Address("0xBuyer"),
-		Payee:     rail0.Address("0xMerchant"),
 		Transactions: []rail0.Transaction{
 			// Given out of order; the history must come out chronological.
 			{Operation: "capture", Status: "confirmed", Amount: rail0.Uint256String("500000"),
@@ -40,8 +38,7 @@ func TestPaymentHistory(t *testing.T) {
 
 	// created carries mode + amount; signed has no status field.
 	created := h[0].(map[string]any)
-	if created["mode"] != "authorize" || created["amount"] != "1000000" ||
-		created["from"] != "0xBuyer" || created["to"] != "0xMerchant" {
+	if created["mode"] != "authorize" || created["amount"] != "1000000" {
 		t.Errorf("created fields: %v", created)
 	}
 	if _, ok := h[1].(map[string]any)["status"]; ok {

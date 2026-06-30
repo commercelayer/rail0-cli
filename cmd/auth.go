@@ -44,11 +44,12 @@ Override with the RAIL0_TOKEN environment variable.`,
 			return fmt.Errorf("invalid private key: %w", err)
 		}
 
-		apiURL := baseURL
-		if apiURL == "" {
-			apiURL = "https://api.rail0.xyz"
-		}
-		host := strings.TrimPrefix(strings.TrimPrefix(apiURL, "https://"), "http://")
+		// Derive the SIWE domain from the SAME resolved base URL the client calls
+		// (flag > env > config > default) — not the raw --base-url flag. Otherwise
+		// a base URL set via `config set base-url` is ignored here and the SIWE
+		// message is signed for the wrong domain, which the gateway rejects.
+		host := strings.TrimSuffix(
+			strings.TrimPrefix(strings.TrimPrefix(resolveBaseURL(), "https://"), "http://"), "/")
 
 		authResp, err := client.Auth.Login(ctx, privKey, host)
 		if err != nil {

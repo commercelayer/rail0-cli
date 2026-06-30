@@ -97,6 +97,32 @@ rail0 payments create --from @buyer --to @payee -t USDC -a 10.50 -c 84532 -p 0xP
 
 The JWT session token is **not** stored in the config file — it stays in the OS cache dir (written by `rail0 auth login`).
 
+### Signing keys (OS keychain)
+
+Save signing keys in the **OS keychain** and reference them as `@name` on the
+`--private-key` flag, instead of pasting a raw key or exporting `RAIL0_PRIVATE_KEY`.
+The same `@name` sigil as the address book — the **flag decides** which it means:
+`@name` on `--private-key`/`-p` is a key, on `--from`/`--to`/`--address` it's an
+address alias.
+
+The secret never touches the config file or your shell history (`keys add`
+prompts for it, hidden). Only the key **names** are tracked in `config.yaml` so
+they can be listed; the secret lives in the keychain.
+
+```sh
+rail0 keys add payer            # prompts for the key (hidden), saves it as "payer"
+rail0 keys                      # lists saved key names (never the secret)
+rail0 keys address payer        # shows the derived 0x address (not the key)
+rail0 keys rm payer             # remove
+
+rail0 payments create -F @buyer -T @payee -t USDC -a 1.00 -c 5042002 -p @payer
+```
+
+Backends: macOS Keychain, Windows Credential Manager, Linux Secret Service
+(gnome-keyring/KWallet). On a system without one (e.g. **headless Linux**) the
+`keys` commands return an error — there, pass `--private-key` or set
+`RAIL0_PRIVATE_KEY`.
+
 ---
 
 ## Signing modes
@@ -116,9 +142,9 @@ Every on-chain action command (`authorize`, `charge`, `capture`, `void`, `releas
 
 | Flag | Short | Description |
 |------|-------|-------------|
-| `--private-key` | `-p` | Caller's secp256k1 private key (0x-prefixed hex) |
+| `--private-key` | `-p` | Caller's secp256k1 private key: 0x-prefixed hex, or `@name` for a key saved in the OS keychain (`rail0 keys add`) |
 
-The signing key is resolved in this order: `--private-key` (`-p` / `--pk`) > `RAIL0_PRIVATE_KEY` env var.
+The signing key is resolved in this order: `--private-key` (`-p` / `--pk`, where `@name` pulls the key from the OS keychain) > `RAIL0_PRIVATE_KEY` env var.
 
 #### Addressing a payment: UUID or rail0_id
 

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/rail0/cli/internal/ui"
 	rail0 "github.com/rail0/go-sdk"
@@ -181,12 +182,16 @@ func addSigningFlags(cmd *cobra.Command, privateKey *string) {
 // Returns a clear error when none is available.
 func resolveSigningKey(explicitKey string) (string, error) {
 	if explicitKey != "" {
+		// "@name" resolves to a key saved in the OS keychain ('rail0 keys add').
+		if strings.HasPrefix(explicitKey, "@") {
+			return loadKey(strings.TrimPrefix(explicitKey, "@"))
+		}
 		return explicitKey, nil
 	}
 	if env := os.Getenv("RAIL0_PRIVATE_KEY"); env != "" {
 		return env, nil
 	}
-	return "", errors.New("no signing key: pass --private-key (-p / --pk), or set RAIL0_PRIVATE_KEY")
+	return "", errors.New("no signing key: pass --private-key (-p / --pk), set RAIL0_PRIVATE_KEY, or save one with 'rail0 keys add' and pass it as @name")
 }
 
 // ── payments authorize ────────────────────────────────────────────────────────

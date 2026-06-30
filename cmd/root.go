@@ -33,7 +33,7 @@ Use 'rail0 <command> --help' for detailed usage of any command.`,
 
 func Execute() {
 	if err := rootCmd.Execute(); err != nil {
-		ui.Fatal(err)
+		ui.Fatal(humanizeError(err))
 	}
 }
 

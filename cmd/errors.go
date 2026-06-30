@@ -26,13 +26,13 @@ func humanizeError(err error) error {
 		case apiErr.Status == 401:
 			return errors.New("not authorized (HTTP 401) — run 'rail0 auth login' first")
 		case apiErr.Status == 403:
-			return fmt.Errorf("forbidden (HTTP 403)%s", detail(apiErr.Message))
+			return fmt.Errorf("forbidden (HTTP 403)%s", detail(apiHint(apiErr)))
 		case apiErr.Status == 404:
-			return fmt.Errorf("not found (HTTP 404)%s", detail(apiErr.Message))
+			return fmt.Errorf("not found (HTTP 404)%s", detail(apiHint(apiErr)))
 		case apiErr.Status == 409:
-			return fmt.Errorf("already exists / conflict (HTTP 409)%s", detail(apiErr.Message))
+			return fmt.Errorf("already exists / conflict (HTTP 409)%s", detail(apiHint(apiErr)))
 		case apiErr.Status == 422:
-			return fmt.Errorf("request rejected (HTTP 422)%s", detail(apiErr.Message))
+			return fmt.Errorf("request rejected (HTTP 422)%s", detail(apiHint(apiErr)))
 		case apiErr.Status >= 500:
 			return fmt.Errorf("the RAIL0 gateway had a server error (HTTP %d) — try again shortly", apiErr.Status)
 		default:
@@ -65,4 +65,14 @@ func detail(msg string) string {
 		return ""
 	}
 	return ": " + msg
+}
+
+// apiHint returns the gateway's human message, or its machine-readable code when
+// there's no message — so even bodies like {"status":"no_active_contract"} (no
+// message field) still produce an informative hint instead of nothing.
+func apiHint(e *rail0.APIError) string {
+	if strings.TrimSpace(e.Message) != "" {
+		return e.Message
+	}
+	return e.Code
 }

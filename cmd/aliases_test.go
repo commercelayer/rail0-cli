@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/rail0/cli/internal/config"
@@ -90,6 +91,33 @@ func TestAddAliasValidatesAddress(t *testing.T) {
 	// A well-formed 0x-prefixed 40-hex address is accepted.
 	if err := addAlias("buyer", "0xe3dd5ea618f74de4c95b0ff0ebf9921a06a694c4"); err != nil {
 		t.Errorf("valid address: unexpected error %v", err)
+	}
+}
+
+func TestAddAliasRejectsAPrivateKey(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	t.Setenv("HOME", dir)
+
+	// A 32-byte private key (64 hex, with or without 0x) is rejected as a key,
+	// and the error must NOT echo the value (it could be a real secret).
+	for _, pk := range []string{
+		"0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
+		"ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
+	} {
+		err := addAlias("oops", pk)
+		if err == nil {
+			t.Fatalf("private key %q: expected rejection, got nil", pk)
+		}
+		if strings.Contains(err.Error(), "ac0974") {
+			t.Errorf("error must not echo the key value: %q", err.Error())
+		}
+		if !strings.Contains(err.Error(), "private key") {
+			t.Errorf("error should explain it looks like a private key: %q", err.Error())
+		}
+	}
+	if cfg, _ := config.Load(); len(cfg.Aliases) != 0 {
+		t.Errorf("a private key must not be persisted: %v", cfg.Aliases)
 	}
 }
 

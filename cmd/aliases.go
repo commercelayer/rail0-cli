@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
@@ -14,6 +15,12 @@ import (
 // must point at a well-formed address so a saved "@name" always resolves to a
 // value the gateway will accept.
 var evmAddressPattern = regexp.MustCompile(`^0x[0-9a-fA-F]{40}$`)
+
+// privateKeyPattern matches a 32-byte secp256k1 private key (64 hex, 0x
+// optional) — twice an address's length. It's checked first so pasting a key
+// into `aliases add` is caught with a clear, secret-safe message (the value is
+// never echoed) instead of the generic "invalid address" error.
+var privateKeyPattern = regexp.MustCompile(`^(?:0x)?[0-9a-fA-F]{64}$`)
 
 // aliasesCmd lists the address book when run bare, and holds the add/rm verbs.
 var aliasesCmd = &cobra.Command{
@@ -69,6 +76,11 @@ var aliasesAddCmd = &cobra.Command{
 func addAlias(name, addr string) error {
 	if strings.HasPrefix(name, "@") {
 		return fmt.Errorf("alias name must not include the leading '@'")
+	}
+	// Catch a pasted private key before the address check — and never echo the
+	// value (it may be a secret). Aliases hold public addresses only.
+	if privateKeyPattern.MatchString(addr) {
+		return errors.New("that looks like a private key — aliases store public 0x addresses, not secrets. Save a signing key with 'rail0 keys add' instead")
 	}
 	if !evmAddressPattern.MatchString(addr) {
 		return fmt.Errorf("invalid address %q: expected a 0x-prefixed 40-hex-character EVM address", addr)

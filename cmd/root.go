@@ -14,9 +14,10 @@ import (
 )
 
 var (
-	baseURL string
-	debug   bool
-	jsonOut bool
+	baseURL   string
+	debug     bool
+	jsonOut   bool
+	prettyOut bool
 )
 
 var rootCmd = &cobra.Command{
@@ -40,9 +41,13 @@ func Execute() {
 func init() {
 	rootCmd.PersistentFlags().StringVar(&baseURL, "base-url", "", "RAIL0 gateway base URL (env: RAIL0_BASE_URL)")
 	rootCmd.PersistentFlags().BoolVar(&debug, "debug", false, "Print HTTP request/response details to stderr")
-	rootCmd.PersistentFlags().BoolVar(&jsonOut, "json", false, "Output raw JSON instead of styled text")
+	rootCmd.PersistentFlags().BoolVar(&jsonOut, "json", false, "Force plain (uncolored) JSON output (useful in scripts)")
+	rootCmd.PersistentFlags().BoolVar(&prettyOut, "pretty", false, "Use the key-value/table view instead of JSON (terminal only)")
 
-	cobra.OnInitialize(func() { ui.SetJSON(jsonOut) })
+	cobra.OnInitialize(func() {
+		ui.SetJSON(jsonOut)
+		ui.SetPretty(prettyOut)
+	})
 
 	rootCmd.AddCommand(paymentsCmd, walletsCmd, webhooksCmd, chainsCmd, tokensCmd, authCmd, healthCmd, aliasesCmd, configCmd)
 }

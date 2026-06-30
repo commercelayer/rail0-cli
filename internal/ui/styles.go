@@ -14,7 +14,7 @@ import "charm.land/lipgloss/v2"
 //	215 — amber for numbers
 //	 77 — medium green for boolean true
 //	203 — coral for boolean false and errors
-//	201 — magenta for any `status` field (uniform, see StatusStyle)
+//	201 — magenta for a non-terminal `status`; terminal states use 82/203 (see StatusStyle)
 //	212 — pink for the loading spinner
 //	238 — dim gray for the --pretty table separator
 //
@@ -36,9 +36,18 @@ var (
 	DimStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("238"))
 )
 
-// StatusStyle renders a resource's `status` value. Every status — for any
-// resource and any value — is shown in the same magenta, so a status field
-// always reads consistently at a glance, regardless of its value.
-func StatusStyle(_ string) lipgloss.Style {
-	return lipgloss.NewStyle().Foreground(lipgloss.Color("201"))
+// StatusStyle renders a resource's `status` value. Non-terminal (in-progress)
+// states are magenta; terminal states stand out: green when they closed
+// successfully, red on error. Terminal states are the payment's voided/released/
+// refunded (the model's closed states) and the transaction's confirmed, plus the
+// error state failed.
+func StatusStyle(status string) lipgloss.Style {
+	switch status {
+	case "voided", "released", "refunded", "confirmed":
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("82"))
+	case "failed":
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("203")).Bold(true)
+	default:
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("201"))
+	}
 }

@@ -2,12 +2,18 @@ package cmd
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/rail0/cli/internal/config"
 	"github.com/rail0/cli/internal/ui"
 	"github.com/spf13/cobra"
 )
+
+// evmAddressPattern matches a 0x-prefixed 20-byte (40 hex) EVM address. Aliases
+// must point at a well-formed address so a saved "@name" always resolves to a
+// value the gateway will accept.
+var evmAddressPattern = regexp.MustCompile(`^0x[0-9a-fA-F]{40}$`)
 
 // aliasesCmd lists the address book when run bare, and holds the add/rm verbs.
 var aliasesCmd = &cobra.Command{
@@ -52,15 +58,20 @@ var aliasesAddCmd = &cobra.Command{
 	},
 }
 
-// addAlias stores name → addr in the address book, enforcing that alias names
-// are unique: an existing name is rejected (the caller must `aliases rm` it
-// first) rather than silently overwritten, so a name always points at exactly
-// one address. The "@" sigil is reserved for *referencing* an alias on an
-// address flag, so it must never be part of a stored name. Shared by
-// `aliases add` and `wallets alias` (which only differ in argument order).
+// addAlias stores name → addr in the address book after validating both. Alias
+// names are unique: an existing name is rejected (the caller must `aliases rm`
+// it first) rather than silently overwritten, so a name always points at
+// exactly one address. The "@" sigil is reserved for *referencing* an alias on
+// an address flag, so it must never be part of a stored name. The address must
+// be a well-formed 0x EVM address, so a saved "@name" always resolves to a
+// value the gateway accepts. Shared by `aliases add` and `wallets alias` (which
+// only differ in argument order).
 func addAlias(name, addr string) error {
 	if strings.HasPrefix(name, "@") {
 		return fmt.Errorf("alias name must not include the leading '@'")
+	}
+	if !evmAddressPattern.MatchString(addr) {
+		return fmt.Errorf("invalid address %q: expected a 0x-prefixed 40-hex-character EVM address", addr)
 	}
 	cfg, err := config.Load()
 	if err != nil {

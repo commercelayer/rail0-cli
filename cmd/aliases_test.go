@@ -40,30 +40,56 @@ func TestAddAliasIsUniqueByName(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", dir)
 	t.Setenv("HOME", dir)
 
+	const (
+		addrA = "0xe3dd5ea618f74de4c95b0ff0ebf9921a06a694c4"
+		addrB = "0x2d2b3d4e72370a7256633d426518a372a53557d5"
+	)
+
 	// First add succeeds and persists.
-	if err := addAlias("payee", "0xAbC123"); err != nil {
+	if err := addAlias("payee", addrA); err != nil {
 		t.Fatalf("first add: unexpected error %v", err)
 	}
-	if cfg, _ := config.Load(); cfg.Aliases["payee"] != "0xAbC123" {
+	if cfg, _ := config.Load(); cfg.Aliases["payee"] != addrA {
 		t.Fatalf("alias not saved: %v", cfg.Aliases)
 	}
 
 	// Re-using the name is rejected (unique-by-name) and leaves the value intact.
-	if err := addAlias("payee", "0xDifferent"); err == nil {
+	if err := addAlias("payee", addrB); err == nil {
 		t.Error("duplicate name: expected error, got nil")
 	}
-	if cfg, _ := config.Load(); cfg.Aliases["payee"] != "0xAbC123" {
+	if cfg, _ := config.Load(); cfg.Aliases["payee"] != addrA {
 		t.Errorf("duplicate add must not overwrite: %v", cfg.Aliases)
 	}
 
 	// The same address under a different name is allowed (uniqueness is name-only).
-	if err := addAlias("merchant", "0xAbC123"); err != nil {
+	if err := addAlias("merchant", addrA); err != nil {
 		t.Errorf("same address, new name: unexpected error %v", err)
 	}
 
 	// A leading '@' in the name is rejected (sigil is reserved for referencing).
-	if err := addAlias("@oops", "0xAbC123"); err == nil {
+	if err := addAlias("@oops", addrA); err == nil {
 		t.Error("'@'-prefixed name: expected error, got nil")
+	}
+}
+
+func TestAddAliasValidatesAddress(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	t.Setenv("HOME", dir)
+
+	// Malformed addresses are rejected and nothing is persisted.
+	for _, bad := range []string{"0xAbC123", "not-an-address", "e3dd5ea618f74de4c95b0ff0ebf9921a06a694c4", "0xZZdd5ea618f74de4c95b0ff0ebf9921a06a694c4"} {
+		if err := addAlias("buyer", bad); err == nil {
+			t.Errorf("address %q: expected validation error, got nil", bad)
+		}
+	}
+	if cfg, _ := config.Load(); len(cfg.Aliases) != 0 {
+		t.Errorf("invalid adds must not persist: %v", cfg.Aliases)
+	}
+
+	// A well-formed 0x-prefixed 40-hex address is accepted.
+	if err := addAlias("buyer", "0xe3dd5ea618f74de4c95b0ff0ebf9921a06a694c4"); err != nil {
+		t.Errorf("valid address: unexpected error %v", err)
 	}
 }
 

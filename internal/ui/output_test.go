@@ -3,8 +3,14 @@ package ui
 import (
 	"encoding/json"
 	"fmt"
+	"reflect"
+	"regexp"
 	"testing"
 )
+
+// ansiRe matches the SGR colour escapes lipgloss emits, so a test can recover
+// the plain JSON text underneath.
+var ansiRe = regexp.MustCompile(`\x1b\[[0-9;]*m`)
 
 func TestSortFields(t *testing.T) {
 	in := []string{"updated_at", "status", "address", "active", "name", "id", "created_at", "label"}
@@ -52,6 +58,18 @@ func TestPrintStyled(t *testing.T) {
 			fmt.Printf("\n── %s ──\n", tc.name)
 			if err := PrintStyled(v); err != nil {
 				t.Errorf("PrintStyled error: %v", err)
+			}
+
+			// The colorized output, stripped of its ANSI escapes, must still be
+			// valid JSON that decodes back to exactly the input — i.e. the renderer
+			// changes only colour and layout, never the data (no field dropped).
+			plain := ansiRe.ReplaceAllString(renderJSON(v, 0, ""), "")
+			var got any
+			if err := json.Unmarshal([]byte(plain), &got); err != nil {
+				t.Fatalf("rendered output is not valid JSON: %v\n%s", err, plain)
+			}
+			if !reflect.DeepEqual(got, v) {
+				t.Errorf("round-trip mismatch:\n got: %#v\nwant: %#v", got, v)
 			}
 		})
 	}

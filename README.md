@@ -1,6 +1,6 @@
 # rail0-cli
 
-Command-line interface for the [RAIL0](https://rail0.xyz) stablecoin payment protocol. Wraps the RAIL0 REST API and exposes every payment lifecycle step as a subcommand with human-friendly styled output on a terminal and machine-readable JSON when piped or when `--json` is passed.
+Command-line interface for the [RAIL0](https://rail0.xyz) stablecoin payment protocol. Wraps the RAIL0 REST API and exposes every payment lifecycle step as a subcommand. Output is always JSON — syntax-highlighted on a terminal and plain (machine-readable) when piped or when `--json` is passed.
 
 ---
 
@@ -42,7 +42,7 @@ config file. Precedence is: **flag  >  env var  >  config file  >  built-in defa
 | `--base-url` | `RAIL0_BASE_URL`     | RAIL0 gateway base URL                               |
 | —            | `RAIL0_TOKEN`        | Bearer token sent in the `Authorization` header  |
 | `--debug`    | —                    | Print HTTP request/response details to stderr    |
-| `--json`     | —                    | Force plain JSON output (useful in scripts)      |
+| `--json`     | —                    | Force plain (uncolored) JSON output (useful in scripts) |
 
 Minimal setup:
 
@@ -487,9 +487,11 @@ rail0 payments get "$RAIL0_ID"   # poll until refunded
 
 ## Output modes
 
-**Terminal (default):** lipgloss-styled output with highlighted hex values, amounts, and status fields.
+Every command prints the gateway response as JSON, with all fields the gateway returns.
 
-**JSON (`--json` or piped):** plain indented JSON on stdout, suitable for `jq` and shell pipelines.
+**Terminal (default):** syntax-highlighted, indented JSON — keys, strings, hex values (addresses/hashes), numbers, booleans, and payment status are colored for readability.
+
+**Plain JSON (`--json` or piped):** the same indented JSON with no ANSI colour on stdout, suitable for `jq` and shell pipelines.
 
 ```sh
 # Extract the unsigned transaction for external signing

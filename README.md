@@ -26,9 +26,14 @@ parent-directory/
 git clone https://github.com/DrPierlu/rail0-cli
 git clone https://github.com/DrPierlu/rail0-go
 cd rail0-cli
-go build -o rail0 .
-mv rail0 /usr/local/bin/
+make install            # installs `rail0` + the short `r0` alias into /usr/local/bin
 ```
+
+`make install` puts the binary on your `PATH` as **`rail0`** and a short alias
+**`r0`** (a symlink), so the two are interchangeable — `r0 wallets` is the same
+as `rail0 wallets`. Override the location with `make install PREFIX=$HOME/go/bin`.
+
+Manual build (no alias) is still just `go build -o rail0 . && mv rail0 /usr/local/bin/`.
 
 ---
 

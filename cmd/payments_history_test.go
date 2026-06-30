@@ -55,3 +55,37 @@ func TestPaymentHistory(t *testing.T) {
 		t.Error("authorize with no amount should omit the amount field")
 	}
 }
+
+func TestPaymentHistoryInfersSignedWithoutTimestamp(t *testing.T) {
+	// A payment past "unsigned" but with no signed_at (signed before signed_at
+	// was tracked): the signed event still appears, untimed, right after created.
+	p := &rail0.Payment{
+		CreatedAt:    "2026-06-30T08:00:00Z",
+		Status:       "authorized",
+		Mode:         "authorize",
+		Amount:       rail0.Uint256String("1000000"),
+		Transactions: []rail0.Transaction{{Operation: "authorize", Status: "confirmed", ConfirmedAt: "2026-06-30T08:02:00Z"}},
+	}
+
+	h := paymentHistory(p)
+
+	want := []string{"created", "signed", "authorize"}
+	if len(h) != len(want) {
+		t.Fatalf("got %d events, want %d: %v", len(h), len(want), h)
+	}
+	for i, w := range want {
+		if got := h[i].(map[string]any)["event"]; got != w {
+			t.Errorf("event %d: got %v, want %s", i, got, w)
+		}
+	}
+	signed := h[1].(map[string]any)
+	if at, ok := signed["at"]; !ok || at != nil {
+		t.Errorf("inferred signed event should carry at=nil, got %v (present=%v)", at, ok)
+	}
+
+	// An unsigned payment shows no signed event.
+	un := paymentHistory(&rail0.Payment{CreatedAt: "2026-06-30T08:00:00Z", Status: "unsigned", Mode: "authorize"})
+	if len(un) != 1 || un[0].(map[string]any)["event"] != "created" {
+		t.Errorf("unsigned payment should have only a created event, got %v", un)
+	}
+}

@@ -43,6 +43,7 @@ config file. Precedence is: **flag  >  env var  >  config file  >  built-in defa
 | —            | `RAIL0_TOKEN`        | Bearer token sent in the `Authorization` header  |
 | `--debug`    | —                    | Print HTTP request/response details to stderr    |
 | `--json`     | —                    | Force plain (uncolored) JSON output (useful in scripts) |
+| `--pretty`   | —                    | Key-value/table view instead of JSON (terminal only) |
 
 Minimal setup:
 
@@ -492,6 +493,8 @@ Every command prints the gateway response as JSON, with all fields the gateway r
 **Terminal (default):** syntax-highlighted, indented JSON — keys, strings, hex values (addresses/hashes), numbers, booleans, and payment status are colored for readability.
 
 **Plain JSON (`--json` or piped):** the same indented JSON with no ANSI colour on stdout, suitable for `jq` and shell pipelines.
+
+**Pretty (`--pretty`):** a key-value (single record) or table (list) view with the same highlighting, as an alternative terminal layout. Terminal only — piping still emits plain JSON.
 
 ```sh
 # Extract the unsigned transaction for external signing

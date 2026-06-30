@@ -26,6 +26,27 @@ func TestSortFields(t *testing.T) {
 	}
 }
 
+func TestPrintPretty(t *testing.T) {
+	cases := []string{
+		`[{"chain_id":44787,"name":"Celo Sepolia","native_symbol":"CELO"}]`,
+		`{"rail0_id":"0xabc123","status":"authorized","amount":"1000000"}`,
+		`{"id":"019e","tokens":[{"symbol":"USDC","decimals":6}],"active":true}`,
+	}
+	for _, raw := range cases {
+		var v any
+		if err := json.Unmarshal([]byte(raw), &v); err != nil {
+			t.Fatal(err)
+		}
+		if err := printPretty(v); err != nil {
+			t.Errorf("printPretty error: %v", err)
+		}
+	}
+	// A nil result (e.g. a 204 delete) prints nothing and must not error.
+	if err := printPretty(nil); err != nil {
+		t.Errorf("printPretty(nil) error: %v", err)
+	}
+}
+
 func TestPrintStyled(t *testing.T) {
 	cases := []struct {
 		name string

@@ -12,7 +12,7 @@ import "charm.land/lipgloss/v2"
 //	 75 — sky blue for 0x-prefixed values (addresses, hashes, nonces)
 //	252 — near-white for plain strings
 //	215 — amber for numbers
-//	 82 — green for boolean true
+//	 71 — muted green for boolean true
 //	203 — coral for boolean false and errors
 //	212 — pink for the loading spinner
 //	238 — dim gray for the --pretty table separator
@@ -26,7 +26,7 @@ var (
 	HexStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("75"))
 	StringStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
 	NumberStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("215"))
-	TrueStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("82"))
+	TrueStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("71"))
 	FalseStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("203"))
 	NullStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
 	ErrStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("203"))

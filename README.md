@@ -8,7 +8,7 @@ Command-line interface for the [RAIL0](https://rail0.xyz) stablecoin payment pro
 
 - Go ≥ 1.22
 - The [rail0-go](https://github.com/DrPierlu/rail0-go) SDK cloned as a sibling directory (used via a `replace` directive in `go.mod`)
-- Access to a RAIL0 API instance
+- Access to a RAIL0 gateway instance
 
 ---
 
@@ -39,7 +39,7 @@ config file. Precedence is: **flag  >  env var  >  config file  >  built-in defa
 
 | Flag         | Environment variable | Description                                      |
 |--------------|----------------------|--------------------------------------------------|
-| `--base-url` | `RAIL0_BASE_URL`     | RAIL0 API base URL                               |
+| `--base-url` | `RAIL0_BASE_URL`     | RAIL0 gateway base URL                               |
 | —            | `RAIL0_TOKEN`        | Bearer token sent in the `Authorization` header  |
 | `--debug`    | —                    | Print HTTP request/response details to stderr    |
 | `--json`     | —                    | Force plain JSON output (useful in scripts)      |

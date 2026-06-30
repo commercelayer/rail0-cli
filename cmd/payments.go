@@ -36,7 +36,7 @@ Charge (one-shot) flow:
 var paymentsGetCmd = &cobra.Command{
 	Use:   "get <rail0Id>",
 	Short: "Fetch the current state of a payment",
-	Long: `Fetch a payment's current status from the RAIL0 API together with live
+	Long: `Fetch a payment's current status from the RAIL0 gateway together with live
 on-chain balances (capturableAmount, refundableAmount) when the payment
 is in an active on-chain state.
 

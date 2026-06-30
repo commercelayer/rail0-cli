@@ -15,7 +15,7 @@ import (
 
 var authCmd = &cobra.Command{
 	Use:   "auth",
-	Short: "Authenticate with the RAIL0 API using SIWE",
+	Short: "Authenticate with the RAIL0 gateway using SIWE",
 }
 
 // ── auth login ────────────────────────────────────────────────────────────────
@@ -25,7 +25,7 @@ var loginPrivateKey string
 var authLoginCmd = &cobra.Command{
 	Use:   "login",
 	Short: "Sign in with your Ethereum wallet (SIWE)",
-	Long: `Authenticates with the RAIL0 API using Sign-In with Ethereum (EIP-4361).
+	Long: `Authenticates with the RAIL0 gateway using Sign-In with Ethereum (EIP-4361).
 
   1. Fetches a single-use nonce from the API
   2. Builds a SIWE message and signs it with your private key

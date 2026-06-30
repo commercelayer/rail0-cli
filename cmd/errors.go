@@ -34,7 +34,7 @@ func humanizeError(err error) error {
 		case apiErr.Status == 422:
 			return fmt.Errorf("request rejected (HTTP 422)%s", detail(apiErr.Message))
 		case apiErr.Status >= 500:
-			return fmt.Errorf("the RAIL0 API had a server error (HTTP %d) — try again shortly", apiErr.Status)
+			return fmt.Errorf("the RAIL0 gateway had a server error (HTTP %d) — try again shortly", apiErr.Status)
 		default:
 			return err // keep the SDK's message for anything else
 		}
@@ -46,7 +46,7 @@ func humanizeError(err error) error {
 	case errors.As(err, &dnsErr):
 		return fmt.Errorf("can't resolve the API host for %s — check --base-url / RAIL0_BASE_URL", base)
 	case errors.Is(err, syscall.ECONNREFUSED) || strings.Contains(err.Error(), "connection refused"):
-		return fmt.Errorf("can't reach the RAIL0 API at %s — is it running? (set --base-url or RAIL0_BASE_URL)", base)
+		return fmt.Errorf("can't reach the RAIL0 gateway at %s — is it running? (set --base-url or RAIL0_BASE_URL)", base)
 	case isTimeout(err) || strings.Contains(err.Error(), "deadline exceeded"):
 		return fmt.Errorf("the request to %s timed out", base)
 	}

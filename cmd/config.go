@@ -29,7 +29,7 @@ var configKeys = map[string]configKey{
 	"base-url": {
 		name:     "base-url",
 		env:      "RAIL0_BASE_URL",
-		desc:     "RAIL0 API base URL",
+		desc:     "RAIL0 gateway base URL",
 		def:      func() string { return config.DefaultBaseURL },
 		validate: validateBaseURL,
 	},

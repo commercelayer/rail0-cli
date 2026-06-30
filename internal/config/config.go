@@ -13,7 +13,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// DefaultBaseURL is the production RAIL0 API endpoint used when neither
+// DefaultBaseURL is the production RAIL0 gateway endpoint used when neither
 // --base-url nor RAIL0_BASE_URL is set.
 const DefaultBaseURL = "https://api.rail0.xyz"
 

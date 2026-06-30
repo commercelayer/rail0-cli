@@ -24,7 +24,7 @@ var rootCmd = &cobra.Command{
 	Short:         "CLI for the RAIL0 stablecoin payment protocol",
 	SilenceUsage:  true,
 	SilenceErrors: true,
-	Long: `rail0 is a command-line interface for the RAIL0 stablecoin payment API.
+	Long: `rail0 is a command-line interface for the RAIL0 stablecoin payment gateway.
 
 Defaults to https://api.rail0.xyz. Override with --base-url or RAIL0_BASE_URL.
 
@@ -38,7 +38,7 @@ func Execute() {
 }
 
 func init() {
-	rootCmd.PersistentFlags().StringVar(&baseURL, "base-url", "", "RAIL0 API base URL (env: RAIL0_BASE_URL)")
+	rootCmd.PersistentFlags().StringVar(&baseURL, "base-url", "", "RAIL0 gateway base URL (env: RAIL0_BASE_URL)")
 	rootCmd.PersistentFlags().BoolVar(&debug, "debug", false, "Print HTTP request/response details to stderr")
 	rootCmd.PersistentFlags().BoolVar(&jsonOut, "json", false, "Output raw JSON instead of styled text")
 
@@ -47,7 +47,7 @@ func init() {
 	rootCmd.AddCommand(paymentsCmd, walletsCmd, webhooksCmd, chainsCmd, tokensCmd, authCmd, healthCmd, aliasesCmd, configCmd)
 }
 
-// newClient builds a RAIL0 API client.
+// newClient builds a RAIL0 gateway client.
 // If a JWT is stored (RAIL0_TOKEN env var or ~/.cache/rail0/token), it is sent
 // as Authorization: Bearer on every request.
 func newClient() *rail0.Client {

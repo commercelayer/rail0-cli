@@ -14,6 +14,7 @@ import "charm.land/lipgloss/v2"
 //	215 — amber for numbers
 //	 77 — medium green for boolean true
 //	203 — coral for boolean false and errors
+//	201 — magenta for any `status` field (uniform, see StatusStyle)
 //	212 — pink for the loading spinner
 //	238 — dim gray for the --pretty table separator
 //
@@ -35,22 +36,9 @@ var (
 	DimStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("238"))
 )
 
-// StatusStyle returns a style based on the payment status value.
-func StatusStyle(status string) lipgloss.Style {
-	switch status {
-	case "authorized", "captured", "charged", "refunded":
-		return lipgloss.NewStyle().Foreground(lipgloss.Color("82"))
-	case "partially_captured", "partially_refunded":
-		return lipgloss.NewStyle().Foreground(lipgloss.Color("215"))
-	case "failed":
-		return lipgloss.NewStyle().Foreground(lipgloss.Color("203")).Bold(true)
-	case "signed", "unsigned":
-		return lipgloss.NewStyle().Foreground(lipgloss.Color("75"))
-	case "submitted":
-		return lipgloss.NewStyle().Foreground(lipgloss.Color("212"))
-	case "confirmed":
-		return lipgloss.NewStyle().Foreground(lipgloss.Color("82"))
-	default:
-		return lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
-	}
+// StatusStyle renders a resource's `status` value. Every status — for any
+// resource and any value — is shown in the same magenta, so a status field
+// always reads consistently at a glance, regardless of its value.
+func StatusStyle(_ string) lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(lipgloss.Color("201"))
 }

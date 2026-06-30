@@ -70,10 +70,12 @@ func printJSON(v any) error {
 	return nil
 }
 
-// printStyled prints v as colorized, indented JSON for a terminal. It marshals
-// v (a typed SDK value) to JSON, decodes it into a generic tree, then walks the
-// tree emitting JSON syntax with the package styles applied to keys and scalar
-// values. Object keys are ordered by sortFields (identity first, timestamps
+// printStyled prints v as colorized, indented JSON-like text for a terminal. It
+// marshals v (a typed SDK value) to JSON, decodes it into a generic tree, then
+// walks the tree emitting that syntax with the package styles applied to keys
+// and scalar values. Object keys are emitted unquoted (colour sets them apart),
+// so the result is intentionally not strict JSON — use printJSON (piped /
+// --json) for that. Keys are ordered by sortFields (identity first, timestamps
 // last) for a stable, readable layout rather than Go's map iteration order.
 func printStyled(v any) error {
 	if v == nil {
@@ -125,7 +127,10 @@ func renderJSON(v any, depth int, key string) string {
 	}
 }
 
-// renderObject renders a JSON object across multiple lines with sorted keys.
+// renderObject renders an object across multiple lines with sorted keys. Keys
+// are emitted WITHOUT surrounding quotes (relying on colour to set them apart)
+// for readability — so this colorized view is JSON-like, not strict JSON. The
+// machine-readable strict-JSON form is printJSON (piped / --json).
 func renderObject(m map[string]any, depth int) string {
 	if len(m) == 0 {
 		return "{}"
@@ -141,7 +146,7 @@ func renderObject(m map[string]any, depth int) string {
 	b.WriteString("{\n")
 	for i, k := range keys {
 		b.WriteString(inner)
-		b.WriteString(KeyStyle.Render(quote(k)))
+		b.WriteString(KeyStyle.Render(k))
 		b.WriteString(": ")
 		b.WriteString(renderJSON(m[k], depth+1, k))
 		if i < len(keys)-1 {

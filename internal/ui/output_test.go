@@ -9,8 +9,13 @@ import (
 )
 
 // ansiRe matches the SGR colour escapes lipgloss emits, so a test can recover
-// the plain JSON text underneath.
+// the plain text underneath.
 var ansiRe = regexp.MustCompile(`\x1b\[[0-9;]*m`)
+
+// unquotedKeyRe matches an object key the colorized renderer emits without
+// quotes (line-leading identifier followed by ": "), so a test can re-quote it
+// and parse the output back as strict JSON to verify no field was dropped.
+var unquotedKeyRe = regexp.MustCompile(`(?m)^(\s*)([A-Za-z0-9_]+): `)
 
 func TestSortFields(t *testing.T) {
 	in := []string{"updated_at", "status", "address", "active", "name", "id", "created_at", "label"}
@@ -81,13 +86,15 @@ func TestPrintStyled(t *testing.T) {
 				t.Errorf("PrintStyled error: %v", err)
 			}
 
-			// The colorized output, stripped of its ANSI escapes, must still be
-			// valid JSON that decodes back to exactly the input — i.e. the renderer
-			// changes only colour and layout, never the data (no field dropped).
+			// The colorized output uses unquoted keys, so it isn't strict JSON.
+			// Strip the ANSI escapes, re-quote the keys, and it must decode back to
+			// exactly the input — i.e. the renderer changes only colour, layout, and
+			// key quoting, never the data (no field dropped).
 			plain := ansiRe.ReplaceAllString(renderJSON(v, 0, ""), "")
+			strict := unquotedKeyRe.ReplaceAllString(plain, `$1"$2": `)
 			var got any
-			if err := json.Unmarshal([]byte(plain), &got); err != nil {
-				t.Fatalf("rendered output is not valid JSON: %v\n%s", err, plain)
+			if err := json.Unmarshal([]byte(strict), &got); err != nil {
+				t.Fatalf("re-quoted output is not valid JSON: %v\n%s", err, strict)
 			}
 			if !reflect.DeepEqual(got, v) {
 				t.Errorf("round-trip mismatch:\n got: %#v\nwant: %#v", got, v)

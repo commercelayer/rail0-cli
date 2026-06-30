@@ -493,11 +493,11 @@ rail0 payments get "$RAIL0_ID"   # poll until refunded
 
 ## Output modes
 
-Every command prints the gateway response as JSON, with all fields the gateway returns.
+Every command prints the gateway response with all fields the gateway returns.
 
-**Terminal (default):** syntax-highlighted, indented JSON — keys, strings, hex values (addresses/hashes), numbers, booleans, and payment status are colored for readability.
+**Terminal (default):** syntax-highlighted, indented, JSON-*like* output — keys, strings, hex values (addresses/hashes), numbers, booleans, and payment status are colored for readability. Object keys are printed **unquoted** (colour already sets them apart), so this view is intentionally not strict JSON.
 
-**Plain JSON (`--json` or piped):** the same indented JSON with no ANSI colour on stdout, suitable for `jq` and shell pipelines.
+**Plain JSON (`--json` or piped):** strict, valid indented JSON with no ANSI colour on stdout, suitable for `jq` and shell pipelines.
 
 **Pretty (`--pretty`):** a key-value (single record) or table (list) view with the same highlighting, as an alternative terminal layout. Terminal only — piping still emits plain JSON.
 

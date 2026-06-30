@@ -120,6 +120,13 @@ Every on-chain action command (`authorize`, `charge`, `capture`, `void`, `releas
 
 The signing key is resolved in this order: `--private-key` (`-p` / `--pk`) > `RAIL0_PRIVATE_KEY` env var.
 
+#### Addressing a payment: UUID or rail0_id
+
+Commands that take a payment argument (`get`, `transactions`, and the action commands) accept either form:
+
+- the payment **UUID** `id` — always works, with or without a session;
+- the logical **`rail0_id`** (`0x…`, 64 hex) — resolved to the UUID via the authenticated `GET /payments?rail0_id=` filter, so it **requires `rail0 auth login`** (and only finds payments where your wallet is payer or payee). Without a session you'll be asked to log in or pass the UUID.
+
 ---
 
 ## Commands

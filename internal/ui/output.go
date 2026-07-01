@@ -434,18 +434,26 @@ func printMap(m map[string]any, indent int) {
 		case float64:
 			fmt.Printf("%s  %s\n", label, NumberStyle.Render(numStr(val)))
 		case string:
-			fmt.Printf("%s  %s\n", label, renderPlainStr(val))
+			fmt.Printf("%s  %s\n", label, renderPlainStr(k, val))
 		default:
 			fmt.Printf("%s  %s\n", label, StringStyle.Render(fmt.Sprintf("%v", val)))
 		}
 	}
 }
 
-func renderPlainStr(s string) string {
-	if strings.HasPrefix(s, "0x") {
+// renderPlainStr colours a bare string value for the --pretty key-value view.
+// A "status" field gets the state-aware StatusStyle (matching the table and
+// colorized-JSON renderers); 0x-prefixed values use HexStyle; everything else
+// uses the plain string colour.
+func renderPlainStr(key, s string) string {
+	switch {
+	case key == "status":
+		return StatusStyle(s).Render(s)
+	case strings.HasPrefix(s, "0x"):
 		return HexStyle.Render(s)
+	default:
+		return StringStyle.Render(s)
 	}
-	return StringStyle.Render(s)
 }
 
 // Fatal prints a styled error to stderr and exits with code 1.

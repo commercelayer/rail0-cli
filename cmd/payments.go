@@ -179,6 +179,8 @@ func addSigningFlags(cmd *cobra.Command, privateKey *string) {
 
 // resolveSigningKey determines the private key to sign with.
 // Precedence: --private-key / --pk (explicit) > RAIL0_PRIVATE_KEY env var.
+// When the explicit value starts with "@", it names a key stored in the OS
+// keychain ('rail0 keys add') and is resolved to the underlying hex via loadKey.
 // Returns a clear error when none is available.
 func resolveSigningKey(explicitKey string) (string, error) {
 	if explicitKey != "" {
@@ -204,21 +206,19 @@ var paymentsAuthorizeCmd = &cobra.Command{
 	Long: `Prepare the transaction that calls authorize() on the RAIL0 contract,
 pulling funds from the payer into escrow.
 
-The payer signature must have been submitted first via 'payments sign'.
+The payer must have created and signed the payment first via
+'payments create -p' (create + sign in one atomic step).
 The API returns 202 immediately. The payment stays at "signed" until
 rail0-indexer confirms the on-chain event and the API transitions it to
 "authorized". Poll 'payments get <rail0Id>' until payment=authorized
 and the authorize transaction shows confirmed.
 
 Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
-	Example: `  # 1. Payer creates the payment and receives signingPayload
+	Example: `  # 1. Payer creates and signs the payment in one step
   rail0 payments create --from 0xBuyer… --to 0xMerchant… \
-    --token 0x3600… --amount 1.00 --chain-id 5042002
+    --token 0x3600… --amount 1.00 --chain-id 5042002 -p 0xPayerKey…
 
-  # 2. Payer signs and submits the EIP-712 signature
-  rail0 payments sign <rail0Id> --signature 0x1a2b…
-
-  # 3. Payee authorizes
+  # 2. Payee authorizes
   rail0 payments authorize <rail0Id> -p 0xPayeeKey…`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -258,8 +258,8 @@ var paymentsChargeCmd = &cobra.Command{
 Combines authorize + capture into a single on-chain call; funds move
 directly from payer to payee without an escrow window.
 
-The payment must have been created with --mode charge and the payer
-signature submitted via 'payments sign'.
+The payment must have been created with --mode charge and signed by the
+payer via 'payments create -p' (create + sign in one atomic step).
 The API returns 202 immediately. The payment stays at "signed" until
 rail0-indexer confirms and the API transitions it to "charged".
 Poll 'payments get <rail0Id>' until payment=charged and the charge
@@ -445,8 +445,6 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 	},
 }
 
-// ── payments approve ──────────────────────────────────────────────────────────
-
 // ── payments refund ───────────────────────────────────────────────────────────
 
 var refundAmount string
@@ -461,8 +459,11 @@ pulling refundAmount from the payee and returning it to the payer.
 The payment must be in 'captured', 'partially_captured', 'charged',
 'refunded', or 'partially_refunded' status with a positive
 refundableAmount. Partial refunds are supported: pass --amount less
-than refundableAmount. Requires prior 'payments approve' if the payee
-has insufficient allowance.
+than refundableAmount.
+
+No separate approval step is needed: the CLI signs the payee's EIP-3009
+ReceiveWithAuthorization payload locally with the same key, so the refund
+funds are pulled from the payee without a prior allowance grant.
 The API returns 202 immediately; poll 'payments get <rail0Id>' until
 status advances to "refunded" or "partially_refunded".
 

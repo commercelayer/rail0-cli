@@ -39,3 +39,22 @@ func TestHumanizeError(t *testing.T) {
 		t.Errorf("unrecognised error should pass through, got %q", humanizeError(orig))
 	}
 }
+
+func TestAPIHint(t *testing.T) {
+	cases := []struct {
+		name string
+		err  *rail0.APIError
+		want string
+	}{
+		{"message preferred", &rail0.APIError{Code: "no_active_contract", Message: "no active contract"}, "no active contract"},
+		{"code-only fallback", &rail0.APIError{Code: "no_active_contract"}, "no_active_contract"},
+		{"blank message falls back to code", &rail0.APIError{Code: "conflict", Message: "  "}, "conflict"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := apiHint(tc.err); got != tc.want {
+				t.Errorf("apiHint = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}

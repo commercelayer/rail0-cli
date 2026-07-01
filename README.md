@@ -167,6 +167,8 @@ Obtain a JWT via SIWE (Sign-In With Ethereum) and cache it in `~/.cache/rail0/to
 rail0 auth login -p 0xYourPrivateKey…
 ```
 
+> Note: unlike the payment action commands, `auth login -p` expects a **raw 0x-prefixed hex key** — it does **not** resolve the `@name` keychain form. Pass the hex directly here.
+
 #### `auth status`
 
 Print the wallet address, account id, and expiry encoded in the cached JWT.
@@ -408,6 +410,18 @@ rail0 payments transactions 0xabc123…
 
 ---
 
+#### `payments history <rail0Id>`
+
+Print a payment's chronological timeline: the `created` and `signed` milestones plus one entry per on-chain transaction (`authorize`, `capture`, `void`, `release`, `refund`, `dispute`, `close_dispute`), oldest first. Only the significant fields are shown per entry (time, event, status, amount, tx hash, block). It is assembled client-side from a single `payments get` — there is no dedicated gateway endpoint.
+
+Requires a session — run `rail0 auth login` first (the `rail0_id` argument is resolved through the authenticated lookup).
+
+```sh
+rail0 payments history 0xabc123…
+```
+
+---
+
 #### `payments authorize <rail0Id>`
 
 Prepare the `authorize()` transaction pulling funds into escrow. Payer signature must be submitted first.
@@ -434,10 +448,10 @@ Prepare the `capture()` transaction. Partial captures supported: pass `-a` less 
 
 ```sh
 # Full capture
-rail0 payments capture <rail0Id> -a 1000000 -p 0xPayeeKey…
+rail0 payments capture <rail0Id> -a 1.00 -p 0xPayeeKey…
 
 # Partial capture
-rail0 payments capture <rail0Id> -a 500000 -p 0xPayeeKey…
+rail0 payments capture <rail0Id> -a 0.50 -p 0xPayeeKey…
 ```
 
 ---
@@ -454,16 +468,14 @@ rail0 payments void <rail0Id> -p 0xPayeeKey…
 
 #### `payments release <rail0Id>`
 
-Prepare the `release()` transaction — returns remaining escrowed funds to payer after `authorizationExpiry`. Permissionless.
-
-Use `-C` to build the transaction for the payer; omit it for the payee (default).
+Prepare the `release()` transaction — returns remaining escrowed funds to payer after `authorizationExpiry`. Permissionless: both payer and payee can call it. The caller is whoever the signing key belongs to (derived from the key), so pass the payer's key to release as the payer.
 
 ```sh
 # Payee releases
 rail0 payments release <rail0Id> -p 0xPayeeKey…
 
-# Payer releases
-rail0 payments release <rail0Id> -C 0xBuyer… -p 0xBuyerKey…
+# Payer releases (just use the payer's key)
+rail0 payments release <rail0Id> -p 0xPayerKey…
 ```
 
 ---
@@ -473,7 +485,7 @@ rail0 payments release <rail0Id> -C 0xBuyer… -p 0xBuyerKey…
 Prepare the `refund()` transaction. Partial refunds supported.
 
 ```sh
-rail0 payments refund <rail0Id> -a 1000000 -p 0xPayeeKey…
+rail0 payments refund <rail0Id> -a 1.00 -p 0xPayeeKey…
 ```
 
 ---
@@ -488,7 +500,7 @@ export RAIL0_TOKEN=your_jwt_token
 
 # 1. Payer creates payment and signs EIP-712 locally
 RAIL0_ID=$(rail0 payments create \
-  -F 0xBuyer… -T 0xMerchant… -t USDC -a 1000000 -c 5042002 \
+  -F 0xBuyer… -T 0xMerchant… -t USDC -a 1.00 -c 5042002 \
   -p 0xPayerKey… --json | jq -r .rail0_id)
 
 # 2. Payee authorizes (funds → escrow) and polls until confirmed
@@ -496,7 +508,7 @@ rail0 payments authorize "$RAIL0_ID" -p 0xPayeeKey…
 rail0 payments get "$RAIL0_ID"   # poll until payment=authorized, authorize:confirmed
 
 # 3. Payee captures
-rail0 payments capture "$RAIL0_ID" -a 1000000 -p 0xPayeeKey…
+rail0 payments capture "$RAIL0_ID" -a 1.00 -p 0xPayeeKey…
 rail0 payments get "$RAIL0_ID"   # poll until payment=captured, capture:confirmed
 ```
 
@@ -506,7 +518,7 @@ rail0 payments get "$RAIL0_ID"   # poll until payment=captured, capture:confirme
 
 ```sh
 RAIL0_ID=$(rail0 payments create \
-  -F 0xBuyer… -T 0xMerchant… -t USDC -a 1000000 -c 5042002 -m charge \
+  -F 0xBuyer… -T 0xMerchant… -t USDC -a 1.00 -c 5042002 -m charge \
   -p 0xPayerKey… --json | jq -r .rail0_id)
 
 rail0 payments charge "$RAIL0_ID" -p 0xPayeeKey…
@@ -518,7 +530,7 @@ rail0 payments get "$RAIL0_ID"   # poll until charged
 ### Refund — direct key
 
 ```sh
-rail0 payments refund "$RAIL0_ID" -a 1000000 -p 0xPayeeKey…
+rail0 payments refund "$RAIL0_ID" -a 1.00 -p 0xPayeeKey…
 rail0 payments get "$RAIL0_ID"   # poll until refunded
 ```
 
@@ -535,8 +547,8 @@ Every command prints the gateway response with all fields the gateway returns.
 **Pretty (`--pretty`):** a key-value (single record) or table (list) view with the same highlighting, as an alternative terminal layout. Terminal only — piping still emits plain JSON.
 
 ```sh
-# Extract the unsigned transaction for external signing
-rail0 payments authorize <rail0Id> --prepare --json | jq -r .unsignedTransaction
+# Extract the rail0_id of a freshly created payment
+RAIL0_ID=$(rail0 payments create -F 0xBuyer… -T 0xMerchant… -t USDC -a 10.50 -c 5042002 -p 0xPayerKey… --json | jq -r .rail0_id)
 
 # Check payment status in a script
 STATUS=$(rail0 payments get <rail0Id> --json | jq -r .status)

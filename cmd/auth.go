@@ -48,8 +48,7 @@ Override with the RAIL0_TOKEN environment variable.`,
 		// (flag > env > config > default) — not the raw --base-url flag. Otherwise
 		// a base URL set via `config set base-url` is ignored here and the SIWE
 		// message is signed for the wrong domain, which the gateway rejects.
-		host := strings.TrimSuffix(
-			strings.TrimPrefix(strings.TrimPrefix(resolveBaseURL(), "https://"), "http://"), "/")
+		host := siweHost(resolveBaseURL())
 
 		authResp, err := client.Auth.Login(ctx, privKey, host)
 		if err != nil {
@@ -66,6 +65,15 @@ Override with the RAIL0_TOKEN environment variable.`,
 
 		return ui.RunAPI(func() (any, error) { return authResp, nil })
 	},
+}
+
+// siweHost derives the SIWE domain from a base URL by stripping the scheme
+// (https:// or http://) and any trailing slash, so e.g. "https://api.rail0.xyz/"
+// becomes "api.rail0.xyz". The gateway signs/verifies the SIWE message against
+// this bare host, so it must match what the client actually calls.
+func siweHost(baseURL string) string {
+	return strings.TrimSuffix(
+		strings.TrimPrefix(strings.TrimPrefix(baseURL, "https://"), "http://"), "/")
 }
 
 // ── auth status ───────────────────────────────────────────────────────────────

@@ -14,6 +14,7 @@ import "charm.land/lipgloss/v2"
 //	215 — amber for numbers
 //	 77 — medium green for boolean true
 //	203 — coral for boolean false and errors
+//	 82 — green for a terminal success status (see StatusStyle)
 //	141 — soft purple for a non-terminal `status`; terminal states use 82/203 (see StatusStyle)
 //	212 — pink for the loading spinner
 //	238 — dim gray for the --pretty table separator

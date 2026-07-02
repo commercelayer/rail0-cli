@@ -149,15 +149,15 @@ authorize.`,
 		if err != nil {
 			return err
 		}
-		created, err := client.Payments.Create(ctx, req)
-		if err != nil {
-			return err
-		}
-		sig, err := signEIP712FromCreate(created, req.Mode, signingKey)
-		if err != nil {
-			return fmt.Errorf("sign: %w", err)
-		}
-		return ui.RunAPI(func() (any, error) {
+		return ui.RunAPIWithMessage("Creating payment…", func() (any, error) {
+			created, err := client.Payments.Create(ctx, req)
+			if err != nil {
+				return nil, err
+			}
+			sig, err := signEIP712FromCreate(created, req.Mode, signingKey)
+			if err != nil {
+				return nil, fmt.Errorf("sign: %w", err)
+			}
 			return client.Payments.Sign(ctx, created.ID,
 				rail0.PayerSignatureRequest{Signature: sig})
 		})

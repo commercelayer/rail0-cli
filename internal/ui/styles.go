@@ -15,7 +15,7 @@ import "charm.land/lipgloss/v2"
 //	 77 — medium green for boolean true
 //	203 — coral for boolean false and errors
 //	 82 — green for a terminal success status (see StatusStyle)
-//	220 — yellow for a non-terminal `status` (high-visibility); terminal states use 82/203 (see StatusStyle)
+//	226 — bright yellow for a non-terminal `status` (high-visibility); terminal states use 82/203 (see StatusStyle)
 //	212 — pink for the loading spinner
 //	238 — dim gray for the --pretty table separator
 //
@@ -49,6 +49,6 @@ func StatusStyle(status string) lipgloss.Style {
 	case "failed":
 		return lipgloss.NewStyle().Foreground(lipgloss.Color("203")).Bold(true)
 	default:
-		return lipgloss.NewStyle().Foreground(lipgloss.Color("220"))
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("226"))
 	}
 }

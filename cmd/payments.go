@@ -636,9 +636,14 @@ var paymentsDisputesCmd = &cobra.Command{
 	Example: `  rail0 payments disputes 0xrail0Id…
   rail0 payments disputes 0xrail0Id… --status open`,
 	RunE: func(_ *cobra.Command, args []string) error {
-		client := newClient()
 		return ui.RunAPI(func() (any, error) {
-			resp, err := client.Payments.Disputes(context.Background(), args[0],
+			ctx := context.Background()
+			client := newClient()
+			id, err := resolvePaymentID(ctx, client, args[0])
+			if err != nil {
+				return nil, err
+			}
+			resp, err := client.Payments.Disputes(ctx, id,
 				rail0.ListDisputesParams{Status: disputesStatus, Sort: disputesSort})
 			if err != nil {
 				return nil, err

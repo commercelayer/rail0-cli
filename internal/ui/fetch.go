@@ -16,13 +16,17 @@ type fetchResult struct {
 type fetchModel struct {
 	spinner spinner.Model
 	fn      func() (any, error)
+	msg     string
 	result  *fetchResult
 }
 
-func newFetchModel(fn func() (any, error)) fetchModel {
+func newFetchModel(fn func() (any, error), msg string) fetchModel {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
-	return fetchModel{spinner: s, fn: fn}
+	if msg == "" {
+		msg = "fetching…"
+	}
+	return fetchModel{spinner: s, fn: fn, msg: msg}
 }
 
 func (m fetchModel) Init() tea.Cmd {
@@ -52,5 +56,5 @@ func (m fetchModel) View() string {
 	if m.result != nil {
 		return ""
 	}
-	return SpinStyle.Render(m.spinner.View()) + " fetching…\n"
+	return SpinStyle.Render(m.spinner.View()) + " " + m.msg + "\n"
 }

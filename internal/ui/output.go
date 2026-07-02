@@ -7,9 +7,10 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"charm.land/lipgloss/v2"
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/term"
 )
 
@@ -40,7 +41,9 @@ func RunAPI(fn func() (any, error)) error {
 // RunAPIWithMessage is RunAPI with a custom spinner label — used by the atomic
 // on-chain actions (authorize/capture/refund/…) so the spinner names the work in
 // progress ("Authorizing…") across the whole prepare → sign → broadcast wait,
-// rather than the generic "fetching…". Behaviour is otherwise identical.
+// rather than the generic "fetching…". The spinner appears the instant the call
+// starts and is cleared the moment the response arrives, right before the result
+// is rendered. Behaviour is otherwise identical.
 func RunAPIWithMessage(msg string, fn func() (any, error)) error {
 	if jsonMode || !isTerminal(os.Stdout) {
 		data, err := fn()
@@ -49,19 +52,50 @@ func RunAPIWithMessage(msg string, fn func() (any, error)) error {
 		}
 		return printJSON(data)
 	}
-	p := tea.NewProgram(newFetchModel(fn, msg), tea.WithOutput(os.Stderr))
-	final, err := p.Run()
+	stop := startSpinner(msg)
+	data, err := fn()
+	stop()
 	if err != nil {
 		return err
 	}
-	fm := final.(fetchModel)
-	if fm.result.err != nil {
-		return fm.result.err
-	}
 	if prettyMode {
-		return printPretty(fm.result.data)
+		return printPretty(data)
 	}
-	return printStyled(fm.result.data)
+	return printStyled(data)
+}
+
+// startSpinner draws an animated spinner on stderr and returns a stop function
+// that halts it and clears the line. The first frame is written synchronously,
+// so the spinner is on screen the instant the command starts working; a
+// goroutine then advances it until stop() is called (when the response arrives).
+// stderr is used so the rendered result on stdout stays clean for pipelines.
+func startSpinner(msg string) func() {
+	frames := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+	fmt.Fprintf(os.Stderr, "\r%s %s", SpinStyle.Render(frames[0]), msg)
+
+	done := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		t := time.NewTicker(80 * time.Millisecond)
+		defer t.Stop()
+		i := 0
+		for {
+			select {
+			case <-done:
+				fmt.Fprint(os.Stderr, "\r\x1b[K") // clear the spinner line
+				return
+			case <-t.C:
+				i = (i + 1) % len(frames)
+				fmt.Fprintf(os.Stderr, "\r%s %s", SpinStyle.Render(frames[i]), msg)
+			}
+		}
+	}()
+	return func() {
+		close(done)
+		wg.Wait()
+	}
 }
 
 // printJSON emits plain, indented JSON with no colour — the machine-readable

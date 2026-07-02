@@ -99,8 +99,18 @@ Only non-sensitive values are stored — never private keys or tokens.`,
 		sort.Strings(names)
 		rows := make([]map[string]any, 0, len(names))
 		for _, n := range names {
-			value, origin := effectiveSetting(configKeys[n])
-			rows = append(rows, map[string]any{"key": n, "value": value, "origin": origin})
+			k := configKeys[n]
+			value, origin := effectiveSetting(k)
+			// `modified` flags settings the user changed away from the built-in
+			// default (via flag/env/config file); `default` shows what that
+			// built-in value is, so an override is easy to spot at a glance.
+			rows = append(rows, map[string]any{
+				"key":      n,
+				"value":    value,
+				"origin":   origin,
+				"default":  k.def(),
+				"modified": origin != "default",
+			})
 		}
 		return ui.RunAPI(func() (any, error) { return rows, nil })
 	},

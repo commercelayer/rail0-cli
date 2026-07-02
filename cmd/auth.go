@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -67,13 +68,22 @@ Override with the RAIL0_TOKEN environment variable.`,
 	},
 }
 
-// siweHost derives the SIWE domain from a base URL by stripping the scheme
-// (https:// or http://) and any trailing slash, so e.g. "https://api.rail0.xyz/"
-// becomes "api.rail0.xyz". The gateway signs/verifies the SIWE message against
-// this bare host, so it must match what the client actually calls.
+// siweHost derives the SIWE domain from a base URL: the bare host WITHOUT the
+// scheme or port, so "https://api.rail0.xyz/" -> "api.rail0.xyz" and
+// "http://localhost:9292" -> "localhost". The gateway's expected SIWE domain is
+// host-only (Policy.siwe_domain defaults to "localhost" in dev, "api.rail0.xyz"
+// in production), and rail0-admin signs host-only too — so keeping the port here
+// would make the gateway reject the message with "SIWE domain mismatch".
 func siweHost(baseURL string) string {
-	return strings.TrimSuffix(
-		strings.TrimPrefix(strings.TrimPrefix(baseURL, "https://"), "http://"), "/")
+	if u, err := url.Parse(baseURL); err == nil && u.Hostname() != "" {
+		return u.Hostname()
+	}
+	// Fallback for a scheme-less base URL: drop scheme/trailing slash, then port.
+	s := strings.TrimSuffix(strings.TrimPrefix(strings.TrimPrefix(baseURL, "https://"), "http://"), "/")
+	if h, _, found := strings.Cut(s, ":"); found {
+		return h
+	}
+	return s
 }
 
 // ── auth status ───────────────────────────────────────────────────────────────

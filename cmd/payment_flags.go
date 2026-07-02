@@ -23,7 +23,7 @@ type createPaymentFlags struct {
 	to          string
 	token       string // symbol (e.g. "USDC") resolved to address at build time
 	amount      string
-	chainID     int    // numeric chain id
+	chainID     int // numeric chain id
 	mode        string
 	description string // optional, human-readable note (e.g. what's being paid for)
 }
@@ -197,4 +197,3 @@ func (f *createPaymentFlags) resolve() (rail0.CreatePaymentRequest, error) {
 		Description: f.description,
 	}, nil
 }
-

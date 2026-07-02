@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 
+	rail0 "github.com/rail0/go-sdk"
+
 	"github.com/rail0/cli/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -33,26 +35,8 @@ to narrow further.`,
 			return fmt.Errorf("invalid --network-type %q: must be 'testnet' or 'mainnet'", chainsNetworkType)
 		}
 		return ui.RunAPI(func() (any, error) {
-			chains, err := newClient().Chains.List(context.Background())
-			if err != nil {
-				return nil, err
-			}
-			if chainsSymbol == "" && networkType == "" {
-				return chains, nil
-			}
-			// The catalog is small and served whole, so filter client-side.
-			// filtered reuses chains' backing array (we only ever move forward).
-			filtered := chains[:0]
-			for _, c := range chains {
-				if chainsSymbol != "" && !strings.EqualFold(c.NativeSymbol, chainsSymbol) {
-					continue
-				}
-				if networkType != "" && !strings.EqualFold(c.NetworkType, networkType) {
-					continue
-				}
-				filtered = append(filtered, c)
-			}
-			return filtered, nil
+			return newClient().Chains.List(context.Background(),
+				rail0.ListChainsParams{NetworkType: networkType, Symbol: chainsSymbol})
 		})
 	},
 }

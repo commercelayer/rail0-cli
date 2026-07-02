@@ -166,14 +166,27 @@ var webhooksResetCircuitCmd = &cobra.Command{
 
 var webhooksEventsStatus string
 var webhooksEventsSort string
+var webhooksEventsTopic string
+var webhooksEventsPaymentID string
+var webhooksEventsSince string
+var webhooksEventsUntil string
 
 var webhooksEventCallbacksCmd = &cobra.Command{
-	Use:     "event-callbacks <webhook_id>",
-	Short:   "List delivery attempts for a webhook",
-	Example: `  rail0 webhooks event-callbacks whk_abc123 --status failed`,
-	Args:    cobra.ExactArgs(1),
+	Use:   "event-callbacks <webhook_id>",
+	Short: "List delivery attempts for a webhook",
+	Example: `  rail0 webhooks event-callbacks whk_abc123 --status failed
+  rail0 webhooks event-callbacks whk_abc123 --topic payments.captured
+  rail0 webhooks event-callbacks whk_abc123 --payment-id 0x… --since 2026-01-01T00:00:00Z`,
+	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		p := rail0.ListEventCallbacksParams{Status: webhooksEventsStatus, Sort: webhooksEventsSort}
+		p := rail0.ListEventCallbacksParams{
+			Status:    webhooksEventsStatus,
+			Topic:     webhooksEventsTopic,
+			PaymentID: webhooksEventsPaymentID,
+			Since:     webhooksEventsSince,
+			Until:     webhooksEventsUntil,
+			Sort:      webhooksEventsSort,
+		}
 		return ui.RunAPI(func() (any, error) {
 			resp, err := newClient().Webhooks.EventCallbacks(context.Background(), args[0], p)
 			if err != nil {
@@ -243,6 +256,10 @@ func init() {
 	webhooksCmd.AddCommand(webhooksResetCircuitCmd)
 
 	webhooksEventCallbacksCmd.Flags().StringVar(&webhooksEventsStatus, "status", "", "Filter by delivery status ('pending', 'delivered', 'failed')")
+	webhooksEventCallbacksCmd.Flags().StringVar(&webhooksEventsTopic, "topic", "", "Filter by event topic (e.g. payments.captured)")
+	webhooksEventCallbacksCmd.Flags().StringVar(&webhooksEventsPaymentID, "payment-id", "", "Filter by the payment the delivery is for")
+	webhooksEventCallbacksCmd.Flags().StringVar(&webhooksEventsSince, "since", "", "Only deliveries at/after this ISO-8601 time")
+	webhooksEventCallbacksCmd.Flags().StringVar(&webhooksEventsUntil, "until", "", "Only deliveries at/before this ISO-8601 time")
 	webhooksEventCallbacksCmd.Flags().StringVar(&webhooksEventsSort, "sort", "", "Sort fields (e.g. -created_at)")
 	webhooksCmd.AddCommand(webhooksEventCallbacksCmd)
 

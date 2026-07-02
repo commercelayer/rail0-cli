@@ -164,7 +164,7 @@ func (f *createPaymentFlags) resolve() (rail0.CreatePaymentRequest, error) {
 	chainID := f.chainID
 
 	// Resolve token symbol → address on the selected chain.
-	tokens, err := client.Tokens.List(ctx, chainID)
+	tokens, err := client.Tokens.List(ctx, rail0.ListTokensParams{ChainID: chainID})
 	if err != nil {
 		return rail0.CreatePaymentRequest{}, fmt.Errorf("fetch tokens: %w", err)
 	}

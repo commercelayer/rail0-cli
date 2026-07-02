@@ -34,6 +34,14 @@ func isTerminal(f *os.File) bool { return term.IsTerminal(f.Fd()) }
 // plain indented JSON (no ANSI), suitable for jq and shell pipelines. A nil
 // result (e.g. a 204 delete) prints nothing.
 func RunAPI(fn func() (any, error)) error {
+	return RunAPIWithMessage("fetching…", fn)
+}
+
+// RunAPIWithMessage is RunAPI with a custom spinner label — used by the atomic
+// on-chain actions (authorize/capture/refund/…) so the spinner names the work in
+// progress ("Authorizing…") across the whole prepare → sign → broadcast wait,
+// rather than the generic "fetching…". Behaviour is otherwise identical.
+func RunAPIWithMessage(msg string, fn func() (any, error)) error {
 	if jsonMode || !isTerminal(os.Stdout) {
 		data, err := fn()
 		if err != nil {
@@ -41,7 +49,7 @@ func RunAPI(fn func() (any, error)) error {
 		}
 		return printJSON(data)
 	}
-	p := tea.NewProgram(newFetchModel(fn), tea.WithOutput(os.Stderr))
+	p := tea.NewProgram(newFetchModel(fn, msg), tea.WithOutput(os.Stderr))
 	final, err := p.Run()
 	if err != nil {
 		return err

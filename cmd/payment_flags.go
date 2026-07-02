@@ -25,6 +25,7 @@ type createPaymentFlags struct {
 	amount      string
 	chainID     int    // numeric chain id
 	mode        string
+	description string // optional, human-readable note (e.g. what's being paid for)
 }
 
 // addTo registers all create-payment flags on cmd.
@@ -43,6 +44,8 @@ func (f *createPaymentFlags) addTo(cmd *cobra.Command) {
 		"EVM chain ID as listed in GET /blockchains (e.g. 5042002)")
 	cmd.Flags().StringVarP(&f.mode, "mode", "m", "authorize",
 		"Payment mode: 'authorize' (escrow then capture) or 'charge' (immediate, no escrow)")
+	cmd.Flags().StringVarP(&f.description, "description", "d", "",
+		"Optional human-readable note (e.g. what the payment is for)")
 }
 
 // build constructs a rail0.CreatePaymentRequest.
@@ -185,12 +188,13 @@ func (f *createPaymentFlags) resolve() (rail0.CreatePaymentRequest, error) {
 	}
 
 	return rail0.CreatePaymentRequest{
-		Payer:   payer,
-		Payee:   payee,
-		Token:   tokenAddress,
-		Amount:  f.amount,
-		ChainID: chainID,
-		Mode:    f.mode,
+		Payer:       payer,
+		Payee:       payee,
+		Token:       tokenAddress,
+		Amount:      f.amount,
+		ChainID:     chainID,
+		Mode:        f.mode,
+		Description: f.description,
 	}, nil
 }
 

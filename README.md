@@ -199,6 +199,7 @@ Lists the account's wallets, each with its token holdings nested under `tokens`.
 rail0 wallets                                   # logged-in session account
 rail0 wallets --account 019e748b-…              # a specific account by id
 rail0 wallets --chain-id 5042002 --symbol USDC --active true
+rail0 wallets --default true --sort -created_at
 ```
 
 | Flag | Short | Description |
@@ -207,6 +208,8 @@ rail0 wallets --chain-id 5042002 --symbol USDC --active true
 | `--chain-id` | — | Restrict the nested tokens to this chain id (wallets still listed) |
 | `--symbol` | `-s` | Restrict the nested tokens to this symbol, e.g. `USDC` (wallets still listed) |
 | `--active` | — | Filter the wallets by active flag (`true` or `false`) |
+| `--default` | — | Restrict the nested token holdings to the default one (`true` or `false`) |
+| `--sort` | — | Sort wallets, e.g. `-created_at` |
 
 #### `wallets get <wallet>`
 
@@ -292,11 +295,12 @@ rail0 chains -s ETH -n mainnet    # combined
 
 #### `tokens`
 
-List the token catalog. Filter by chain with `--chain-id`.
+List the token catalog. Filter by chain with `--chain-id` and/or by token symbol with `--symbol` / `-s` (case-insensitive).
 
 ```sh
 rail0 tokens
 rail0 tokens --chain-id 5042002
+rail0 tokens --symbol USDC
 ```
 
 ---
@@ -327,7 +331,7 @@ rail0 webhooks delete <webhook_id>
 | `enable` / `disable` | Toggle delivery |
 | `rotate-secret` | Issue a new shared secret (returned once) |
 | `reset-circuit` | Reset the delivery circuit breaker and re-enable |
-| `event-callbacks` | List delivery attempts (`--status`, `--sort`) |
+| `event-callbacks` | List delivery attempts (`--status`, `--topic`, `--payment-id`, `--since`, `--until`, `--sort`) |
 | `delete` | Remove a webhook |
 
 ---
@@ -397,11 +401,15 @@ rail0 payments get 0xabc123…
 
 #### `payments list`
 
-List payments for the authenticated wallet (requires login).
+List payments for the authenticated wallet (requires login). Filter with
+`--chain-id`, `--disputed`, `--min-amount` / `--max-amount` (token base units),
+and `--created-from` / `--created-to` (ISO-8601); sort with `--sort`.
 
 ```sh
 rail0 payments list
 rail0 payments list --sort -created_at
+rail0 payments list --chain-id 5042002 --disputed
+rail0 payments list --min-amount 1000000 --created-from 2026-01-01T00:00:00Z
 ```
 
 ---

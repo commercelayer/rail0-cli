@@ -70,19 +70,42 @@ Status values:
 
 // ── payments list ────────────────────────────────────────────────────────────
 
-var paymentsListSort string
+var (
+	paymentsListSort        string
+	paymentsListChainID     int
+	paymentsListDisputed    bool
+	paymentsListMinAmount   string
+	paymentsListMaxAmount   string
+	paymentsListCreatedFrom string
+	paymentsListCreatedTo   string
+)
 
 var paymentsListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List payments for the authenticated wallet (requires login)",
 	Long: `Returns all payments where your wallet is payer or payee.
-Requires authentication — run 'rail0 auth login -p 0xKey…' first.`,
+Requires authentication — run 'rail0 auth login -p 0xKey…' first.
+
+Filter with --chain-id, --disputed, --min-amount / --max-amount (token base
+units), and --created-from / --created-to (ISO-8601).`,
 	Example: `  rail0 payments list
   rail0 payments list --sort -created_at
-  rail0 payments list --sort -amount,created_at`,
+  rail0 payments list --chain-id 5042002 --disputed
+  rail0 payments list --min-amount 1000000 --created-from 2026-01-01T00:00:00Z`,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		p := rail0.ListPaymentsParams{
+			Sort:        paymentsListSort,
+			ChainID:     paymentsListChainID,
+			MinAmount:   paymentsListMinAmount,
+			MaxAmount:   paymentsListMaxAmount,
+			CreatedFrom: paymentsListCreatedFrom,
+			CreatedTo:   paymentsListCreatedTo,
+		}
+		// Only send disputed when the flag was explicitly set (tri-state).
+		if cmd.Flags().Changed("disputed") {
+			p.Disputed = &paymentsListDisputed
+		}
 		return ui.RunAPI(func() (any, error) {
-			p := rail0.ListPaymentsParams{Sort: paymentsListSort}
 			resp, err := newClient().Payments.List(context.Background(), p)
 			if err != nil {
 				return nil, err
@@ -601,14 +624,26 @@ var paymentsDisputeCloseCmd = &cobra.Command{
 	},
 }
 
+var (
+	disputesStatus string
+	disputesSort   string
+)
+
 var paymentsDisputesCmd = &cobra.Command{
 	Use:   "disputes <rail0Id>",
 	Short: "List a payment's dispute open/close history",
 	Args:  cobra.ExactArgs(1),
+	Example: `  rail0 payments disputes 0xrail0Id…
+  rail0 payments disputes 0xrail0Id… --status open`,
 	RunE: func(_ *cobra.Command, args []string) error {
 		client := newClient()
 		return ui.RunAPI(func() (any, error) {
-			return client.Payments.Disputes(context.Background(), args[0])
+			resp, err := client.Payments.Disputes(context.Background(), args[0],
+				rail0.ListDisputesParams{Status: disputesStatus, Sort: disputesSort})
+			if err != nil {
+				return nil, err
+			}
+			return resp.Data, nil // bare array; pagination is in headers
 		})
 	},
 }
@@ -629,6 +664,12 @@ func init() {
 
 	// payments list
 	paymentsListCmd.Flags().StringVar(&paymentsListSort, "sort", "", "Sort fields (e.g. -created_at,amount)")
+	paymentsListCmd.Flags().IntVar(&paymentsListChainID, "chain-id", 0, "Filter by EVM chain ID")
+	paymentsListCmd.Flags().BoolVar(&paymentsListDisputed, "disputed", false, "Filter by whether an open dispute exists")
+	paymentsListCmd.Flags().StringVar(&paymentsListMinAmount, "min-amount", "", "Minimum amount in token base units (inclusive)")
+	paymentsListCmd.Flags().StringVar(&paymentsListMaxAmount, "max-amount", "", "Maximum amount in token base units (inclusive)")
+	paymentsListCmd.Flags().StringVar(&paymentsListCreatedFrom, "created-from", "", "Only payments created at/after this ISO-8601 time")
+	paymentsListCmd.Flags().StringVar(&paymentsListCreatedTo, "created-to", "", "Only payments created at/before this ISO-8601 time")
 	paymentsCmd.AddCommand(paymentsListCmd)
 
 	// payments transactions
@@ -672,5 +713,7 @@ func init() {
 	paymentsDisputeCloseCmd.Flags().StringVar(&closeDisputeReason, "reason", "", "bytes32 reason code (0x…); defaults to zero")
 	paymentsDisputeCmd.AddCommand(paymentsDisputeCloseCmd)
 	paymentsCmd.AddCommand(paymentsDisputeCmd)
+	paymentsDisputesCmd.Flags().StringVar(&disputesStatus, "status", "", "Filter by dispute status: open or closed")
+	paymentsDisputesCmd.Flags().StringVar(&disputesSort, "sort", "", "Sort fields (e.g. -opened_at)")
 	paymentsCmd.AddCommand(paymentsDisputesCmd)
 }

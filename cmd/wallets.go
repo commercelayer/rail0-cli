@@ -20,6 +20,8 @@ var walletsAccount string
 var walletsActive string
 var walletsChainID int
 var walletsSymbol string
+var walletsSort string
+var walletsDefault string
 
 var walletsCmd = &cobra.Command{
 	Use:   "wallets",
@@ -40,7 +42,7 @@ account.`,
 		if err != nil {
 			return err
 		}
-		p := rail0.ListWalletsParams{ChainID: walletsChainID, TokenSymbol: walletsSymbol}
+		p := rail0.ListWalletsParams{ChainID: walletsChainID, TokenSymbol: walletsSymbol, Sort: walletsSort}
 		if walletsActive != "" {
 			switch walletsActive {
 			case "true":
@@ -51,6 +53,18 @@ account.`,
 				p.Active = &f
 			default:
 				return errors.New("--active must be 'true' or 'false'")
+			}
+		}
+		if walletsDefault != "" {
+			switch walletsDefault {
+			case "true":
+				t := true
+				p.Default = &t
+			case "false":
+				f := false
+				p.Default = &f
+			default:
+				return errors.New("--default must be 'true' or 'false'")
 			}
 		}
 		return ui.RunAPI(func() (any, error) {
@@ -224,6 +238,8 @@ func init() {
 	walletsCmd.Flags().StringVarP(&walletsSymbol, "symbol", "s", "", "Restrict nested tokens to this symbol, e.g. USDC (alias: --token)")
 	walletsCmd.Flags().StringVar(&walletsSymbol, "token", "", "Alias for --symbol")
 	_ = walletsCmd.Flags().MarkHidden("token")
+	walletsCmd.Flags().StringVar(&walletsSort, "sort", "", "Sort wallets (e.g. -created_at)")
+	walletsCmd.Flags().StringVar(&walletsDefault, "default", "", "Restrict nested token holdings to the default one ('true' or 'false')")
 
 	// wallets create
 	walletsCreateCmd.Flags().StringVarP(&createWalletAddress, "address", "A", "", "EVM wallet address (0x-prefixed hex, or @alias)")

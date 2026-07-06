@@ -11,19 +11,29 @@ import (
 	rail0 "github.com/rail0/go-sdk"
 )
 
-// opActionableStatuses maps an operation to the payment statuses it can act on,
-// mirroring the gateway's state guards — used to filter the interactive payment
-// picker so it only offers payments the operation can actually run against.
-// close-dispute isn't status-driven (it filters on the disputed flag), handled
-// separately in pickFromList.
-var opActionableStatuses = map[string][]string{
-	"authorize": {"signed"},
-	"charge":    {"signed"},
-	"capture":   {"authorized", "partially_captured", "partially_refunded"},
-	"void":      {"authorized"},
-	"release":   {"authorized"},
-	"refund":    {"charged", "captured", "partially_captured", "partially_refunded"},
-	"dispute":   {"charged", "captured", "partially_captured", "partially_refunded"},
+// opFilter constrains the interactive picker to payments an operation can act on,
+// mirroring the gateway's state/mode guards, so it never offers an incompatible
+// payment. mode/disputed are pushed to the gateway's list filters; statuses is
+// applied client-side (the gateway's status filter is single-valued).
+type opFilter struct {
+	statuses []string // allowed payment statuses (empty = any)
+	mode     string   // required mode ("authorize"/"charge"; "" = any)
+	disputed *bool    // required disputed flag (nil = any)
+}
+
+func boolPointer(b bool) *bool { return &b }
+
+var opFilters = map[string]opFilter{
+	// authorize/charge both act on a signed payment, but only in their own mode.
+	"authorize": {statuses: []string{"signed"}, mode: "authorize"},
+	"charge":    {statuses: []string{"signed"}, mode: "charge"},
+	"capture":   {statuses: []string{"authorized", "partially_captured", "partially_refunded"}},
+	"void":      {statuses: []string{"authorized"}},
+	"release":   {statuses: []string{"authorized"}},
+	"refund":    {statuses: []string{"charged", "captured", "partially_captured", "partially_refunded"}},
+	// dispute opens a dispute (only when none is open); close resolves the open one.
+	"dispute":       {statuses: []string{"charged", "captured", "partially_captured", "partially_refunded"}, disputed: boolPointer(false)},
+	"close dispute": {disputed: boolPointer(true)},
 }
 
 // pickPaymentID resolves the payment an operation acts on. A positional argument
@@ -50,18 +60,17 @@ func pickPaymentID(ctx context.Context, client *rail0.Client, args []string, op 
 // a pick, or ("", false) when the list is empty/unavailable so the caller can
 // fall back to a free-text prompt.
 func pickFromList(ctx context.Context, client *rail0.Client, op string) (string, bool) {
+	f := opFilters[op]
 	params := rail0.ListPaymentsParams{PerPage: 100} // first page is plenty for a picker
-	if op == "close dispute" {
-		disputed := true
-		params.Disputed = &disputed
-	}
+	params.Mode = f.mode                             // "" = no filter
+	params.Disputed = f.disputed                     // nil = no filter
 	resp, err := client.Payments.List(ctx, params)
 	if err != nil || resp == nil || len(resp.Data) == 0 {
 		return "", false
 	}
 
 	allowed := map[string]bool{}
-	for _, s := range opActionableStatuses[op] {
+	for _, s := range f.statuses {
 		allowed[s] = true
 	}
 

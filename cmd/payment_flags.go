@@ -82,9 +82,35 @@ func (f *createPaymentFlags) build(modeProvided bool) (rail0.CreatePaymentReques
 	return f.resolve()
 }
 
-// buildInteractive shows a huh form to collect only the fields the user hasn't
-// already supplied: each required field left empty on the command line, plus the
-// mode when --mode wasn't given. A value passed via a flag is never re-asked.
+// fieldsToPrompt returns, in prompt order, the fields the interactive form should
+// ask for: each required field left empty on the command line, plus "mode" when
+// --mode wasn't given. Pure (no I/O) so it's unit-testable — a value supplied via
+// a flag is never included.
+func (f *createPaymentFlags) fieldsToPrompt(modeProvided bool) []string {
+	var need []string
+	if f.from == "" {
+		need = append(need, "from")
+	}
+	if f.to == "" {
+		need = append(need, "to")
+	}
+	if f.token == "" {
+		need = append(need, "token")
+	}
+	if f.amount == "" {
+		need = append(need, "amount")
+	}
+	if f.chainID == 0 {
+		need = append(need, "chain-id")
+	}
+	if !modeProvided {
+		need = append(need, "mode")
+	}
+	return need
+}
+
+// buildInteractive shows a huh form to collect only the fields fieldsToPrompt
+// reports as missing — a value passed via a flag is never re-asked.
 func (f *createPaymentFlags) buildInteractive(modeProvided bool) (rail0.CreatePaymentRequest, error) {
 	chainIDStr := ""
 	if f.chainID > 0 {
@@ -92,54 +118,52 @@ func (f *createPaymentFlags) buildInteractive(modeProvided bool) (rail0.CreatePa
 	}
 
 	var fields []huh.Field
-	if f.from == "" {
-		fields = append(fields, huh.NewInput().
-			Title("From (payer)").
-			Description("Payer wallet address (0x-prefixed) — funds are pulled from here").
-			Value(&f.from))
-	}
-	if f.to == "" {
-		fields = append(fields, huh.NewInput().
-			Title("To (payee)").
-			Description("Payee wallet address (0x-prefixed) — use address from 'wallets'").
-			Value(&f.to))
-	}
-	if f.token == "" {
-		fields = append(fields, huh.NewInput().
-			Title("Token").
-			Description("Token symbol (e.g. USDC) — see 'rail0 tokens'").
-			Value(&f.token))
-	}
-	if f.amount == "" {
-		fields = append(fields, huh.NewInput().
-			Title("Amount").
-			Description("Amount as a decimal in token units (e.g. 1.00 = 1 USDC); the gateway converts to base units").
-			Value(&f.amount))
-	}
-	if f.chainID == 0 {
-		fields = append(fields, huh.NewInput().
-			Title("Chain ID").
-			Description("EVM chain ID (e.g. 5042002) — see 'rail0 chains'").
-			Value(&chainIDStr).
-			Validate(func(s string) error {
-				if s == "" {
-					return fmt.Errorf("chain id is required")
-				}
-				if _, err := strconv.Atoi(s); err != nil {
-					return fmt.Errorf("chain id must be a number")
-				}
-				return nil
-			}))
-	}
-	if !modeProvided {
-		fields = append(fields, huh.NewSelect[string]().
-			Title("Mode").
-			Description("authorize = escrow then capture; charge = immediate transfer").
-			Options(
-				huh.NewOption("authorize (escrow + capture)", "authorize"),
-				huh.NewOption("charge (immediate, no escrow)", "charge"),
-			).
-			Value(&f.mode))
+	for _, name := range f.fieldsToPrompt(modeProvided) {
+		switch name {
+		case "from":
+			fields = append(fields, huh.NewInput().
+				Title("From (payer)").
+				Description("Payer wallet address (0x-prefixed) — funds are pulled from here").
+				Value(&f.from))
+		case "to":
+			fields = append(fields, huh.NewInput().
+				Title("To (payee)").
+				Description("Payee wallet address (0x-prefixed) — use address from 'wallets'").
+				Value(&f.to))
+		case "token":
+			fields = append(fields, huh.NewInput().
+				Title("Token").
+				Description("Token symbol (e.g. USDC) — see 'rail0 tokens'").
+				Value(&f.token))
+		case "amount":
+			fields = append(fields, huh.NewInput().
+				Title("Amount").
+				Description("Amount as a decimal in token units (e.g. 1.00 = 1 USDC); the gateway converts to base units").
+				Value(&f.amount))
+		case "chain-id":
+			fields = append(fields, huh.NewInput().
+				Title("Chain ID").
+				Description("EVM chain ID (e.g. 5042002) — see 'rail0 chains'").
+				Value(&chainIDStr).
+				Validate(func(s string) error {
+					if s == "" {
+						return fmt.Errorf("chain id is required")
+					}
+					if _, err := strconv.Atoi(s); err != nil {
+						return fmt.Errorf("chain id must be a number")
+					}
+					return nil
+				}))
+		case "mode":
+			fields = append(fields, huh.NewSelect[string]().
+				Title("Mode").
+				Description("authorize = escrow then capture; charge = immediate transfer").
+				Options(
+					huh.NewOption("authorize (escrow + capture)", "authorize"),
+					huh.NewOption("charge (immediate, no escrow)", "charge"),
+				).
+				Value(&f.mode))
+		}
 	}
 
 	// Only run the form when there's actually something to ask. (build() only

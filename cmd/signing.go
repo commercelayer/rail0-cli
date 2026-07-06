@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"math/big"
 
@@ -12,7 +13,7 @@ import (
 // carries the embedded signing_payload and rail0_contract needed to sign.
 func signEIP712FromCreate(p *rail0.Payment, mode string, privateKeyHex string) (string, error) {
 	if p.SigningPayload == nil {
-		return "", fmt.Errorf("create response did not include a signing_payload")
+		return "", signingPayloadUnavailable(p.SigningPayloadError)
 	}
 	pc := rail0.PaymentConfig{
 		Amount:              string(p.Amount),
@@ -30,6 +31,22 @@ func signEIP712FromCreate(p *rail0.Payment, mode string, privateKeyHex string) (
 		mode,
 		privateKeyHex,
 	)
+}
+
+// signingPayloadUnavailable turns the gateway's reason for a missing EIP-3009
+// payload (the payment's signing_payload_error) into an actionable message, so a
+// null payload isn't surfaced as an opaque failure.
+func signingPayloadUnavailable(reason string) error {
+	switch reason {
+	case "rpc_unreachable":
+		return errors.New("gateway could not build the signing payload: its RPC endpoint for this chain is unreachable — retry shortly, or check the chain's rpc_urls on the gateway")
+	case "rpc_error":
+		return errors.New("gateway could not build the signing payload: reading the token's EIP-712 domain on-chain failed (the token may not expose name()/version(), or the RPC rejected the call)")
+	case "", "error":
+		return errors.New("gateway could not build the signing payload for this payment — check that the gateway (--base-url / RAIL0_BASE_URL) is configured for this token and chain")
+	default:
+		return fmt.Errorf("gateway could not build the signing payload (reason: %s)", reason)
+	}
 }
 
 // signPayload is the shared signing core.

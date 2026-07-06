@@ -184,6 +184,17 @@ authorize.`,
 		if err != nil {
 			return err
 		}
+		// Preventive check: the payer signs with their own key. Compare the signing
+		// key's address to the resolved payer up front, so signing with the wrong
+		// key (e.g. the payee's) fails immediately with a clear message instead of a
+		// gateway signer_mismatch after the create round-trip.
+		signer, err := addressFromKey(signingKey)
+		if err != nil {
+			return err
+		}
+		if !strings.EqualFold(signer, string(req.Payer)) {
+			return fmt.Errorf("signing key address %s does not match the payer %s (--from) — you're signing with the wrong key", signer, req.Payer)
+		}
 		return ui.RunAPIWithMessage("Creating payment…", func() (any, error) {
 			created, err := client.Payments.Create(ctx, req)
 			if err != nil {

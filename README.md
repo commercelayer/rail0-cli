@@ -148,10 +148,12 @@ The signing key is resolved in this order: `--private-key` (`-p` / `--pk`, where
 
 #### Addressing a payment: UUID or rail0_id
 
-Commands that take a payment argument (`get`, `transactions`, and the action commands) accept either form:
+Commands that take a payment argument (`get`, `transactions`, and the action commands) accept either form, passed straight through to the gateway, which resolves both:
 
-- the payment **UUID** `id` — always works, with or without a session;
-- the logical **`rail0_id`** (`0x…`, 64 hex) — resolved to the UUID via the authenticated `GET /payments?rail0_id=` filter, so it **requires `rail0 auth login`** (and only finds payments where your wallet is payer or payee). Without a session you'll be asked to log in or pass the UUID.
+- the payment **UUID** `id`;
+- the logical **`rail0_id`** (`0x…`, 64 hex).
+
+Either works with or without a session (subject to the endpoint's own auth — the action commands are still payee/payer-gated). The CLI no longer pre-resolves the `rail0_id` client-side; a value that is neither a UUID nor a `rail0_id` is a clean 404.
 
 ---
 
@@ -391,10 +393,10 @@ rail0 payments get 0xabc123…
 | `charged` | One-shot charge executed; refund available |
 | `captured` | Funds fully captured by payee |
 | `partially_captured` | Partial capture; remaining escrow still capturable |
-| `voided` | Authorization cancelled; funds returned to payer |
-| `released` | Expired authorization released back to payer |
-| `refunded` | Captured funds fully refunded to payer |
-| `partially_refunded` | Partial refund; remaining balance still refundable |
+| `voided` | Authorization cancelled (only before any capture); funds returned to payer |
+| `released` | Full authorization released back to payer (total release, nothing captured) |
+| `refunded` | Payment fully settled by refund (both escrow and refundable drained) |
+| `partially_refunded` | Legacy — no longer produced; a partial refund now leaves the status unchanged |
 | `failed` | Terminal failure; payment cannot proceed |
 
 ---

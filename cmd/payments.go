@@ -48,10 +48,10 @@ Status values:
   charged             — one-shot charge executed, refund available
   captured            — funds fully captured by payee
   partially_captured  — partial capture executed; remaining escrow still capturable
-  voided              — authorization cancelled, funds returned to payer
-  released            — expired authorization released back to payer
-  refunded            — captured funds fully refunded to payer
-  partially_refunded  — partial refund executed; remaining balance still refundable
+  voided              — authorization cancelled (only before any capture), funds returned to payer
+  released            — full authorization released back to payer (total release, nothing captured)
+  refunded            — payment fully settled by refund (escrow and refundable both drained)
+  partially_refunded  — legacy; no longer produced (a partial refund leaves the status unchanged)
   failed              — terminal failure; payment cannot proceed`,
 	Example: `  rail0 payments get 0xabc123…`,
 	Args:    cobra.ExactArgs(1),
@@ -378,9 +378,11 @@ var paymentsVoidCmd = &cobra.Command{
 	Short: "Void a payment (prepare, sign, and broadcast)",
 	Long: `Prepare the transaction that calls void() on the RAIL0 contract.
 
-The payment must be in 'authorized' status. Void cancels the authorization
-and returns the full escrowed balance to the payer. Only callable before
-authorizationExpiry, by the payee.
+The payment must be in 'authorized' status with NOTHING captured yet: void is
+forbidden once any (even partial) capture has occurred (the contract reverts
+AlreadyCaptured) — recover the uncaptured remainder via 'release' instead. Void
+cancels the authorization and returns the full escrowed balance to the payer.
+Only callable before authorizationExpiry, by the payee.
 The API returns 202 immediately; poll 'payments get <rail0Id>' until
 status advances to "voided".
 
@@ -423,11 +425,13 @@ var paymentsReleaseCmd = &cobra.Command{
 	Long: `Prepare the transaction that calls release() on the RAIL0 contract.
 
 Release is only available after authorizationExpiry has passed on-chain.
-Returns the remaining escrowed balance to the payer. Permissionless — both
-payer and payee can call it; the caller is whoever the signing key belongs to
-(derived from the key), so pass the payer's key to release as the payer.
-The API returns 202 immediately; poll 'payments get <rail0Id>' until
-status advances to "released".
+Returns the remaining (uncaptured) escrowed balance to the payer. Permissionless
+— both payer and payee can call it; the caller is whoever the signing key belongs
+to (derived from the key), so pass the payer's key to release as the payer.
+The API returns 202 immediately; poll 'payments get <rail0Id>'. The status
+advances to "released" only on a TOTAL release (an untouched authorization,
+nothing captured); if a capture left a refundable residual the status stays
+unchanged and that residual remains refundable.
 
 Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 	Example: `  # Payee releases
@@ -479,16 +483,16 @@ var paymentsRefundCmd = &cobra.Command{
 	Long: `Prepare the transaction that calls refund() on the RAIL0 contract,
 pulling refundAmount from the payee and returning it to the payer.
 
-The payment must be in 'captured', 'partially_captured', 'charged',
-'refunded', or 'partially_refunded' status with a positive
-refundableAmount. Partial refunds are supported: pass --amount less
-than refundableAmount.
+The payment must be in 'charged', 'captured', or 'partially_captured' status
+with a positive refundableAmount. Partial refunds are supported: pass --amount
+less than refundableAmount.
 
 No separate approval step is needed: the CLI signs the payee's EIP-3009
 ReceiveWithAuthorization payload locally with the same key, so the refund
 funds are pulled from the payee without a prior allowance grant.
-The API returns 202 immediately; poll 'payments get <rail0Id>' until
-status advances to "refunded" or "partially_refunded".
+The API returns 202 immediately; poll 'payments get <rail0Id>'. The status
+advances to "refunded" only when the payment is fully settled (both escrow and
+refundable drained); a partial refund leaves the status unchanged.
 
 Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 	Example: `  # Full refund

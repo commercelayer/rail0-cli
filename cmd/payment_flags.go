@@ -52,9 +52,13 @@ func (f *createPaymentFlags) addTo(cmd *cobra.Command) {
 //
 // Resolution order:
 //  1. --payment-file: reads and unmarshals the JSON file.
-//  2. If required flags are missing and stdin is a TTY, launches the interactive form.
+//  2. If required flags are missing and stdin is a TTY, launches the interactive
+//     form (prompting only for the fields not already supplied on the command line).
 //  3. Otherwise validates that all required fields are present.
-func (f *createPaymentFlags) build() (rail0.CreatePaymentRequest, error) {
+//
+// modeProvided reports whether --mode was set explicitly, so the interactive
+// form only asks for the mode when the user hasn't already chosen one.
+func (f *createPaymentFlags) build(modeProvided bool) (rail0.CreatePaymentRequest, error) {
 	if f.paymentFile != "" {
 		b, err := os.ReadFile(f.paymentFile)
 		if err != nil {
@@ -70,7 +74,7 @@ func (f *createPaymentFlags) build() (rail0.CreatePaymentRequest, error) {
 	missing := f.from == "" || f.to == "" || f.token == "" || f.amount == "" || f.chainID == 0
 	if missing {
 		if term.IsTerminal(os.Stdin.Fd()) {
-			return f.buildInteractive()
+			return f.buildInteractive(modeProvided)
 		}
 		return rail0.CreatePaymentRequest{}, fmt.Errorf(
 			"--from, --to, --token, --amount, and --chain-id are required (or use --payment-file)")
@@ -78,62 +82,76 @@ func (f *createPaymentFlags) build() (rail0.CreatePaymentRequest, error) {
 	return f.resolve()
 }
 
-// buildInteractive shows a two-page huh form to collect missing payment fields.
-func (f *createPaymentFlags) buildInteractive() (rail0.CreatePaymentRequest, error) {
+// buildInteractive shows a huh form to collect only the fields the user hasn't
+// already supplied: each required field left empty on the command line, plus the
+// mode when --mode wasn't given. A value passed via a flag is never re-asked.
+func (f *createPaymentFlags) buildInteractive(modeProvided bool) (rail0.CreatePaymentRequest, error) {
 	chainIDStr := ""
 	if f.chainID > 0 {
 		chainIDStr = strconv.Itoa(f.chainID)
 	}
-	form := huh.NewForm(
-		huh.NewGroup(
-			huh.NewInput().
-				Title("From (payer)").
-				Description("Payer wallet address (0x-prefixed) — funds are pulled from here").
-				Value(&f.from),
-			huh.NewInput().
-				Title("To (payee)").
-				Description("Payee wallet address (0x-prefixed) — use address from 'wallets'").
-				Value(&f.to),
-			huh.NewInput().
-				Title("Token").
-				Description("Token symbol (e.g. USDC) — see 'rail0 tokens'").
-				Value(&f.token),
-			huh.NewInput().
-				Title("Amount").
-				Description("Amount as a decimal in token units (e.g. 1.00 = 1 USDC); the gateway converts to base units").
-				Value(&f.amount),
-		),
-		huh.NewGroup(
-			huh.NewInput().
-				Title("Chain ID").
-				Description("EVM chain ID (e.g. 5042002) — see 'rail0 chains'").
-				Value(&chainIDStr).
-				Validate(func(s string) error {
-					if s == "" {
-						return fmt.Errorf("chain id is required")
-					}
-					if _, err := strconv.Atoi(s); err != nil {
-						return fmt.Errorf("chain id must be a number")
-					}
-					return nil
-				}),
-			huh.NewSelect[string]().
-				Title("Mode").
-				Description("authorize = escrow then capture; charge = immediate transfer").
-				Options(
-					huh.NewOption("authorize (escrow + capture)", "authorize"),
-					huh.NewOption("charge (immediate, no escrow)", "charge"),
-				).
-				Value(&f.mode),
-		),
-	)
 
-	if err := form.Run(); err != nil {
-		if errors.Is(err, huh.ErrUserAborted) {
-			fmt.Fprintln(os.Stderr)
-			os.Exit(0)
+	var fields []huh.Field
+	if f.from == "" {
+		fields = append(fields, huh.NewInput().
+			Title("From (payer)").
+			Description("Payer wallet address (0x-prefixed) — funds are pulled from here").
+			Value(&f.from))
+	}
+	if f.to == "" {
+		fields = append(fields, huh.NewInput().
+			Title("To (payee)").
+			Description("Payee wallet address (0x-prefixed) — use address from 'wallets'").
+			Value(&f.to))
+	}
+	if f.token == "" {
+		fields = append(fields, huh.NewInput().
+			Title("Token").
+			Description("Token symbol (e.g. USDC) — see 'rail0 tokens'").
+			Value(&f.token))
+	}
+	if f.amount == "" {
+		fields = append(fields, huh.NewInput().
+			Title("Amount").
+			Description("Amount as a decimal in token units (e.g. 1.00 = 1 USDC); the gateway converts to base units").
+			Value(&f.amount))
+	}
+	if f.chainID == 0 {
+		fields = append(fields, huh.NewInput().
+			Title("Chain ID").
+			Description("EVM chain ID (e.g. 5042002) — see 'rail0 chains'").
+			Value(&chainIDStr).
+			Validate(func(s string) error {
+				if s == "" {
+					return fmt.Errorf("chain id is required")
+				}
+				if _, err := strconv.Atoi(s); err != nil {
+					return fmt.Errorf("chain id must be a number")
+				}
+				return nil
+			}))
+	}
+	if !modeProvided {
+		fields = append(fields, huh.NewSelect[string]().
+			Title("Mode").
+			Description("authorize = escrow then capture; charge = immediate transfer").
+			Options(
+				huh.NewOption("authorize (escrow + capture)", "authorize"),
+				huh.NewOption("charge (immediate, no escrow)", "charge"),
+			).
+			Value(&f.mode))
+	}
+
+	// Only run the form when there's actually something to ask. (build() only
+	// enters here when a required field is missing, so this is normally true.)
+	if len(fields) > 0 {
+		if err := huh.NewForm(huh.NewGroup(fields...)).Run(); err != nil {
+			if errors.Is(err, huh.ErrUserAborted) {
+				fmt.Fprintln(os.Stderr)
+				os.Exit(0)
+			}
+			return rail0.CreatePaymentRequest{}, err
 		}
-		return rail0.CreatePaymentRequest{}, err
 	}
 
 	if chainIDStr != "" {

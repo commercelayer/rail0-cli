@@ -180,7 +180,7 @@ authorize.`,
 		if err != nil {
 			return errors.New("provide --private-key (-p) to create and sign the payment")
 		}
-		req, err := signCreateFlags.build()
+		req, err := signCreateFlags.build(cmd.Flags().Changed("mode"))
 		if err != nil {
 			return err
 		}

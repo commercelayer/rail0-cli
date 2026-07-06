@@ -34,13 +34,24 @@ var authLoginCmd = &cobra.Command{
 
 The token is saved to ~/.cache/rail0/token and used automatically by all
 commands that require authentication (e.g. 'payments list').
-Override with the RAIL0_TOKEN environment variable.`,
-	Example: `  rail0 auth login -p 0xYourPrivateKey…`,
+Override with the RAIL0_TOKEN environment variable.
+
+The signing key is resolved like every other signing command: pass -p as a raw
+0x-prefixed hex key, as @name for a key saved in the OS keychain ('rail0 keys
+add'), or omit it to fall back to the RAIL0_PRIVATE_KEY environment variable.`,
+	Example: `  rail0 auth login -p @payee     # or -p 0xYourPrivateKey…`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := context.Background()
 		client := newClient()
 
-		privKey, err := rail0.HexToPrivateKey(loginPrivateKey)
+		// Resolve the key the same way the signing commands do, so `auth login`
+		// accepts a raw 0x hex key, a keychain `@name` (rail0 keys add), or the
+		// RAIL0_PRIVATE_KEY env var — one consistent key-source model everywhere.
+		keyHex, err := resolveSigningKey(loginPrivateKey)
+		if err != nil {
+			return err
+		}
+		privKey, err := rail0.HexToPrivateKey(keyHex)
 		if err != nil {
 			return fmt.Errorf("invalid private key: %w", err)
 		}
@@ -146,8 +157,7 @@ var authLogoutCmd = &cobra.Command{
 
 func init() {
 	authLoginCmd.Flags().StringVarP(&loginPrivateKey, "private-key", "p", "",
-		"Ethereum private key (0x-prefixed hex) to sign the SIWE message")
-	_ = authLoginCmd.MarkFlagRequired("private-key")
+		"Signing key: 0x-prefixed hex, @name for an OS-keychain key ('rail0 keys add'), or RAIL0_PRIVATE_KEY")
 	authLoginCmd.Flags().StringVar(&loginPrivateKey, "pk", "", "Alias for --private-key")
 	_ = authLoginCmd.Flags().MarkHidden("pk")
 

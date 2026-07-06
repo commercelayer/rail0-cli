@@ -33,6 +33,13 @@ make install            # installs `rail0` + the short `r0` alias into /usr/loca
 **`r0`** (a symlink), so the two are interchangeable — `r0 wallets` is the same
 as `rail0 wallets`. Override the location with `make install PREFIX=$HOME/go/bin`.
 
+`bin/build` does the same without `make` (build + install `rail0` + `r0`):
+
+```sh
+bin/build                       # into /usr/local/bin
+PREFIX="$HOME/go/bin" bin/build # into a dir you own (no sudo)
+```
+
 Manual build (no alias) is still just `go build -o rail0 . && mv rail0 /usr/local/bin/`.
 
 ---

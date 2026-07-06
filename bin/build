@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# bin/build — build the rail0 CLI and install it onto your PATH, plus the short
+# `r0` alias (a symlink). Self-contained equivalent of `make install`.
+#
+#   bin/build                      # install into /usr/local/bin
+#   PREFIX="$HOME/go/bin" bin/build # install into a dir you own (no sudo)
+#
+# Overridable via env: BIN (binary name, default rail0), SHORT (alias, default
+# r0), PREFIX (install dir, default /usr/local/bin).
+set -euo pipefail
+
+BIN="${BIN:-rail0}"
+SHORT="${SHORT:-r0}"
+PREFIX="${PREFIX:-/usr/local/bin}"
+
+# Run from the repo root regardless of where the script was invoked from, so the
+# `go build .` picks up the CLI's main package and the local go-sdk replace.
+cd "$(dirname "$0")/.."
+
+echo "==> building ${BIN}"
+go build -o "${BIN}" .
+
+if [ ! -d "${PREFIX}" ] || [ ! -w "${PREFIX}" ]; then
+  echo "error: install dir '${PREFIX}' is missing or not writable." >&2
+  echo "       re-run with sudo, or install into a dir you own:" >&2
+  echo "         PREFIX=\"\$HOME/go/bin\" bin/build" >&2
+  exit 1
+fi
+
+echo "==> installing ${BIN} + ${SHORT} alias into ${PREFIX}"
+install -m 0755 "${BIN}" "${PREFIX}/${BIN}"
+ln -sf "${BIN}" "${PREFIX}/${SHORT}"
+
+echo "==> done: ${PREFIX}/${BIN} (alias ${PREFIX}/${SHORT})"

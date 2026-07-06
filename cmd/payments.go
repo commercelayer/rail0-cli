@@ -28,7 +28,7 @@ Authorize-and-capture flow:
   3. payments capture   <rail0Id> -a <n> -p 0xPayeeKey…  — payee captures
 
 Charge (one-shot) flow:
-  1. payments create -m charge -F 0xBuyer… -p 0xPayerKey…
+  1. payments create -C -F 0xBuyer… -p 0xPayerKey…
   2. payments charge <rail0Id> -p 0xPayeeKey…`,
 }
 
@@ -180,7 +180,7 @@ authorize.`,
 		if err != nil {
 			return errors.New("provide --private-key (-p) to create and sign the payment")
 		}
-		req, err := signCreateFlags.build(cmd.Flags().Changed("mode"))
+		req, err := signCreateFlags.build()
 		if err != nil {
 			return err
 		}
@@ -344,7 +344,7 @@ var paymentsChargeCmd = &cobra.Command{
 Combines authorize + capture into a single on-chain call; funds move
 directly from payer to payee without an escrow window.
 
-The payment must have been created with --mode charge and signed by the
+The payment must have been created with -C/--charge and signed by the
 payer via 'payments create -p' (create + sign in one atomic step).
 The API returns 202 immediately. The payment stays at "signed" until
 rail0-indexer confirms and the API transitions it to "charged".

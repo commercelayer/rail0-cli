@@ -370,7 +370,7 @@ Create a payment, sign the EIP-712 payload with the payer's key, and submit the 
 | `--token` | `-t` | yes | — | Token symbol as in `tokens` (e.g. `USDC`) |
 | `--amount` | `-a` | yes | — | Amount in token units (e.g. `10.50`) |
 | `--chain-id` | `-c` | yes | — | EVM chain ID as in `chains` (e.g. `5042002`) |
-| `--mode` | `-m` | no | `authorize` | `authorize` (escrow + capture) or `charge` (immediate) |
+| `--charge` | `-C` | no | (off) | Create with mode `charge` (immediate, no escrow); default is `authorize` (escrow + capture) |
 | `--payment-file` | `-f` | no | — | JSON file with the full request body |
 | `--private-key` | `-p` | yes | — | Payer's key — creates and signs locally in one step |
 
@@ -457,7 +457,7 @@ rail0 payments authorize <rail0Id> -p 0xPayeeKey…
 
 #### `payments charge <rail0Id>`
 
-Prepare the `charge()` transaction — authorize + capture in one call (no escrow). Payment must have been created with `-m charge`.
+Prepare the `charge()` transaction — authorize + capture in one call (no escrow). Payment must have been created with `-C` / `--charge`.
 
 ```sh
 rail0 payments charge <rail0Id> -p 0xPayeeKey…
@@ -541,7 +541,7 @@ rail0 payments get "$RAIL0_ID"   # poll until payment=captured, capture:confirme
 
 ```sh
 RAIL0_ID=$(rail0 payments create \
-  -F 0xBuyer… -T 0xMerchant… -t USDC -a 1.00 -c 5042002 -m charge \
+  -F 0xBuyer… -T 0xMerchant… -t USDC -a 1.00 -c 5042002 -C \
   -p 0xPayerKey… --json | jq -r .rail0_id)
 
 rail0 payments charge "$RAIL0_ID" -p 0xPayeeKey…

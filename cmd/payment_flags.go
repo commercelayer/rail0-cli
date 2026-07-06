@@ -23,8 +23,8 @@ type createPaymentFlags struct {
 	to          string
 	token       string // symbol (e.g. "USDC") resolved to address at build time
 	amount      string
-	chainID     int // numeric chain id
-	mode        string
+	chainID     int    // numeric chain id
+	charge      bool   // -C/--charge: create with mode=charge instead of the default authorize
 	description string // optional, human-readable note (e.g. what's being paid for)
 }
 
@@ -42,8 +42,8 @@ func (f *createPaymentFlags) addTo(cmd *cobra.Command) {
 		"Amount as a decimal in token units (e.g. '1.00' for 1 USDC); the gateway converts to base units")
 	cmd.Flags().IntVarP(&f.chainID, "chain-id", "c", 0,
 		"EVM chain ID as listed in GET /blockchains (e.g. 5042002)")
-	cmd.Flags().StringVarP(&f.mode, "mode", "m", "authorize",
-		"Payment mode: 'authorize' (escrow then capture) or 'charge' (immediate, no escrow)")
+	cmd.Flags().BoolVarP(&f.charge, "charge", "C", false,
+		"Create with mode=charge (immediate transfer, no escrow); default is authorize (escrow then capture)")
 	cmd.Flags().StringVarP(&f.description, "description", "d", "",
 		"Optional human-readable note (e.g. what the payment is for)")
 }
@@ -55,10 +55,7 @@ func (f *createPaymentFlags) addTo(cmd *cobra.Command) {
 //  2. If required flags are missing and stdin is a TTY, launches the interactive
 //     form (prompting only for the fields not already supplied on the command line).
 //  3. Otherwise validates that all required fields are present.
-//
-// modeProvided reports whether --mode was set explicitly, so the interactive
-// form only asks for the mode when the user hasn't already chosen one.
-func (f *createPaymentFlags) build(modeProvided bool) (rail0.CreatePaymentRequest, error) {
+func (f *createPaymentFlags) build() (rail0.CreatePaymentRequest, error) {
 	if f.paymentFile != "" {
 		b, err := os.ReadFile(f.paymentFile)
 		if err != nil {
@@ -74,7 +71,7 @@ func (f *createPaymentFlags) build(modeProvided bool) (rail0.CreatePaymentReques
 	missing := f.from == "" || f.to == "" || f.token == "" || f.amount == "" || f.chainID == 0
 	if missing {
 		if term.IsTerminal(os.Stdin.Fd()) {
-			return f.buildInteractive(modeProvided)
+			return f.buildInteractive()
 		}
 		return rail0.CreatePaymentRequest{}, fmt.Errorf(
 			"--from, --to, --token, --amount, and --chain-id are required (or use --payment-file)")
@@ -82,11 +79,11 @@ func (f *createPaymentFlags) build(modeProvided bool) (rail0.CreatePaymentReques
 	return f.resolve()
 }
 
-// fieldsToPrompt returns, in prompt order, the fields the interactive form should
-// ask for: each required field left empty on the command line, plus "mode" when
-// --mode wasn't given. Pure (no I/O) so it's unit-testable — a value supplied via
-// a flag is never included.
-func (f *createPaymentFlags) fieldsToPrompt(modeProvided bool) []string {
+// fieldsToPrompt returns, in prompt order, the required fields left empty on the
+// command line — the ones the interactive form should ask for. Pure (no I/O) so
+// it's unit-testable; a value supplied via a flag is never included. Mode isn't
+// prompted: it defaults to authorize and is switched to charge via -C/--charge.
+func (f *createPaymentFlags) fieldsToPrompt() []string {
 	var need []string
 	if f.from == "" {
 		need = append(need, "from")
@@ -103,22 +100,19 @@ func (f *createPaymentFlags) fieldsToPrompt(modeProvided bool) []string {
 	if f.chainID == 0 {
 		need = append(need, "chain-id")
 	}
-	if !modeProvided {
-		need = append(need, "mode")
-	}
 	return need
 }
 
 // buildInteractive shows a huh form to collect only the fields fieldsToPrompt
 // reports as missing — a value passed via a flag is never re-asked.
-func (f *createPaymentFlags) buildInteractive(modeProvided bool) (rail0.CreatePaymentRequest, error) {
+func (f *createPaymentFlags) buildInteractive() (rail0.CreatePaymentRequest, error) {
 	chainIDStr := ""
 	if f.chainID > 0 {
 		chainIDStr = strconv.Itoa(f.chainID)
 	}
 
 	var fields []huh.Field
-	for _, name := range f.fieldsToPrompt(modeProvided) {
+	for _, name := range f.fieldsToPrompt() {
 		switch name {
 		case "from":
 			fields = append(fields, huh.NewInput().
@@ -154,15 +148,6 @@ func (f *createPaymentFlags) buildInteractive(modeProvided bool) (rail0.CreatePa
 					}
 					return nil
 				}))
-		case "mode":
-			fields = append(fields, huh.NewSelect[string]().
-				Title("Mode").
-				Description("authorize = escrow then capture; charge = immediate transfer").
-				Options(
-					huh.NewOption("authorize (escrow + capture)", "authorize"),
-					huh.NewOption("charge (immediate, no escrow)", "charge"),
-				).
-				Value(&f.mode))
 		}
 	}
 
@@ -229,13 +214,18 @@ func (f *createPaymentFlags) resolve() (rail0.CreatePaymentRequest, error) {
 			"unknown token %q on chain %d — available: %s", f.token, chainID, strings.Join(syms, ", "))
 	}
 
+	mode := "authorize"
+	if f.charge {
+		mode = "charge"
+	}
+
 	return rail0.CreatePaymentRequest{
 		Payer:       payer,
 		Payee:       payee,
 		Token:       tokenAddress,
 		Amount:      f.amount,
 		ChainID:     chainID,
-		Mode:        f.mode,
+		Mode:        mode,
 		Description: f.description,
 	}, nil
 }

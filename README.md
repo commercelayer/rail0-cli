@@ -445,6 +445,14 @@ rail0 payments history 0xabc123…
 
 ---
 
+> **Interactive prompts (operations).** On a terminal, the action commands below
+> (`authorize`/`charge`/`capture`/`void`/`release`/`refund`/`dispute`/`dispute close`)
+> prompt for anything you didn't pass: omit `<rail0Id>` to pick from a list of your
+> payments the operation can act on; omit `-a`/`--amount` (capture/refund) or
+> `--reason` (dispute) to be asked for it. The signing key (`-p`) is never
+> prompted — pass it, set `RAIL0_PRIVATE_KEY`, or use an `@keychain-name`. In a
+> non-interactive shell a missing required value is a clear error instead.
+
 #### `payments authorize <rail0Id>`
 
 Prepare the `authorize()` transaction pulling funds into escrow. Payer signature must be submitted first.

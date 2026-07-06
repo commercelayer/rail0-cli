@@ -303,7 +303,7 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 
   # 2. Payee authorizes
   rail0 payments authorize <rail0Id> -p 0xPayeeKey…`,
-	Args: cobra.ExactArgs(1),
+	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		signingKey, err := resolveSigningKey(authorizePrivateKey)
 		if err != nil {
@@ -311,7 +311,11 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 		}
 		client := newClient()
 		ctx := context.Background()
-		rail0Id, err := resolvePaymentID(ctx, client, args[0])
+		idInput, err := pickPaymentID(ctx, client, args, "authorize")
+		if err != nil {
+			return err
+		}
+		rail0Id, err := resolvePaymentID(ctx, client, idInput)
 		if err != nil {
 			return err
 		}
@@ -353,7 +357,7 @@ transaction shows confirmed.
 
 Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 	Example: `  rail0 payments charge 0xrail0Id… -p 0xPayeeKey…`,
-	Args:    cobra.ExactArgs(1),
+	Args:    cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		signingKey, err := resolveSigningKey(chargePrivateKey)
 		if err != nil {
@@ -361,7 +365,11 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 		}
 		client := newClient()
 		ctx := context.Background()
-		rail0Id, err := resolvePaymentID(ctx, client, args[0])
+		idInput, err := pickPaymentID(ctx, client, args, "charge")
+		if err != nil {
+			return err
+		}
+		rail0Id, err := resolvePaymentID(ctx, client, idInput)
 		if err != nil {
 			return err
 		}
@@ -408,7 +416,7 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 
   # Partial capture
   rail0 payments capture 0xrail0Id… --amount 0.50 -p 0xPayeeKey…`,
-	Args: cobra.ExactArgs(1),
+	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		signingKey, err := resolveSigningKey(capturePrivateKey)
 		if err != nil {
@@ -416,9 +424,19 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 		}
 		client := newClient()
 		ctx := context.Background()
-		rail0Id, err := resolvePaymentID(ctx, client, args[0])
+		idInput, err := pickPaymentID(ctx, client, args, "capture")
 		if err != nil {
 			return err
+		}
+		rail0Id, err := resolvePaymentID(ctx, client, idInput)
+		if err != nil {
+			return err
+		}
+		if captureAmount == "" {
+			captureAmount, err = promptValue("Amount", "decimal in token units (e.g. 1.00)", false)
+			if err != nil {
+				return err
+			}
 		}
 		return ui.RunAPIWithMessage("Capturing…", func() (any, error) {
 			if err := ensureSignerFor(ctx, client, rail0Id, signingKey, "capture"); err != nil {
@@ -457,7 +475,7 @@ status advances to "voided".
 
 Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 	Example: `  rail0 payments void 0xrail0Id… -p 0xPayeeKey…`,
-	Args:    cobra.ExactArgs(1),
+	Args:    cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		signingKey, err := resolveSigningKey(voidPrivateKey)
 		if err != nil {
@@ -465,7 +483,11 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 		}
 		client := newClient()
 		ctx := context.Background()
-		rail0Id, err := resolvePaymentID(ctx, client, args[0])
+		idInput, err := pickPaymentID(ctx, client, args, "void")
+		if err != nil {
+			return err
+		}
+		rail0Id, err := resolvePaymentID(ctx, client, idInput)
 		if err != nil {
 			return err
 		}
@@ -511,7 +533,7 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 
   # Payer releases (just use the payer's key)
   rail0 payments release 0xrail0Id… -p 0xPayerKey…`,
-	Args: cobra.ExactArgs(1),
+	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		signingKey, err := resolveSigningKey(releasePrivateKey)
 		if err != nil {
@@ -525,7 +547,11 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 		}
 		client := newClient()
 		ctx := context.Background()
-		rail0Id, err := resolvePaymentID(ctx, client, args[0])
+		idInput, err := pickPaymentID(ctx, client, args, "release")
+		if err != nil {
+			return err
+		}
+		rail0Id, err := resolvePaymentID(ctx, client, idInput)
 		if err != nil {
 			return err
 		}
@@ -575,7 +601,7 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 
   # Partial refund
   rail0 payments refund 0xrail0Id… --amount 0.25 -p 0xPayeeKey…`,
-	Args: cobra.ExactArgs(1),
+	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		signingKey, err := resolveSigningKey(refundPrivateKey)
 		if err != nil {
@@ -583,9 +609,19 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 		}
 		client := newClient()
 		ctx := context.Background()
-		rail0Id, err := resolvePaymentID(ctx, client, args[0])
+		idInput, err := pickPaymentID(ctx, client, args, "refund")
 		if err != nil {
 			return err
+		}
+		rail0Id, err := resolvePaymentID(ctx, client, idInput)
+		if err != nil {
+			return err
+		}
+		if refundAmount == "" {
+			refundAmount, err = promptValue("Amount", "decimal in token units (e.g. 1.00)", false)
+			if err != nil {
+				return err
+			}
 		}
 		return ui.RunAPIWithMessage("Refunding…", func() (any, error) {
 			// Phase 1: get the EIP-712 ReceiveWithAuthorization signing payload.
@@ -648,7 +684,7 @@ may dispute, while the refund window is open and the merchant holds the funds.
 
 Pass --private-key (-p): the CLI signs locally with the payer key and broadcasts.`,
 	Example: `  rail0 payments dispute 0xrail0Id… -p 0xPayerKey… --reason 0x…`,
-	Args:    cobra.ExactArgs(1),
+	Args:    cobra.MaximumNArgs(1),
 	RunE: func(_ *cobra.Command, args []string) error {
 		signingKey, err := resolveSigningKey(disputePrivateKey)
 		if err != nil {
@@ -656,9 +692,19 @@ Pass --private-key (-p): the CLI signs locally with the payer key and broadcasts
 		}
 		client := newClient()
 		ctx := context.Background()
-		rail0Id, err := resolvePaymentID(ctx, client, args[0])
+		idInput, err := pickPaymentID(ctx, client, args, "dispute")
 		if err != nil {
 			return err
+		}
+		rail0Id, err := resolvePaymentID(ctx, client, idInput)
+		if err != nil {
+			return err
+		}
+		if disputeReason == "" {
+			disputeReason, err = promptValue("Reason", "optional bytes32 reason (0x…); blank for none", true)
+			if err != nil {
+				return err
+			}
 		}
 		return ui.RunAPIWithMessage("Opening dispute…", func() (any, error) {
 			if err := ensureSignerFor(ctx, client, rail0Id, signingKey, "dispute"); err != nil {
@@ -681,7 +727,7 @@ Pass --private-key (-p): the CLI signs locally with the payer key and broadcasts
 var paymentsDisputeCloseCmd = &cobra.Command{
 	Use:     "close <rail0Id>",
 	Short:   "Close a dispute (payer only): prepare, sign, broadcast",
-	Args:    cobra.ExactArgs(1),
+	Args:    cobra.MaximumNArgs(1),
 	Example: `  rail0 payments dispute close 0xrail0Id… -p 0xPayerKey…`,
 	RunE: func(_ *cobra.Command, args []string) error {
 		signingKey, err := resolveSigningKey(closeDisputePrivateKey)
@@ -690,9 +736,19 @@ var paymentsDisputeCloseCmd = &cobra.Command{
 		}
 		client := newClient()
 		ctx := context.Background()
-		rail0Id, err := resolvePaymentID(ctx, client, args[0])
+		idInput, err := pickPaymentID(ctx, client, args, "close dispute")
 		if err != nil {
 			return err
+		}
+		rail0Id, err := resolvePaymentID(ctx, client, idInput)
+		if err != nil {
+			return err
+		}
+		if closeDisputeReason == "" {
+			closeDisputeReason, err = promptValue("Reason", "optional bytes32 reason (0x…); blank for none", true)
+			if err != nil {
+				return err
+			}
 		}
 		return ui.RunAPIWithMessage("Closing dispute…", func() (any, error) {
 			if err := ensureSignerFor(ctx, client, rail0Id, signingKey, "close dispute"); err != nil {
@@ -785,7 +841,6 @@ func init() {
 	// payments capture
 	paymentsCaptureCmd.Flags().StringVarP(&captureAmount, "amount", "a", "",
 		"Amount to capture as a decimal in token units (e.g. 1.00); > 0 and ≤ capturable")
-	_ = paymentsCaptureCmd.MarkFlagRequired("amount")
 	addSigningFlags(paymentsCaptureCmd, &capturePrivateKey)
 	paymentsCmd.AddCommand(paymentsCaptureCmd)
 
@@ -800,7 +855,6 @@ func init() {
 	// payments refund
 	paymentsRefundCmd.Flags().StringVarP(&refundAmount, "amount", "a", "",
 		"Amount to refund as a decimal in token units (e.g. 1.00); > 0 and ≤ refundable")
-	_ = paymentsRefundCmd.MarkFlagRequired("amount")
 	addSigningFlags(paymentsRefundCmd, &refundPrivateKey)
 	paymentsCmd.AddCommand(paymentsRefundCmd)
 

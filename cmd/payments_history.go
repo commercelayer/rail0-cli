@@ -2,11 +2,9 @@ package cmd
 
 import (
 	"context"
-	"errors"
 	"sort"
 	"time"
 
-	"github.com/rail0/cli/internal/token"
 	"github.com/rail0/cli/internal/ui"
 	rail0 "github.com/rail0/go-sdk"
 	"github.com/spf13/cobra"
@@ -18,25 +16,22 @@ import (
 // only the significant fields. It's assembled client-side from a single
 // Payments.Get — no dedicated gateway endpoint.
 //
-// Requires a logged-in session (rail0 auth login); a rail0_id argument is also
-// resolved through the authenticated lookup.
+// Reads a single payment (a public read); the argument may be a UUID or a
+// rail0_id (0x…, 64 hex) — the gateway resolves either in-path.
 var paymentsHistoryCmd = &cobra.Command{
 	Use:   "history <rail0Id>",
-	Short: "Show a payment's chronological history (requires login)",
+	Short: "Show a payment's chronological history",
 	Long: `Print the timeline of everything that happened to a payment since it was
 created: the created and signed milestones and every on-chain transaction
 (authorize/capture/void/release/refund/dispute/close_dispute), oldest first.
 Only the most significant fields are shown per entry (time, event, status,
 amount, tx hash, block).
 
-Requires a session — run 'rail0 auth login' first.`,
+The argument is a UUID or a rail0_id (0x…, 64 hex); no session is required.`,
 	Example: `  rail0 payments history 0xabc123…
   rail0 payments history 019e748b-…`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if token.Load() == "" {
-			return errors.New("payments history requires a session — run 'rail0 auth login' first")
-		}
 		ctx := context.Background()
 		client := newClient()
 		id, err := resolvePaymentID(ctx, client, args[0])

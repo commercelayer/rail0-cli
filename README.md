@@ -169,7 +169,7 @@ Obtain a JWT via SIWE (Sign-In With Ethereum) and cache it in `~/.cache/rail0/to
 rail0 auth login -p 0xYourPrivateKey…
 ```
 
-> Note: unlike the payment action commands, `auth login -p` expects a **raw 0x-prefixed hex key** — it does **not** resolve the `@name` keychain form. Pass the hex directly here.
+> Note: `auth login -p` accepts the same key forms as the payment action commands — a raw **0x-prefixed hex key**, an **`@name`** OS-keychain reference (`rail0 keys add`), or, with `-p` omitted, the **`RAIL0_PRIVATE_KEY`** environment variable.
 
 #### `auth status`
 
@@ -430,7 +430,7 @@ rail0 payments transactions 0xabc123…
 
 Print a payment's chronological timeline: the `created` and `signed` milestones plus one entry per on-chain transaction (`authorize`, `capture`, `void`, `release`, `refund`, `dispute`, `close_dispute`), oldest first. Only the significant fields are shown per entry (time, event, status, amount, tx hash, block). It is assembled client-side from a single `payments get` — there is no dedicated gateway endpoint.
 
-Requires a session — run `rail0 auth login` first (the `rail0_id` argument is resolved through the authenticated lookup).
+Works with or without a session — `payments history` is a public read; the `rail0_id` (or UUID) argument is resolved by the gateway in-path.
 
 ```sh
 rail0 payments history 0xabc123…

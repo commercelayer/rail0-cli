@@ -96,7 +96,7 @@ func (f *createPaymentFlags) buildInteractive() (rail0.CreatePaymentRequest, err
 				Value(&f.to),
 			huh.NewInput().
 				Title("Token").
-				Description("Token symbol (e.g. USDC) — see 'rail0 catalog tokens'").
+				Description("Token symbol (e.g. USDC) — see 'rail0 tokens'").
 				Value(&f.token),
 			huh.NewInput().
 				Title("Amount").

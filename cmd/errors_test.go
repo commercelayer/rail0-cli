@@ -22,7 +22,8 @@ func TestHumanizeError(t *testing.T) {
 		{"unauthorized", &rail0.APIError{Status: 401}, "auth login"},
 		{"forbidden", &rail0.APIError{Status: 403, Message: "caller is not the payee"}, "forbidden (HTTP 403): caller is not the payee"},
 		{"conflict", &rail0.APIError{Status: 409, Code: "conflict"}, "conflict (HTTP 409)"},
-		{"server error", &rail0.APIError{Status: 502}, "server error (HTTP 502)"},
+		{"server error", &rail0.APIError{Status: 502}, "upstream error (HTTP 502)"},
+		{"server error detail", &rail0.APIError{Status: 502, Code: "signing_payload_unavailable", Reason: "rpc_unreachable"}, "rpc_unreachable"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

@@ -242,6 +242,43 @@ func resolveSigningKey(explicitKey string) (string, error) {
 	return "", errors.New("no signing key: pass --private-key (-p / --pk), set RAIL0_PRIVATE_KEY, or save one with 'rail0 keys add' and pass it as @name")
 }
 
+// ensureSignerFor fetches the payment and checks the signing key's address is one
+// the RAIL0 contract accepts as msg.sender for op — so signing with the wrong key
+// fails locally with a clear message, before the prepare/submit round-trip and
+// before the gateway rejects it (mirrors the gateway's ensure_signed_by! guard).
+func ensureSignerFor(ctx context.Context, client *rail0.Client, rail0ID, signingKey, op string) error {
+	signer, err := addressFromKey(signingKey)
+	if err != nil {
+		return err
+	}
+	p, err := client.Payments.Get(ctx, rail0ID)
+	if err != nil {
+		return err
+	}
+	allowed := allowedSigners(op, p)
+	for _, a := range allowed {
+		if strings.EqualFold(signer, a) {
+			return nil
+		}
+	}
+	return fmt.Errorf("signing key address %s can't %s this payment — expected %s (wrong key?)",
+		signer, op, strings.Join(allowed, " or "))
+}
+
+// allowedSigners lists the addresses the contract accepts as msg.sender for op:
+// dispute/close are payer-only, release is payer-or-payee, every other operation
+// is payee-only.
+func allowedSigners(op string, p *rail0.Payment) []string {
+	switch op {
+	case "dispute", "close dispute":
+		return []string{string(p.Payer)}
+	case "release":
+		return []string{string(p.Payer), string(p.Payee)}
+	default: // authorize, charge, capture, void, refund
+		return []string{string(p.Payee)}
+	}
+}
+
 // ── payments authorize ────────────────────────────────────────────────────────
 
 var authorizePrivateKey string
@@ -279,6 +316,9 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 			return err
 		}
 		return ui.RunAPIWithMessage("Authorizing…", func() (any, error) {
+			if err := ensureSignerFor(ctx, client, rail0Id, signingKey, "authorize"); err != nil {
+				return nil, err
+			}
 			prep, err := client.Payments.AuthorizePrepare(ctx, rail0Id)
 			if err != nil {
 				return nil, err
@@ -326,6 +366,9 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 			return err
 		}
 		return ui.RunAPIWithMessage("Charging…", func() (any, error) {
+			if err := ensureSignerFor(ctx, client, rail0Id, signingKey, "charge"); err != nil {
+				return nil, err
+			}
 			prep, err := client.Payments.ChargePrepare(ctx, rail0Id)
 			if err != nil {
 				return nil, err
@@ -378,6 +421,9 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 			return err
 		}
 		return ui.RunAPIWithMessage("Capturing…", func() (any, error) {
+			if err := ensureSignerFor(ctx, client, rail0Id, signingKey, "capture"); err != nil {
+				return nil, err
+			}
 			prep, err := client.Payments.CapturePrepare(ctx, rail0Id, captureAmount)
 			if err != nil {
 				return nil, err
@@ -424,6 +470,9 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 			return err
 		}
 		return ui.RunAPIWithMessage("Voiding…", func() (any, error) {
+			if err := ensureSignerFor(ctx, client, rail0Id, signingKey, "void"); err != nil {
+				return nil, err
+			}
 			prep, err := client.Payments.VoidPrepare(ctx, rail0Id)
 			if err != nil {
 				return nil, err
@@ -481,6 +530,9 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 			return err
 		}
 		return ui.RunAPIWithMessage("Releasing…", func() (any, error) {
+			if err := ensureSignerFor(ctx, client, rail0Id, signingKey, "release"); err != nil {
+				return nil, err
+			}
 			prep, err := client.Payments.ReleasePrepare(ctx, rail0Id, caller)
 			if err != nil {
 				return nil, err
@@ -538,6 +590,9 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 		return ui.RunAPIWithMessage("Refunding…", func() (any, error) {
 			// Phase 1: get the EIP-712 ReceiveWithAuthorization signing payload.
 			// Omitting the signature returns a Transaction whose SigningPayload is set.
+			if err := ensureSignerFor(ctx, client, rail0Id, signingKey, "refund"); err != nil {
+				return nil, err
+			}
 			phase1, err := client.Payments.RefundPrepare(ctx, rail0Id, rail0.PrepareRequest{Amount: refundAmount})
 			if err != nil {
 				return nil, err
@@ -606,6 +661,9 @@ Pass --private-key (-p): the CLI signs locally with the payer key and broadcasts
 			return err
 		}
 		return ui.RunAPIWithMessage("Opening dispute…", func() (any, error) {
+			if err := ensureSignerFor(ctx, client, rail0Id, signingKey, "dispute"); err != nil {
+				return nil, err
+			}
 			prep, err := client.Payments.DisputePrepare(ctx, rail0Id, disputeReason)
 			if err != nil {
 				return nil, err
@@ -637,6 +695,9 @@ var paymentsDisputeCloseCmd = &cobra.Command{
 			return err
 		}
 		return ui.RunAPIWithMessage("Closing dispute…", func() (any, error) {
+			if err := ensureSignerFor(ctx, client, rail0Id, signingKey, "close dispute"); err != nil {
+				return nil, err
+			}
 			prep, err := client.Payments.CloseDisputePrepare(ctx, rail0Id, closeDisputeReason)
 			if err != nil {
 				return nil, err

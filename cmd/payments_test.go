@@ -1,6 +1,37 @@
 package cmd
 
-import "testing"
+import (
+	"reflect"
+	"testing"
+
+	rail0 "github.com/rail0/go-sdk"
+)
+
+// allowedSigners must mirror the gateway's ensure_signed_by! guard: payee-only
+// for the fund operations, payer-only for disputes, payer-or-payee for release.
+func TestAllowedSigners(t *testing.T) {
+	p := &rail0.Payment{Payer: "0xPayer", Payee: "0xPayee"}
+	cases := []struct {
+		op   string
+		want []string
+	}{
+		{"authorize", []string{"0xPayee"}},
+		{"charge", []string{"0xPayee"}},
+		{"capture", []string{"0xPayee"}},
+		{"void", []string{"0xPayee"}},
+		{"refund", []string{"0xPayee"}},
+		{"release", []string{"0xPayer", "0xPayee"}},
+		{"dispute", []string{"0xPayer"}},
+		{"close dispute", []string{"0xPayer"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.op, func(t *testing.T) {
+			if got := allowedSigners(tc.op, p); !reflect.DeepEqual(got, tc.want) {
+				t.Errorf("allowedSigners(%q) = %v, want %v", tc.op, got, tc.want)
+			}
+		})
+	}
+}
 
 func TestResolveSigningKey(t *testing.T) {
 	t.Setenv("RAIL0_PRIVATE_KEY", "")

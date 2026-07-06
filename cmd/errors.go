@@ -34,7 +34,9 @@ func humanizeError(err error) error {
 		case apiErr.Status == 422:
 			return fmt.Errorf("request rejected (HTTP 422)%s", detail(apiHint(apiErr)))
 		case apiErr.Status >= 500:
-			return fmt.Errorf("the RAIL0 gateway had a server error (HTTP %d) — try again shortly", apiErr.Status)
+			// Surface the gateway's own detail (e.g. signing_payload_unavailable /
+			// rpc_unreachable) instead of masking every 5xx as "try again".
+			return fmt.Errorf("the RAIL0 gateway reported an upstream error (HTTP %d)%s", apiErr.Status, detail(apiHint(apiErr)))
 		default:
 			return err // keep the SDK's message for anything else
 		}
@@ -69,10 +71,15 @@ func detail(msg string) string {
 
 // apiHint returns the gateway's human message, or its machine-readable code when
 // there's no message — so even bodies like {"status":"no_active_contract"} (no
-// message field) still produce an informative hint instead of nothing.
+// message field) still produce an informative hint instead of nothing. The
+// optional `reason` sub-cause is appended when the message doesn't already carry it.
 func apiHint(e *rail0.APIError) string {
-	if strings.TrimSpace(e.Message) != "" {
-		return e.Message
+	msg := e.Message
+	if strings.TrimSpace(msg) == "" {
+		msg = e.Code
 	}
-	return e.Code
+	if r := strings.TrimSpace(e.Reason); r != "" && !strings.Contains(msg, r) {
+		msg = strings.TrimSpace(msg + " (" + r + ")")
+	}
+	return msg
 }

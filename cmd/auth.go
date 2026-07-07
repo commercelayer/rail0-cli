@@ -47,7 +47,7 @@ add'), or omit it to fall back to the RAIL0_PRIVATE_KEY environment variable.`,
 		// Resolve the key the same way the signing commands do, so `auth login`
 		// accepts a raw 0x hex key, a keychain `@name` (rail0 keys add), or the
 		// RAIL0_PRIVATE_KEY env var — one consistent key-source model everywhere.
-		keyHex, err := resolveSigningKey(loginPrivateKey)
+		keyHex, err := signingKeyOrPrompt(loginPrivateKey)
 		if err != nil {
 			return err
 		}

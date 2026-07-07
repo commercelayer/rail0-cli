@@ -51,6 +51,21 @@ func TestResolveSigningKey(t *testing.T) {
 	}
 }
 
+// signingKeyOrPrompt must pass a resolvable key straight through WITHOUT
+// prompting — so a key from --private-key or RAIL0_PRIVATE_KEY never triggers the
+// hidden prompt. (The no-key path prompts/reads stdin and is not exercised here,
+// since that would block on an interactive terminal.)
+func TestSigningKeyOrPrompt_PassThrough(t *testing.T) {
+	t.Setenv("RAIL0_PRIVATE_KEY", "")
+	if got, err := signingKeyOrPrompt("0xexplicit"); err != nil || got != "0xexplicit" {
+		t.Errorf("explicit: got %q err %v", got, err)
+	}
+	t.Setenv("RAIL0_PRIVATE_KEY", "0xenvkey")
+	if got, err := signingKeyOrPrompt(""); err != nil || got != "0xenvkey" {
+		t.Errorf("env fallback: got %q err %v", got, err)
+	}
+}
+
 // The atomic operations no longer expose --prepare: it should be absent from
 // every signing command so the help can't promise a flow the CLI can't complete.
 func TestSigningCommandsHaveNoPrepareFlag(t *testing.T) {

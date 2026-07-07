@@ -165,7 +165,7 @@ Every on-chain action command (`authorize`, `charge`, `capture`, `void`, `releas
 |------|-------|-------------|
 | `--private-key` | `-p` | Caller's secp256k1 private key: 0x-prefixed hex, or `@name` for a key saved in the OS keychain (`rail0 keys add`) |
 
-The signing key is resolved in this order: `--private-key` (`-p` / `--pk`, where `@name` pulls the key from the OS keychain) > `RAIL0_PRIVATE_KEY` env var.
+The signing key is resolved in this order: `--private-key` (`-p` / `--pk`, where `@name` pulls the key from the OS keychain) > `RAIL0_PRIVATE_KEY` env var. If none is set, the CLI prompts for the key **hidden** on a terminal (or reads one line from a piped stdin), so it never lands in the shell history or process arguments — the same masked input as `keys add`.
 
 #### Addressing a payment: UUID or rail0_id
 

@@ -49,7 +49,7 @@ func init() {
 		ui.SetPretty(prettyOut)
 	})
 
-	rootCmd.AddCommand(paymentsCmd, walletsCmd, webhooksCmd, chainsCmd, tokensCmd, authCmd, healthCmd, aliasesCmd, keysCmd, configCmd)
+	rootCmd.AddCommand(paymentsCmd, walletsCmd, paymentMethodsCmd, webhooksCmd, chainsCmd, tokensCmd, authCmd, healthCmd, aliasesCmd, keysCmd, configCmd)
 }
 
 // newClient builds a RAIL0 gateway client.

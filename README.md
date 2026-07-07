@@ -198,7 +198,7 @@ rail0 auth logout
 
 ### Wallets
 
-`wallets` manages an account's wallets. When **listing**, the account is `--account` if given, otherwise the **logged-in session's** account (`auth login`) — one of the two must be present, else the command errors. Run bare to list; the verbs act on one wallet, named by its id or **0x address** (the wallet's own identity, unique per account). Address-book `@aliases` are for external addresses in `payments`, not for your own wallets.
+`wallets` manages **your own** account's wallets and requires a login (`auth login`) — the gateway now protects the whole account section with SIWE. When **listing**, `--account` defaults to the logged-in session's account; if given it must be your own account (another account's id is rejected with 403). Run bare to list; the verbs act on one wallet, named by its id or **0x address** (the wallet's own identity, unique per account). Address-book `@aliases` are for external addresses in `payments`, not for your own wallets. To discover **another** merchant's accepted wallets/tokens without logging in, use [`payment-methods`](#payment-methods).
 
 #### `wallets` — list
 
@@ -206,14 +206,14 @@ Lists the account's wallets, each with its token holdings nested under `tokens`.
 
 ```sh
 rail0 wallets                                   # logged-in session account
-rail0 wallets --account 019e748b-…              # a specific account by id
+rail0 wallets --account 019e748b-…              # your own account, stated explicitly
 rail0 wallets --chain-id 5042002 --symbol USDC --active true
 rail0 wallets --default true --sort -created_at
 ```
 
 | Flag | Short | Description |
 |------|-------|-------------|
-| `--account` | — | Account id to list; defaults to the logged-in session account (one of the two is required) |
+| `--account` | — | Your account id to list; defaults to the logged-in session account (must be your own — requires login) |
 | `--chain-id` | — | Restrict the nested tokens to this chain id (wallets still listed) |
 | `--symbol` | `-s` | Restrict the nested tokens to this symbol, e.g. `USDC` (wallets still listed) |
 | `--active` | — | Filter the wallets by active flag (`true` or `false`) |
@@ -278,6 +278,25 @@ Save an address-book alias, in address-first order — handy right after copying
 rail0 wallets alias 0xABCD… treasury
 rail0 payments create --to @treasury -t USDC -a 10.50 -c 84532 -p 0xPayerKey…
 ```
+
+---
+
+### Payment methods
+
+`payment-methods` is the **public**, buyer-facing counterpart to `wallets`: it discovers which wallets and tokens a merchant accepts, **without a login**. Where `wallets` lists your own account (behind SIWE), this identifies **another** merchant by exactly one of `--account` (all its active wallets) or `--address` (just that one wallet). It returns the merchant's active wallets, each with the active tokens (and chains) it accepts — the values a payer needs to build a `payments create`.
+
+```sh
+rail0 payment-methods --account 019e748b-…       # all the merchant's active wallets
+rail0 payment-methods --address 0xABCD…          # just that wallet
+rail0 payment-methods --address @payee           # …or an address-book alias
+```
+
+| Flag | Short | Description |
+|------|-------|-------------|
+| `--account` | — | Merchant account id — list all its active wallets |
+| `--address` | `-A` | A merchant wallet address (`0x…` or `@alias`) — list just that wallet |
+
+Exactly one of `--account` / `--address` is required (mirrors the gateway's `GET /payment_methods`).
 
 ---
 

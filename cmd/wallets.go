@@ -28,10 +28,12 @@ var walletsCmd = &cobra.Command{
 	Short: "Manage the logged-in account's wallets (lists when run bare)",
 	Long: `List and manage the wallets of an account.
 
-When listing, the account is --account if given, otherwise the logged-in
-session's account ('rail0 auth login'); one of the two must be present, else it
-errors. The verbs below act on one wallet (id or 0x address) of the session
-account.`,
+All wallet endpoints require a login ('rail0 auth login') — they are scoped to
+your own account. When listing, --account defaults to the session account; if
+given it must be your own account (the gateway rejects another account's id with
+403). To discover ANOTHER merchant's accepted wallets/tokens without a session,
+use 'rail0 payment-methods'. The verbs below act on one wallet (id or 0x
+address) of the session account.`,
 	Example: `  rail0 wallets                                   # session account
   rail0 wallets --account 019e748b-… --chain-id 5042002 --symbol USDC
   rail0 wallets get 0xABCD…
@@ -232,7 +234,7 @@ func init() {
 	// logged-in session's account is used (one of the two must be present, else
 	// error). --active filters the wallets. --chain-id/--symbol restrict the
 	// server-side nested tokens shown for each wallet.
-	walletsCmd.Flags().StringVar(&walletsAccount, "account", "", "Account id to list (default: the logged-in session account)")
+	walletsCmd.Flags().StringVar(&walletsAccount, "account", "", "Your account id to list (default: the logged-in session account; must be your own)")
 	walletsCmd.Flags().StringVar(&walletsActive, "active", "", "Filter wallets by active flag ('true' or 'false')")
 	walletsCmd.Flags().IntVar(&walletsChainID, "chain-id", 0, "Restrict nested tokens to this chain id")
 	walletsCmd.Flags().StringVarP(&walletsSymbol, "symbol", "s", "", "Restrict nested tokens to this symbol, e.g. USDC (alias: --token)")

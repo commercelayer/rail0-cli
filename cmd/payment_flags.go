@@ -106,6 +106,15 @@ func (f *createPaymentFlags) fieldsToPrompt() []string {
 // buildInteractive shows a huh form to collect only the fields fieldsToPrompt
 // reports as missing — a value passed via a flag is never re-asked.
 func (f *createPaymentFlags) buildInteractive() (rail0.CreatePaymentRequest, error) {
+	// When the payee is known, offer the token/chain the merchant actually
+	// accepts (discovered from its wallet address) for whichever of the two the
+	// buyer omitted — so a buyer who knows only the payee address doesn't have to
+	// look its tokens/chains up by hand. Best-effort: it fills f.token/f.chainID
+	// when it can; anything left unset falls through to the prompts below.
+	if f.to != "" && (f.token == "" || f.chainID == 0) {
+		f.proposeFromPaymentMethods()
+	}
+
 	chainIDStr := ""
 	if f.chainID > 0 {
 		chainIDStr = strconv.Itoa(f.chainID)
@@ -228,4 +237,105 @@ func (f *createPaymentFlags) resolve() (rail0.CreatePaymentRequest, error) {
 		Mode:        mode,
 		Description: f.description,
 	}, nil
+}
+
+// acceptedMethod is one (token symbol, chain id) combination a merchant accepts.
+type acceptedMethod struct {
+	symbol  string
+	chainID int
+}
+
+// acceptedMethods flattens the discovered payee wallets to the distinct active
+// (symbol, chain) pairs the merchant accepts, narrowed to a token symbol and/or
+// chain id when the buyer already supplied one ("" / 0 = no filter). Order
+// follows first appearance so the resulting picker is stable. Pure (no I/O) so
+// it's unit-testable.
+func acceptedMethods(wallets []rail0.WalletWithTokens, token string, chainID int) []acceptedMethod {
+	var out []acceptedMethod
+	seen := map[string]bool{}
+	for _, w := range wallets {
+		for _, h := range w.Tokens {
+			if !h.Active || h.Token.Symbol == "" || h.Token.ChainID == 0 {
+				continue
+			}
+			if token != "" && !strings.EqualFold(h.Token.Symbol, token) {
+				continue
+			}
+			if chainID != 0 && h.Token.ChainID != chainID {
+				continue
+			}
+			key := fmt.Sprintf("%s@%d", strings.ToUpper(h.Token.Symbol), h.Token.ChainID)
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			out = append(out, acceptedMethod{symbol: h.Token.Symbol, chainID: h.Token.ChainID})
+		}
+	}
+	return out
+}
+
+// proposeFromPaymentMethods discovers what the merchant accepts from the payee
+// address (public GET /payment_methods) and fills whichever of --token /
+// --chain-id the buyer omitted: a single match (given what was already supplied)
+// is taken automatically, several are offered as a picker. Best-effort — on a
+// discovery error, an unknown @alias, or a merchant exposing no active methods
+// it returns quietly, leaving the fields to the normal prompts and to resolve()'s
+// validation.
+func (f *createPaymentFlags) proposeFromPaymentMethods() {
+	payee, err := resolveAlias(f.to)
+	if err != nil || payee == "" {
+		return
+	}
+	wallets, err := newClient().PaymentMethods.List(context.Background(), rail0.PaymentMethodsQuery{Address: payee})
+	if err != nil {
+		return
+	}
+	methods := acceptedMethods(wallets, f.token, f.chainID)
+	if len(methods) == 0 {
+		return
+	}
+
+	pick := methods[0]
+	if len(methods) > 1 {
+		opts := make([]huh.Option[string], 0, len(methods))
+		for i, m := range methods {
+			opts = append(opts, huh.NewOption(fmt.Sprintf("%s · chain %d", m.symbol, m.chainID), strconv.Itoa(i)))
+		}
+		var chosen string
+		if err := huh.NewSelect[string]().
+			Title(f.methodPromptTitle()).
+			Options(opts...).
+			Value(&chosen).
+			Run(); err != nil {
+			abortOrReturn(err)
+			return
+		}
+		idx, _ := strconv.Atoi(chosen)
+		pick = methods[idx]
+	} else {
+		// Exactly one accepted method given what was already supplied — take it
+		// and say so, since no picker is shown.
+		fmt.Fprintf(os.Stderr, "Using the merchant's %s on chain %d\n", pick.symbol, pick.chainID)
+	}
+
+	if f.token == "" {
+		f.token = pick.symbol
+	}
+	if f.chainID == 0 {
+		f.chainID = pick.chainID
+	}
+}
+
+// methodPromptTitle phrases the payment-method picker for whichever of token /
+// chain the buyer left unspecified.
+func (f *createPaymentFlags) methodPromptTitle() string {
+	switch {
+	case f.token == "" && f.chainID == 0:
+		return "Select the token and chain the merchant accepts"
+	case f.token == "":
+		return fmt.Sprintf("Select the token to pay on chain %d", f.chainID)
+	default:
+		return fmt.Sprintf("Select the chain to pay %s on", f.token)
+	}
 }

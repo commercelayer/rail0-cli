@@ -143,6 +143,20 @@ The payer creates the payment and signs the EIP-712 payload with their key
 rail0 payments create -F 0xBuyer… -T 0xMerchant… -t USDC -a 10.50 -c 5042002 -p 0xPayerKey…
 ```
 
+**Token/chain discovery from the payee.** On a terminal, if you give `--to` but
+omit `--token` and/or `--chain-id`, the CLI looks up what that merchant accepts
+(public `GET /payment_methods` for the payee address) and prompts you to pick
+from those combinations — a single accepted method is used automatically. So a
+buyer who knows only the merchant's address can run:
+
+```sh
+rail0 payments create -F @buyer -T 0xMerchant… -a 10.50 -p @payer
+# → prompts "Select the token and chain the merchant accepts" (skipped if only one)
+```
+
+It's best-effort: if the merchant exposes no active methods (or discovery
+fails), it falls back to the normal prompts.
+
 ### Payee — action commands
 
 Every on-chain action command (`authorize`, `charge`, `capture`, `void`, `release`, `refund`, `dispute`) is **atomic**: it prepares the unsigned transaction, signs it locally, and broadcasts it in a single step.

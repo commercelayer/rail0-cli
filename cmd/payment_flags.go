@@ -45,7 +45,7 @@ func (f *createPaymentFlags) addTo(cmd *cobra.Command) {
 	cmd.Flags().BoolVarP(&f.charge, "charge", "C", false,
 		"Create with mode=charge (immediate transfer, no escrow); default is authorize (escrow then capture)")
 	cmd.Flags().StringVarP(&f.description, "description", "d", "",
-		"Optional human-readable note (e.g. what the payment is for)")
+		"Optional reconciliation note (e.g. order id / invoice); prompted when omitted on a terminal")
 }
 
 // build constructs a rail0.CreatePaymentRequest.
@@ -69,10 +69,15 @@ func (f *createPaymentFlags) build() (rail0.CreatePaymentRequest, error) {
 	}
 
 	missing := f.from == "" || f.to == "" || f.token == "" || f.amount == "" || f.chainID == 0
-	if missing {
-		if term.IsTerminal(os.Stdin.Fd()) {
+	if term.IsTerminal(os.Stdin.Fd()) {
+		// On a terminal, go interactive when a required field is missing OR when
+		// --description was omitted. The description is optional, but it's the
+		// reconciliation reference, so the creator is always asked — and leaves it
+		// blank consciously rather than by silently forgetting the flag.
+		if missing || f.description == "" {
 			return f.buildInteractive()
 		}
+	} else if missing {
 		return rail0.CreatePaymentRequest{}, fmt.Errorf(
 			"--from, --to, --token, --amount, and --chain-id are required (or use --payment-file)")
 	}
@@ -173,8 +178,19 @@ func (f *createPaymentFlags) buildInteractive() (rail0.CreatePaymentRequest, err
 		}
 	}
 
-	// Only run the form when there's actually something to ask. (build() only
-	// enters here when a required field is missing, so this is normally true.)
+	// Always ask for the description when it wasn't passed on the command line.
+	// It's optional (blank is accepted), but it's the reconciliation reference,
+	// so prompting makes leaving it empty a conscious choice rather than a
+	// forgotten flag. No Validate → an empty answer is fine.
+	if f.description == "" {
+		fields = append(fields, huh.NewInput().
+			Title("Description (optional)").
+			Description("Reference to reconcile this payment later (order id, invoice, note). Leave blank to omit.").
+			Value(&f.description))
+	}
+
+	// Only run the form when there's actually something to ask. (build() enters
+	// here when a required field OR the description is missing, so this holds.)
 	if len(fields) > 0 {
 		if err := huh.NewForm(huh.NewGroup(fields...)).Run(); err != nil {
 			if errors.Is(err, huh.ErrUserAborted) {

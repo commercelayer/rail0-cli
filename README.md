@@ -161,6 +161,11 @@ the chosen chain) rather than free-text — a single active chain/token is taken
 automatically. All of this needs a **reachable gateway**; if none is reachable
 it falls back to plain free-text prompts.
 
+**Description prompt.** On a terminal, if `--description` (`-d`) is omitted the
+CLI always asks for it — even when every required flag was supplied. It's
+optional (leave it blank to omit), but it's the reconciliation reference, so
+you're prompted to fill it in consciously rather than forget the flag.
+
 ### Payee — action commands
 
 Every on-chain action command (`authorize`, `charge`, `capture`, `void`, `release`, `refund`, `dispute`) is **atomic**: it prepares the unsigned transaction, signs it locally, and broadcasts it in a single step.

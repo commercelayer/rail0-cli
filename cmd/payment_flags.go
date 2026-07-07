@@ -115,6 +115,19 @@ func (f *createPaymentFlags) buildInteractive() (rail0.CreatePaymentRequest, err
 		f.proposeFromPaymentMethods()
 	}
 
+	// Catalog-backed fallback: for chain/token still unset (no payee, or the
+	// merchant discovery above found nothing), let the user pick from the public
+	// catalog (GET /blockchains, then GET /tokens for the chosen chain) instead of
+	// typing an id/symbol blind. Chain first — the token list is per-chain. Both
+	// best-effort: an unreachable gateway or empty catalog falls through to the
+	// free-text prompt below.
+	if f.chainID == 0 {
+		f.pickChainFromCatalog()
+	}
+	if f.token == "" {
+		f.pickTokenFromCatalog()
+	}
+
 	chainIDStr := ""
 	if f.chainID > 0 {
 		chainIDStr = strconv.Itoa(f.chainID)
@@ -325,6 +338,68 @@ func (f *createPaymentFlags) proposeFromPaymentMethods() {
 	if f.chainID == 0 {
 		f.chainID = pick.chainID
 	}
+}
+
+// pickChainFromCatalog fills f.chainID from the public chain catalog
+// (GET /blockchains): a single active chain is taken automatically, several are
+// offered as a picker. Best-effort — on a fetch error or an empty catalog it
+// returns quietly, leaving the field to the free-text prompt.
+func (f *createPaymentFlags) pickChainFromCatalog() {
+	chains, err := newClient().Chains.List(context.Background())
+	if err != nil || len(chains) == 0 {
+		return
+	}
+	if len(chains) == 1 {
+		f.chainID = chains[0].ChainID
+		return
+	}
+	opts := make([]huh.Option[string], 0, len(chains))
+	for i, c := range chains {
+		opts = append(opts, huh.NewOption(fmt.Sprintf("%s (%d)", c.Name, c.ChainID), strconv.Itoa(i)))
+	}
+	var chosen string
+	if err := huh.NewSelect[string]().
+		Title("Select the chain").
+		Options(opts...).
+		Value(&chosen).
+		Run(); err != nil {
+		abortOrReturn(err)
+		return
+	}
+	idx, _ := strconv.Atoi(chosen)
+	f.chainID = chains[idx].ChainID
+}
+
+// pickTokenFromCatalog fills f.token from the active tokens on the chosen chain
+// (GET /tokens?chain_id=): a single token is taken automatically, several are
+// offered as a picker. Needs f.chainID set (the token catalog is per-chain), so
+// it's a no-op until the chain is known. Best-effort, like pickChainFromCatalog.
+func (f *createPaymentFlags) pickTokenFromCatalog() {
+	if f.chainID == 0 {
+		return
+	}
+	tokens, err := newClient().Tokens.List(context.Background(), rail0.ListTokensParams{ChainID: f.chainID})
+	if err != nil || len(tokens) == 0 {
+		return
+	}
+	if len(tokens) == 1 {
+		f.token = tokens[0].Symbol
+		return
+	}
+	opts := make([]huh.Option[string], 0, len(tokens))
+	for _, t := range tokens {
+		opts = append(opts, huh.NewOption(t.Symbol, t.Symbol))
+	}
+	var chosen string
+	if err := huh.NewSelect[string]().
+		Title(fmt.Sprintf("Select the token on chain %d", f.chainID)).
+		Options(opts...).
+		Value(&chosen).
+		Run(); err != nil {
+		abortOrReturn(err)
+		return
+	}
+	f.token = chosen
 }
 
 // methodPromptTitle phrases the payment-method picker for whichever of token /

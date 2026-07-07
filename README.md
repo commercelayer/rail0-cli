@@ -154,8 +154,12 @@ rail0 payments create -F @buyer -T 0xMerchant… -a 10.50 -p @payer
 # → prompts "Select the token and chain the merchant accepts" (skipped if only one)
 ```
 
-It's best-effort: if the merchant exposes no active methods (or discovery
-fails), it falls back to the normal prompts.
+If you don't pass `--to` (or that merchant exposes no matching method), the
+interactive form still helps: `--chain-id` and `--token` are offered as
+**pickers from the public catalog** (`GET /blockchains`, then `GET /tokens` for
+the chosen chain) rather than free-text — a single active chain/token is taken
+automatically. All of this needs a **reachable gateway**; if none is reachable
+it falls back to plain free-text prompts.
 
 ### Payee — action commands
 

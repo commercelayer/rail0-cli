@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -14,6 +15,61 @@ import (
 	rail0 "github.com/rail0/go-sdk"
 	"github.com/spf13/cobra"
 )
+
+// amountPattern matches a non-negative decimal in token units (e.g. "1", "1.00").
+// The positivity (> 0) check is done separately in validateAmount.
+var amountPattern = regexp.MustCompile(`^\d+(\.\d+)?$`)
+
+// validateAddress checks a payer/payee value the way resolve() will later use it:
+// an "@alias" must exist in the address book, and a literal must be a well-formed
+// 0x EVM address. It runs no network I/O (alias lookup is local config), so it's
+// safe to call up front — on a flag before any prompt, and inline as a huh field
+// validator — to reject a bad address at the point it's entered rather than after
+// the rest of the form.
+func validateAddress(v string) error {
+	if strings.HasPrefix(v, "@") {
+		_, err := resolveAlias(v) // unknown alias → error
+		return err
+	}
+	if !evmAddressPattern.MatchString(v) {
+		return fmt.Errorf("invalid address %q: expected a 0x-prefixed 40-hex-character EVM address, or an @alias", v)
+	}
+	return nil
+}
+
+// validateAmount checks the amount is a positive decimal in token units. Purely
+// syntactic (the gateway converts to base units and enforces token decimals); it
+// exists to reject an obviously wrong value at entry rather than after a round-trip.
+func validateAmount(v string) error {
+	if !amountPattern.MatchString(v) {
+		return fmt.Errorf("invalid amount %q: use a decimal in token units (e.g. 1.00)", v)
+	}
+	// Reject zero (any mix of 0s and a dot strips to empty).
+	if strings.Trim(strings.ReplaceAll(v, ".", ""), "0") == "" {
+		return fmt.Errorf("amount must be greater than zero")
+	}
+	return nil
+}
+
+// lookupTokenAddress turns a token symbol into its address on chainID via
+// GET /tokens. It returns the resolved address, the symbols available on that
+// chain (for a helpful error), and an error when the symbol isn't listed. Shared
+// by resolve() and the interactive token validator so the symbol→address rule
+// lives in one place.
+func lookupTokenAddress(ctx context.Context, chainID int, symbol string) (string, []string, error) {
+	tokens, err := newClient().Tokens.List(ctx, rail0.ListTokensParams{ChainID: chainID})
+	if err != nil {
+		return "", nil, fmt.Errorf("fetch tokens: %w", err)
+	}
+	syms := make([]string, 0, len(tokens))
+	for _, t := range tokens {
+		syms = append(syms, t.Symbol)
+		if strings.EqualFold(t.Symbol, symbol) {
+			return string(t.Address), syms, nil
+		}
+	}
+	return "", syms, fmt.Errorf("unknown token %q on chain %d — available: %s", symbol, chainID, strings.Join(syms, ", "))
+}
 
 // createPaymentFlags collects the CLI flags for the `payments create` command.
 // They map 1-to-1 to the fields of rail0.CreatePaymentRequest.
@@ -68,6 +124,14 @@ func (f *createPaymentFlags) build() (rail0.CreatePaymentRequest, error) {
 		return req, nil
 	}
 
+	// Fail fast on anything the user DID pass that's malformed, before showing any
+	// prompt — it's confusing to ask for the remaining fields and only then reject
+	// a value that was wrong from the start. Only local checks here; a supplied
+	// token needs the chain to be known, so it's validated later (see build paths).
+	if err := f.validateSupplied(); err != nil {
+		return rail0.CreatePaymentRequest{}, err
+	}
+
 	missing := f.from == "" || f.to == "" || f.token == "" || f.amount == "" || f.chainID == 0
 	if term.IsTerminal(os.Stdin.Fd()) {
 		// On a terminal, go interactive when a required field is missing OR when
@@ -84,6 +148,44 @@ func (f *createPaymentFlags) build() (rail0.CreatePaymentRequest, error) {
 	return f.resolve()
 }
 
+// validateSupplied rejects a malformed value among the flags the user actually
+// passed, using only local checks (no network) so it can run before any prompt.
+// A supplied --token can't be checked here (its validity is chain-scoped, and the
+// chain may still be unknown); assertTokenKnown validates it once the chain is
+// set.
+func (f *createPaymentFlags) validateSupplied() error {
+	if f.from != "" {
+		if err := validateAddress(f.from); err != nil {
+			return fmt.Errorf("--from: %w", err)
+		}
+	}
+	if f.to != "" {
+		if err := validateAddress(f.to); err != nil {
+			return fmt.Errorf("--to: %w", err)
+		}
+	}
+	if f.amount != "" {
+		if err := validateAmount(f.amount); err != nil {
+			return fmt.Errorf("--amount: %w", err)
+		}
+	}
+	return nil
+}
+
+// assertTokenKnown validates a supplied token symbol against the chain once both
+// are known, so a wrong --token fails before the rest of the flow instead of
+// after. A no-op until the chain is set (a token's validity is chain-scoped) and
+// when no token was given. The non-interactive path relies on resolve() for the
+// same check; this exists for the interactive path, where it runs before any
+// prompt so the failure isn't buried behind the form.
+func (f *createPaymentFlags) assertTokenKnown() error {
+	if f.token == "" || f.chainID == 0 {
+		return nil
+	}
+	_, _, err := lookupTokenAddress(context.Background(), f.chainID, f.token)
+	return err
+}
+
 // fieldsToPrompt returns, in prompt order, the required fields left empty on the
 // command line — the ones the interactive form should ask for. Pure (no I/O) so
 // it's unit-testable; a value supplied via a flag is never included. Mode isn't
@@ -96,14 +198,16 @@ func (f *createPaymentFlags) fieldsToPrompt() []string {
 	if f.to == "" {
 		need = append(need, "to")
 	}
+	// chain-id is asked before token: a token symbol is only valid on a specific
+	// chain, so the token prompt validates against an already-known chain.
+	if f.chainID == 0 {
+		need = append(need, "chain-id")
+	}
 	if f.token == "" {
 		need = append(need, "token")
 	}
 	if f.amount == "" {
 		need = append(need, "amount")
-	}
-	if f.chainID == 0 {
-		need = append(need, "chain-id")
 	}
 	return need
 }
@@ -133,6 +237,13 @@ func (f *createPaymentFlags) buildInteractive() (rail0.CreatePaymentRequest, err
 		f.pickTokenFromCatalog()
 	}
 
+	// A token passed on the command line can only be checked once the chain is
+	// known (supplied, or just chosen above). Do it now, before the form, so a
+	// wrong --token fails immediately rather than after the remaining prompts.
+	if err := f.assertTokenKnown(); err != nil {
+		return rail0.CreatePaymentRequest{}, err
+	}
+
 	chainIDStr := ""
 	if f.chainID > 0 {
 		chainIDStr = strconv.Itoa(f.chainID)
@@ -145,22 +256,43 @@ func (f *createPaymentFlags) buildInteractive() (rail0.CreatePaymentRequest, err
 			fields = append(fields, huh.NewInput().
 				Title("From (payer)").
 				Description("Payer wallet address (0x-prefixed) — funds are pulled from here").
-				Value(&f.from))
+				Value(&f.from).
+				Validate(validateAddress))
 		case "to":
 			fields = append(fields, huh.NewInput().
 				Title("To (payee)").
 				Description("Payee wallet address (0x-prefixed) — use address from 'wallets'").
-				Value(&f.to))
+				Value(&f.to).
+				Validate(validateAddress))
 		case "token":
+			// The token symbol must exist on the chosen chain. The chain is either
+			// already known (f.chainID) or entered in the chain-id field just above,
+			// so read whichever is set. When neither is known yet (an unreachable
+			// catalog left the chain to a free-text prompt), skip — resolve() checks.
 			fields = append(fields, huh.NewInput().
 				Title("Token").
 				Description("Token symbol (e.g. USDC) — see 'rail0 tokens'").
-				Value(&f.token))
+				Value(&f.token).
+				Validate(func(s string) error {
+					if strings.TrimSpace(s) == "" {
+						return fmt.Errorf("token is required")
+					}
+					cid := f.chainID
+					if cid == 0 {
+						cid, _ = strconv.Atoi(chainIDStr)
+					}
+					if cid == 0 {
+						return nil
+					}
+					_, _, err := lookupTokenAddress(context.Background(), cid, s)
+					return err
+				}))
 		case "amount":
 			fields = append(fields, huh.NewInput().
 				Title("Amount").
 				Description("Amount as a decimal in token units (e.g. 1.00 = 1 USDC); the gateway converts to base units").
-				Value(&f.amount))
+				Value(&f.amount).
+				Validate(validateAmount))
 		case "chain-id":
 			fields = append(fields, huh.NewInput().
 				Title("Chain ID").
@@ -217,7 +349,6 @@ func (f *createPaymentFlags) buildInteractive() (rail0.CreatePaymentRequest, err
 // CreatePaymentRequest.
 func (f *createPaymentFlags) resolve() (rail0.CreatePaymentRequest, error) {
 	ctx := context.Background()
-	client := newClient()
 
 	// Resolve any "@name" address-book references to concrete addresses.
 	payer, err := resolveAlias(f.from)
@@ -229,27 +360,10 @@ func (f *createPaymentFlags) resolve() (rail0.CreatePaymentRequest, error) {
 		return rail0.CreatePaymentRequest{}, err
 	}
 
-	chainID := f.chainID
-
 	// Resolve token symbol → address on the selected chain.
-	tokens, err := client.Tokens.List(ctx, rail0.ListTokensParams{ChainID: chainID})
+	tokenAddress, _, err := lookupTokenAddress(ctx, f.chainID, f.token)
 	if err != nil {
-		return rail0.CreatePaymentRequest{}, fmt.Errorf("fetch tokens: %w", err)
-	}
-	var tokenAddress string
-	for _, t := range tokens {
-		if strings.EqualFold(t.Symbol, f.token) {
-			tokenAddress = string(t.Address)
-			break
-		}
-	}
-	if tokenAddress == "" {
-		syms := make([]string, 0, len(tokens))
-		for _, t := range tokens {
-			syms = append(syms, t.Symbol)
-		}
-		return rail0.CreatePaymentRequest{}, fmt.Errorf(
-			"unknown token %q on chain %d — available: %s", f.token, chainID, strings.Join(syms, ", "))
+		return rail0.CreatePaymentRequest{}, err
 	}
 
 	mode := "authorize"
@@ -262,7 +376,7 @@ func (f *createPaymentFlags) resolve() (rail0.CreatePaymentRequest, error) {
 		Payee:       payee,
 		Token:       tokenAddress,
 		Amount:      f.amount,
-		ChainID:     chainID,
+		ChainID:     f.chainID,
 		Mode:        mode,
 		Description: f.description,
 	}, nil

@@ -20,9 +20,9 @@ func TestFieldsToPrompt(t *testing.T) {
 		want  []string
 	}{
 		{
-			name:  "nothing provided → all required, in order (never mode)",
+			name:  "nothing provided → all required, chain-id before token (never mode)",
 			flags: createPaymentFlags{},
-			want:  []string{"from", "to", "token", "amount", "chain-id"},
+			want:  []string{"from", "to", "chain-id", "token", "amount"},
 		},
 		{
 			name:  "all required provided → prompt nothing",
@@ -40,6 +40,11 @@ func TestFieldsToPrompt(t *testing.T) {
 			want:  []string{"chain-id"},
 		},
 		{
+			name:  "chain and token missing → chain-id asked before token",
+			flags: createPaymentFlags{from: "0xF", to: "0xT", amount: "1.00"},
+			want:  []string{"chain-id", "token"},
+		},
+		{
 			name:  "order is stable across gaps: from and token missing",
 			flags: createPaymentFlags{to: "0xT", amount: "1.00", chainID: 5042002},
 			want:  []string{"from", "token"},
@@ -50,6 +55,55 @@ func TestFieldsToPrompt(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := tc.flags.fieldsToPrompt(); !reflect.DeepEqual(got, tc.want) {
 				t.Errorf("fieldsToPrompt() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+// validateAddress and validateAmount gate a value at entry — as a flag before any
+// prompt, and inline in the huh form. The literal-address and amount branches are
+// pure (no config/network), so they're tested here directly.
+func TestValidateAddress(t *testing.T) {
+	cases := []struct {
+		name    string
+		in      string
+		wantErr bool
+	}{
+		{"well-formed 0x address", "0x1234567890abcdef1234567890ABCDEF12345678", false},
+		{"empty is rejected", "", true},
+		{"too short", "0x1234", true},
+		{"missing 0x prefix", "1234567890abcdef1234567890abcdef12345678", true},
+		{"non-hex character", "0x1234567890abcdefg234567890abcdef123456789", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := validateAddress(tc.in); (err != nil) != tc.wantErr {
+				t.Errorf("validateAddress(%q) error = %v, wantErr = %v", tc.in, err, tc.wantErr)
+			}
+		})
+	}
+}
+
+func TestValidateAmount(t *testing.T) {
+	cases := []struct {
+		name    string
+		in      string
+		wantErr bool
+	}{
+		{"integer", "1", false},
+		{"decimal", "1.00", false},
+		{"leading zero decimal", "0.25", false},
+		{"empty is rejected", "", true},
+		{"zero", "0", true},
+		{"zero with decimals", "0.00", true},
+		{"negative", "-1.00", true},
+		{"non-numeric", "abc", true},
+		{"trailing token symbol", "1.00 USDC", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := validateAmount(tc.in); (err != nil) != tc.wantErr {
+				t.Errorf("validateAmount(%q) error = %v, wantErr = %v", tc.in, err, tc.wantErr)
 			}
 		})
 	}

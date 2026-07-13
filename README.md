@@ -166,6 +166,14 @@ CLI always asks for it — even when every required flag was supplied. It's
 optional (leave it blank to omit), but it's the reconciliation reference, so
 you're prompted to fill it in consciously rather than forget the flag.
 
+**Validation happens up front.** A value you pass on the command line is checked
+before any prompt is shown — a malformed `--amount`, an unknown `@alias`, or a
+`--token` that isn't listed on the chain fails immediately, so you never answer
+the description prompt only to have the whole command rejected afterwards.
+Interactive prompts validate the same way, field by field: the form won't move to
+the next field until the current one is valid (chain is asked before token, since
+a token symbol is only meaningful on a chosen chain).
+
 ### Payee — action commands
 
 Every on-chain action command (`authorize`, `charge`, `capture`, `void`, `release`, `refund`, `dispute`) is **atomic**: it prepares the unsigned transaction, signs it locally, and broadcasts it in a single step.

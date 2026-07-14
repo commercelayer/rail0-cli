@@ -1,6 +1,6 @@
 # rail0-cli
 
-Command-line interface for the [RAIL0](https://rail0.xyz) stablecoin payment protocol. Wraps the RAIL0 REST API and exposes every payment lifecycle step as a subcommand. Output is always JSON — syntax-highlighted on a terminal and plain (machine-readable) when piped or when `--json` is passed.
+Command-line interface for the [RAIL0](https://rail0.xyz) stablecoin payment protocol. Wraps the RAIL0 gateway's REST API and exposes every payment lifecycle step as a subcommand. Output is always JSON — syntax-highlighted on a terminal and plain (machine-readable) when piped or when `--json` is passed.
 
 ---
 
@@ -46,7 +46,7 @@ Manual build (no alias) is still just `go build -o rail0 . && mv rail0 /usr/loca
 
 ## Configuration
 
-Set the API endpoint and credentials via flags, environment variables, or the
+Set the gateway endpoint and credentials via flags, environment variables, or the
 config file. Precedence is: **flag  >  env var  >  config file  >  built-in default**.
 
 | Flag         | Environment variable | Description                                      |

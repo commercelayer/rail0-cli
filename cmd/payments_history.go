@@ -16,8 +16,9 @@ import (
 // only the significant fields. It's assembled client-side from a single
 // Payments.Get — no dedicated gateway endpoint.
 //
-// Reads a single payment (a public read); the argument may be a UUID or a
-// rail0_id (0x…, 64 hex) — the gateway resolves either in-path.
+// Reads a single payment (participant-only — requires login as the payer or
+// payee); the argument may be a UUID or a rail0_id (0x…, 64 hex) — the gateway
+// resolves either in-path.
 var paymentsHistoryCmd = &cobra.Command{
 	Use:   "history <rail0Id>",
 	Short: "Show a payment's chronological history",
@@ -27,7 +28,8 @@ created: the created and signed milestones and every on-chain transaction
 Only the most significant fields are shown per entry (time, event, status,
 amount, tx hash, block).
 
-The argument is a UUID or a rail0_id (0x…, 64 hex); no session is required.`,
+The argument is a UUID or a rail0_id (0x…, 64 hex). Requires login — the
+timeline is readable only by the payment's payer or payee.`,
 	Example: `  rail0 payments history 0xabc123…
   rail0 payments history 019e748b-…`,
 	Args: cobra.ExactArgs(1),

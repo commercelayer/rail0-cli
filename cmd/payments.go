@@ -41,6 +41,9 @@ var paymentsGetCmd = &cobra.Command{
 on-chain balances (capturableAmount, refundableAmount) when the payment
 is in an active on-chain state.
 
+Requires login — a payment is readable only by its payer or payee. Run
+'rail0 auth login -p 0xKey…' first (any wallet can log in, no account needed).
+
 Status values:
   unsigned   — created, payer signature not yet submitted
   signed              — payer signature stored, awaiting payee action

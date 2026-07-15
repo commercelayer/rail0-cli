@@ -32,6 +32,11 @@ var authLoginCmd = &cobra.Command{
   2. Builds a SIWE message and signs it with your private key
   3. Verifies the signature and stores the JWT token
 
+Any wallet can sign in — a gateway account is NOT required. Signing proves
+control of the address, which is enough to read your own address-scoped
+resources (e.g. 'payments list' shows every payment where you are payer or
+payee). A gateway account only unlocks merchant-scoped features.
+
 The token is saved to ~/.cache/rail0/token and used automatically by all
 commands that require authentication (e.g. 'payments list').
 Override with the RAIL0_TOKEN environment variable.

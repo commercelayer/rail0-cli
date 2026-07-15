@@ -201,11 +201,14 @@ Either works with or without a session (subject to the endpoint's own auth — t
 
 #### `auth login`
 
-Obtain a JWT via SIWE (Sign-In With Ethereum) and cache it in `~/.cache/rail0/token`.
+Obtain a JWT via SIWE (Sign-In With Ethereum) and cache it in `~/.cache/rail0/token`. **Any wallet can sign in — no gateway account is required** (a buyer signs in with just its key); an account only unlocks merchant features.
 
 ```sh
 rail0 auth login -p 0xYourPrivateKey…
+rail0 auth login -p @payee -t          # also print the token + its expiry
 ```
+
+On success the command prints the session (address, expiry) but **not** the raw token. Pass `--token` / `-t` to also print the token itself along with its duration and expiry timestamp, or fetch it later with [`rail0 token`](#token).
 
 > Note: `auth login -p` accepts the same key forms as the payment action commands — a raw **0x-prefixed hex key**, an **`@name`** OS-keychain reference (`rail0 keys add`), or, with `-p` omitted, the **`RAIL0_PRIVATE_KEY`** environment variable.
 
@@ -223,6 +226,15 @@ Remove the cached JWT.
 
 ```sh
 rail0 auth logout
+```
+
+#### `token`
+
+Print the cached session JWT and its expiry, so it can be copied or piped. If you're not logged in (or the token has expired), it suggests logging in instead. This is the **singular** session token — distinct from [`rail0 tokens`](#tokens), which lists the gateway's accepted payment tokens.
+
+```sh
+rail0 token
+export RAIL0_TOKEN="$(rail0 token --json | jq -r .token)"
 ```
 
 ---

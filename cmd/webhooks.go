@@ -26,6 +26,8 @@ var webhooksListTopic string
 var webhooksListActive string
 var webhooksListCircuit string
 var webhooksListSort string
+var webhooksListPage int
+var webhooksListPerPage int
 
 var webhooksListCmd = &cobra.Command{
 	Use:     "list",
@@ -36,6 +38,8 @@ var webhooksListCmd = &cobra.Command{
 			Topic:        webhooksListTopic,
 			CircuitState: webhooksListCircuit,
 			Sort:         webhooksListSort,
+			Page:         webhooksListPage,
+			PerPage:      webhooksListPerPage,
 		}
 		active, err := parseBoolFlag(webhooksListActive)
 		if err != nil {
@@ -233,6 +237,8 @@ func init() {
 	webhooksListCmd.Flags().StringVar(&webhooksListActive, "active", "", "Filter by active flag ('true' or 'false')")
 	webhooksListCmd.Flags().StringVar(&webhooksListCircuit, "circuit-state", "", "Filter by circuit state ('closed' or 'open')")
 	webhooksListCmd.Flags().StringVar(&webhooksListSort, "sort", "", "Sort fields (e.g. -created_at)")
+	webhooksListCmd.Flags().IntVar(&webhooksListPage, "page", 0, "Page number (1-based)")
+	webhooksListCmd.Flags().IntVar(&webhooksListPerPage, "per-page", 0, "Results per page")
 	webhooksCmd.AddCommand(webhooksListCmd)
 
 	webhooksCmd.AddCommand(webhooksGetCmd)

@@ -86,6 +86,9 @@ var (
 	paymentsListMaxAmount   string
 	paymentsListCreatedFrom string
 	paymentsListCreatedTo   string
+	paymentsListPage        int
+	paymentsListPerPage     int
+	paymentsListAll         bool
 )
 
 var paymentsListCmd = &cobra.Command{
@@ -115,24 +118,57 @@ Filter with --status, --mode, --payer, --payee, --token, --chain-id, --disputed,
 			MaxAmount:   paymentsListMaxAmount,
 			CreatedFrom: paymentsListCreatedFrom,
 			CreatedTo:   paymentsListCreatedTo,
+			Page:        paymentsListPage,
+			PerPage:     paymentsListPerPage,
 		}
 		// Only send disputed when the flag was explicitly set (tri-state).
 		if cmd.Flags().Changed("disputed") {
 			p.Disputed = &paymentsListDisputed
 		}
 		return ui.RunAPI(func() (any, error) {
-			resp, err := newClient().Payments.List(context.Background(), p)
+			client := newClient()
+			ctx := context.Background()
+			if paymentsListAll {
+				return fetchAllPayments(ctx, client, p)
+			}
+			resp, err := client.Payments.List(ctx, p)
 			if err != nil {
 				return nil, err
 			}
-			return resp.Data, nil // bare array; pagination is in headers
+			return resp.Data, nil // bare array; page/total live in resp.Meta
 		})
 	},
 }
 
+// fetchAllPayments pages through the entire result set (used by `list --all`),
+// concatenating each page until every row is collected. PerPage defaults to 100
+// so it isn't limited to the API's small default page size.
+func fetchAllPayments(ctx context.Context, client *rail0.Client, p rail0.ListPaymentsParams) (any, error) {
+	if p.PerPage == 0 {
+		p.PerPage = 100
+	}
+	var all []rail0.Payment
+	for page := 1; ; page++ {
+		p.Page = page
+		resp, err := client.Payments.List(ctx, p)
+		if err != nil {
+			return nil, err
+		}
+		all = append(all, resp.Data...)
+		if len(resp.Data) == 0 || len(all) >= resp.Meta.Total {
+			break
+		}
+	}
+	return all, nil
+}
+
 // ── payments transactions ─────────────────────────────────────────────────────
 
-var paymentsTransactionsSort string
+var (
+	paymentsTransactionsSort    string
+	paymentsTransactionsPage    int
+	paymentsTransactionsPerPage int
+)
 
 var paymentsTransactionsCmd = &cobra.Command{
 	Use:   "transactions <rail0Id>",
@@ -148,7 +184,7 @@ var paymentsTransactionsCmd = &cobra.Command{
 			if err != nil {
 				return nil, err
 			}
-			p := rail0.ListTransactionsParams{Sort: paymentsTransactionsSort}
+			p := rail0.ListTransactionsParams{Sort: paymentsTransactionsSort, Page: paymentsTransactionsPage, PerPage: paymentsTransactionsPerPage}
 			resp, err := client.Payments.Transactions(ctx, id, p)
 			if err != nil {
 				return nil, err
@@ -819,8 +855,10 @@ var paymentsDisputeCloseCmd = &cobra.Command{
 }
 
 var (
-	disputesStatus string
-	disputesSort   string
+	disputesStatus  string
+	disputesSort    string
+	disputesPage    int
+	disputesPerPage int
 )
 
 var paymentsDisputesCmd = &cobra.Command{
@@ -838,7 +876,7 @@ var paymentsDisputesCmd = &cobra.Command{
 				return nil, err
 			}
 			resp, err := client.Payments.Disputes(ctx, id,
-				rail0.ListDisputesParams{Status: disputesStatus, Sort: disputesSort})
+				rail0.ListDisputesParams{Status: disputesStatus, Sort: disputesSort, Page: disputesPage, PerPage: disputesPerPage})
 			if err != nil {
 				return nil, err
 			}
@@ -874,10 +912,15 @@ func init() {
 	paymentsListCmd.Flags().StringVar(&paymentsListMaxAmount, "max-amount", "", "Maximum amount in token base units (inclusive)")
 	paymentsListCmd.Flags().StringVar(&paymentsListCreatedFrom, "created-from", "", "Only payments created at/after this ISO-8601 time")
 	paymentsListCmd.Flags().StringVar(&paymentsListCreatedTo, "created-to", "", "Only payments created at/before this ISO-8601 time")
+	paymentsListCmd.Flags().IntVar(&paymentsListPage, "page", 0, "Page number (1-based)")
+	paymentsListCmd.Flags().IntVar(&paymentsListPerPage, "per-page", 0, "Results per page")
+	paymentsListCmd.Flags().BoolVar(&paymentsListAll, "all", false, "Fetch every page (ignores --page)")
 	paymentsCmd.AddCommand(paymentsListCmd)
 
 	// payments transactions
 	paymentsTransactionsCmd.Flags().StringVar(&paymentsTransactionsSort, "sort", "", "Sort fields (e.g. -submitted_at,operation)")
+	paymentsTransactionsCmd.Flags().IntVar(&paymentsTransactionsPage, "page", 0, "Page number (1-based)")
+	paymentsTransactionsCmd.Flags().IntVar(&paymentsTransactionsPerPage, "per-page", 0, "Results per page")
 	paymentsCmd.AddCommand(paymentsTransactionsCmd)
 
 	// payments authorize
@@ -928,5 +971,7 @@ func init() {
 	paymentsCmd.AddCommand(paymentsDisputeCmd)
 	paymentsDisputesCmd.Flags().StringVar(&disputesStatus, "status", "", "Filter by dispute status: open or closed")
 	paymentsDisputesCmd.Flags().StringVar(&disputesSort, "sort", "", "Sort fields (e.g. -opened_at)")
+	paymentsDisputesCmd.Flags().IntVar(&disputesPage, "page", 0, "Page number (1-based)")
+	paymentsDisputesCmd.Flags().IntVar(&disputesPerPage, "per-page", 0, "Results per page")
 	paymentsCmd.AddCommand(paymentsDisputesCmd)
 }

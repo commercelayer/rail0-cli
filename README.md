@@ -42,6 +42,9 @@ PREFIX="$HOME/go/bin" bin/build # into a dir you own (no sudo)
 
 Manual build (no alias) is still just `go build -o rail0 . && mv rail0 /usr/local/bin/`.
 
+Check the installed version with `rail0 version` (or `rail0 --version`); `bin/build`
+stamps it from `git describe`.
+
 ---
 
 ## Shell completion
@@ -86,6 +89,10 @@ forbidden, `5` not found, `6` conflict, `7` rejected (422), `8` gateway error
 Errors carry an actionable hint where the cause is known — e.g. a `422` on
 `capture` explains the amount exceeds the capturable balance, and an on-chain
 `RefundExpired` revert says the refund window has closed.
+
+The list commands (`payments list`, `payments transactions`, `payments disputes`,
+`webhooks list`) take `--page` and `--per-page`; `payments list` also accepts
+`--all` to walk every page and return the full set.
 
 Minimal setup:
 

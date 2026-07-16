@@ -37,18 +37,40 @@ var (
 	DimStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("238"))
 )
 
-// StatusStyle renders a resource's `status` value. Non-terminal (in-progress)
-// states are yellow (high-visibility); terminal states stand out: green when they
-// closed successfully, red on error. Terminal states are the payment's voided/
-// released/refunded (the model's closed states) and the transaction's confirmed,
-// plus the error state failed.
+// StatusStyle renders a resource's `status` value with a colour that mirrors the
+// rail0-admin palette, so the CLI and the dashboard read the same at a glance:
+//
+//	green  — captured / partially_captured / confirmed / active (settled OK)
+//	blue   — authorized (funds held in escrow)
+//	indigo — charged (one-shot paid)
+//	orange — refunded / partially_refunded (funds returned)
+//	rose   — voided (authorization cancelled)
+//	amber  — open / disputed (needs attention)
+//	gray   — released / closed (neutral terminal)
+//	yellow — in flight (unsigned / signed / submitting / submitted / pending)
+//	red    — failed (error)
 func StatusStyle(status string) lipgloss.Style {
+	fg := func(code string) lipgloss.Style { return lipgloss.NewStyle().Foreground(lipgloss.Color(code)) }
 	switch status {
-	case "voided", "released", "refunded", "confirmed":
-		return lipgloss.NewStyle().Foreground(lipgloss.Color("82"))
+	case "captured", "partially_captured", "confirmed", "active":
+		return fg("42") // green
+	case "authorized":
+		return fg("39") // blue
+	case "charged":
+		return fg("99") // indigo
+	case "refunded", "partially_refunded":
+		return fg("214") // orange
+	case "voided":
+		return fg("204") // rose
+	case "open", "disputed":
+		return fg("208") // amber — attention
+	case "released", "closed":
+		return fg("244") // gray — neutral terminal
+	case "unsigned", "signed", "submitting", "submitted", "pending":
+		return fg("220") // yellow — in flight
 	case "failed":
-		return lipgloss.NewStyle().Foreground(lipgloss.Color("203")).Bold(true)
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("203")).Bold(true) // red
 	default:
-		return lipgloss.NewStyle().Foreground(lipgloss.Color("226"))
+		return fg("244") // gray
 	}
 }

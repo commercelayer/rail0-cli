@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/rail0/cli/internal/ui"
 	rail0 "github.com/rail0/go-sdk"
@@ -174,6 +175,9 @@ var walletsDeleteCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		if err := confirmDestructive(fmt.Sprintf("Delete wallet %s from the account?", args[0])); err != nil {
+			return err
+		}
 		return ui.RunAPI(func() (any, error) {
 			return nil, newClient().Wallets.Delete(context.Background(), account, args[0])
 		})
@@ -258,6 +262,7 @@ func init() {
 	walletsBalancesCmd.Flags().StringVar(&balancesSymbol, "token", "", "Alias for --symbol")
 	_ = walletsBalancesCmd.Flags().MarkHidden("token")
 
+	addYesFlag(walletsDeleteCmd)
 	walletsCmd.AddCommand(
 		walletsGetCmd,
 		walletsCreateCmd,

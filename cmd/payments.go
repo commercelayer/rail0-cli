@@ -344,7 +344,7 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 		if err != nil {
 			return err
 		}
-		return ui.RunAPIWithMessage("Authorizing…", func() (any, error) {
+		return ui.RunAPIWithMessage(actionLabel("Authorizing…"), func() (any, error) {
 			if err := ensureSignerFor(ctx, client, rail0Id, signingKey, "authorize"); err != nil {
 				return nil, err
 			}
@@ -356,8 +356,10 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 			if err != nil {
 				return nil, fmt.Errorf("sign: %w", err)
 			}
-			return client.Payments.Authorize(ctx, rail0Id,
-				rail0.SubmitTransactionRequest{SignedTransaction: signedTx})
+			return submitThenWait(ctx, client, rail0Id, "authorize", func() (any, error) {
+				return client.Payments.Authorize(ctx, rail0Id,
+					rail0.SubmitTransactionRequest{SignedTransaction: signedTx})
+			})
 		})
 	},
 }
@@ -398,7 +400,7 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 		if err != nil {
 			return err
 		}
-		return ui.RunAPIWithMessage("Charging…", func() (any, error) {
+		return ui.RunAPIWithMessage(actionLabel("Charging…"), func() (any, error) {
 			if err := ensureSignerFor(ctx, client, rail0Id, signingKey, "charge"); err != nil {
 				return nil, err
 			}
@@ -410,8 +412,10 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 			if err != nil {
 				return nil, fmt.Errorf("sign: %w", err)
 			}
-			return client.Payments.Charge(ctx, rail0Id,
-				rail0.SubmitTransactionRequest{SignedTransaction: signedTx})
+			return submitThenWait(ctx, client, rail0Id, "charge", func() (any, error) {
+				return client.Payments.Charge(ctx, rail0Id,
+					rail0.SubmitTransactionRequest{SignedTransaction: signedTx})
+			})
 		})
 	},
 }
@@ -463,7 +467,7 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 				return err
 			}
 		}
-		return ui.RunAPIWithMessage("Capturing…", func() (any, error) {
+		return ui.RunAPIWithMessage(actionLabel("Capturing…"), func() (any, error) {
 			if err := ensureSignerFor(ctx, client, rail0Id, signingKey, "capture"); err != nil {
 				return nil, err
 			}
@@ -475,8 +479,10 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 			if err != nil {
 				return nil, fmt.Errorf("sign: %w", err)
 			}
-			return client.Payments.Capture(ctx, rail0Id,
-				rail0.SubmitTransactionRequest{SignedTransaction: signedTx})
+			return submitThenWait(ctx, client, rail0Id, "capture", func() (any, error) {
+				return client.Payments.Capture(ctx, rail0Id,
+					rail0.SubmitTransactionRequest{SignedTransaction: signedTx})
+			})
 		})
 	},
 }
@@ -516,7 +522,10 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 		if err != nil {
 			return err
 		}
-		return ui.RunAPIWithMessage("Voiding…", func() (any, error) {
+		if err := confirmDestructive(fmt.Sprintf("Void payment %s? This returns the full escrow to the payer.", shortID(rail0Id))); err != nil {
+			return err
+		}
+		return ui.RunAPIWithMessage(actionLabel("Voiding…"), func() (any, error) {
 			if err := ensureSignerFor(ctx, client, rail0Id, signingKey, "void"); err != nil {
 				return nil, err
 			}
@@ -528,8 +537,10 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 			if err != nil {
 				return nil, fmt.Errorf("sign: %w", err)
 			}
-			return client.Payments.Void(ctx, rail0Id,
-				rail0.SubmitTransactionRequest{SignedTransaction: signedTx})
+			return submitThenWait(ctx, client, rail0Id, "void", func() (any, error) {
+				return client.Payments.Void(ctx, rail0Id,
+					rail0.SubmitTransactionRequest{SignedTransaction: signedTx})
+			})
 		})
 	},
 }
@@ -580,7 +591,10 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 		if err != nil {
 			return err
 		}
-		return ui.RunAPIWithMessage("Releasing…", func() (any, error) {
+		if err := confirmDestructive(fmt.Sprintf("Release payment %s? This returns the uncaptured escrow to the payer.", shortID(rail0Id))); err != nil {
+			return err
+		}
+		return ui.RunAPIWithMessage(actionLabel("Releasing…"), func() (any, error) {
 			if err := ensureSignerFor(ctx, client, rail0Id, signingKey, "release"); err != nil {
 				return nil, err
 			}
@@ -592,8 +606,10 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 			if err != nil {
 				return nil, fmt.Errorf("sign: %w", err)
 			}
-			return client.Payments.Release(ctx, rail0Id,
-				rail0.SubmitTransactionRequest{SignedTransaction: signedTx})
+			return submitThenWait(ctx, client, rail0Id, "release", func() (any, error) {
+				return client.Payments.Release(ctx, rail0Id,
+					rail0.SubmitTransactionRequest{SignedTransaction: signedTx})
+			})
 		})
 	},
 }
@@ -648,7 +664,10 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 				return err
 			}
 		}
-		return ui.RunAPIWithMessage("Refunding…", func() (any, error) {
+		if err := confirmDestructive(fmt.Sprintf("Refund payment %s? This sends funds back to the payer.", shortID(rail0Id))); err != nil {
+			return err
+		}
+		return ui.RunAPIWithMessage(actionLabel("Refunding…"), func() (any, error) {
 			// Phase 1: get the EIP-712 ReceiveWithAuthorization signing payload.
 			// Omitting the signature returns a Transaction whose SigningPayload is set.
 			if err := ensureSignerFor(ctx, client, rail0Id, signingKey, "refund"); err != nil {
@@ -685,8 +704,10 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 			if err != nil {
 				return nil, fmt.Errorf("sign tx: %w", err)
 			}
-			return client.Payments.Refund(ctx, rail0Id,
-				rail0.SubmitTransactionRequest{SignedTransaction: signedTx})
+			return submitThenWait(ctx, client, rail0Id, "refund", func() (any, error) {
+				return client.Payments.Refund(ctx, rail0Id,
+					rail0.SubmitTransactionRequest{SignedTransaction: signedTx})
+			})
 		})
 	},
 }
@@ -731,7 +752,7 @@ Pass --private-key (-p): the CLI signs locally with the payer key and broadcasts
 				return err
 			}
 		}
-		return ui.RunAPIWithMessage("Opening dispute…", func() (any, error) {
+		return ui.RunAPIWithMessage(actionLabel("Opening dispute…"), func() (any, error) {
 			if err := ensureSignerFor(ctx, client, rail0Id, signingKey, "dispute"); err != nil {
 				return nil, err
 			}
@@ -743,8 +764,10 @@ Pass --private-key (-p): the CLI signs locally with the payer key and broadcasts
 			if err != nil {
 				return nil, fmt.Errorf("sign: %w", err)
 			}
-			return client.Payments.Dispute(ctx, rail0Id,
-				rail0.SubmitTransactionRequest{SignedTransaction: signedTx})
+			return submitThenWait(ctx, client, rail0Id, "dispute", func() (any, error) {
+				return client.Payments.Dispute(ctx, rail0Id,
+					rail0.SubmitTransactionRequest{SignedTransaction: signedTx})
+			})
 		})
 	},
 }
@@ -775,7 +798,7 @@ var paymentsDisputeCloseCmd = &cobra.Command{
 				return err
 			}
 		}
-		return ui.RunAPIWithMessage("Closing dispute…", func() (any, error) {
+		return ui.RunAPIWithMessage(actionLabel("Closing dispute…"), func() (any, error) {
 			if err := ensureSignerFor(ctx, client, rail0Id, signingKey, "close dispute"); err != nil {
 				return nil, err
 			}
@@ -787,8 +810,10 @@ var paymentsDisputeCloseCmd = &cobra.Command{
 			if err != nil {
 				return nil, fmt.Errorf("sign: %w", err)
 			}
-			return client.Payments.CloseDispute(ctx, rail0Id,
-				rail0.SubmitTransactionRequest{SignedTransaction: signedTx})
+			return submitThenWait(ctx, client, rail0Id, "close_dispute", func() (any, error) {
+				return client.Payments.CloseDispute(ctx, rail0Id,
+					rail0.SubmitTransactionRequest{SignedTransaction: signedTx})
+			})
 		})
 	},
 }
@@ -857,36 +882,47 @@ func init() {
 
 	// payments authorize
 	addSigningFlags(paymentsAuthorizeCmd, &authorizePrivateKey)
+	addWaitFlags(paymentsAuthorizeCmd)
 	paymentsCmd.AddCommand(paymentsAuthorizeCmd)
 
 	// payments charge
 	addSigningFlags(paymentsChargeCmd, &chargePrivateKey)
+	addWaitFlags(paymentsChargeCmd)
 	paymentsCmd.AddCommand(paymentsChargeCmd)
 
 	// payments capture
 	paymentsCaptureCmd.Flags().StringVarP(&captureAmount, "amount", "a", "",
 		"Amount to capture as a decimal in token units (e.g. 1.00); > 0 and ≤ capturable")
 	addSigningFlags(paymentsCaptureCmd, &capturePrivateKey)
+	addWaitFlags(paymentsCaptureCmd)
 	paymentsCmd.AddCommand(paymentsCaptureCmd)
 
 	// payments void
 	addSigningFlags(paymentsVoidCmd, &voidPrivateKey)
+	addWaitFlags(paymentsVoidCmd)
+	addYesFlag(paymentsVoidCmd)
 	paymentsCmd.AddCommand(paymentsVoidCmd)
 
 	// payments release
 	addSigningFlags(paymentsReleaseCmd, &releasePrivateKey)
+	addWaitFlags(paymentsReleaseCmd)
+	addYesFlag(paymentsReleaseCmd)
 	paymentsCmd.AddCommand(paymentsReleaseCmd)
 
 	// payments refund
 	paymentsRefundCmd.Flags().StringVarP(&refundAmount, "amount", "a", "",
 		"Amount to refund as a decimal in token units (e.g. 1.00); > 0 and ≤ refundable")
 	addSigningFlags(paymentsRefundCmd, &refundPrivateKey)
+	addWaitFlags(paymentsRefundCmd)
+	addYesFlag(paymentsRefundCmd)
 	paymentsCmd.AddCommand(paymentsRefundCmd)
 
 	// payments dispute / dispute close / disputes
 	addSigningFlags(paymentsDisputeCmd, &disputePrivateKey)
+	addWaitFlags(paymentsDisputeCmd)
 	paymentsDisputeCmd.Flags().StringVar(&disputeReason, "reason", "", "bytes32 reason code (0x…); defaults to zero")
 	addSigningFlags(paymentsDisputeCloseCmd, &closeDisputePrivateKey)
+	addWaitFlags(paymentsDisputeCloseCmd)
 	paymentsDisputeCloseCmd.Flags().StringVar(&closeDisputeReason, "reason", "", "bytes32 reason code (0x…); defaults to zero")
 	paymentsDisputeCmd.AddCommand(paymentsDisputeCloseCmd)
 	paymentsCmd.AddCommand(paymentsDisputeCmd)

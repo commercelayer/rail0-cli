@@ -111,6 +111,9 @@ var keysRemoveCmd = &cobra.Command{
 		if !slices.Contains(cfg.Keys, name) {
 			return fmt.Errorf("unknown key %q", name)
 		}
+		if err := confirmDestructive(fmt.Sprintf("Remove signing key %q from the OS keychain? This cannot be undone.", name)); err != nil {
+			return err
+		}
 		if err := keyring.Delete(keyringService, name); err != nil && !errors.Is(err, keyring.ErrNotFound) {
 			return fmt.Errorf("could not remove the key from the OS keychain: %w", err)
 		}
@@ -177,5 +180,8 @@ func promptSecret(label string) (string, error) {
 }
 
 func init() {
+	addYesFlag(keysRemoveCmd)
+	keysRemoveCmd.ValidArgsFunction = completeKeyNames
+	keysAddressCmd.ValidArgsFunction = completeKeyNames
 	keysCmd.AddCommand(keysAddCmd, keysRemoveCmd, keysAddressCmd)
 }

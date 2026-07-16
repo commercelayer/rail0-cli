@@ -44,6 +44,21 @@ Manual build (no alias) is still just `go build -o rail0 . && mv rail0 /usr/loca
 
 ---
 
+## Shell completion
+
+Generate a completion script for your shell (see `rail0 completion --help` for the
+per-shell install path):
+
+```sh
+rail0 completion zsh  > "${fpath[1]}/_rail0"          # zsh
+rail0 completion bash > /etc/bash_completion.d/rail0  # bash
+rail0 completion fish > ~/.config/fish/completions/rail0.fish
+```
+
+Beyond commands and flags, `keys rm` / `keys address` complete the saved key names.
+
+---
+
 ## Configuration
 
 Set the gateway endpoint and credentials via flags, environment variables, or the
@@ -181,6 +196,21 @@ Every on-chain action command (`authorize`, `charge`, `capture`, `void`, `releas
 | Flag | Short | Description |
 |------|-------|-------------|
 | `--private-key` | `-p` | Caller's secp256k1 private key: 0x-prefixed hex, or `@name` for a key saved in the OS keychain (`rail0 keys add`) |
+| `--wait` | `-w` | Block until the operation confirms on-chain (or fails) instead of returning at the `202` |
+| `--timeout` | — | Max time to wait with `--wait` (default `2m`) |
+| `--yes` | `-y` | Skip the confirmation prompt on the irreversible ops (`void`/`release`/`refund`); required to run them non-interactively |
+
+**Waiting for confirmation.** The gateway returns `202` immediately and the indexer
+confirms the on-chain event a moment later. Pass `--wait` to have the command poll
+until the operation's transaction is `confirmed` (then print the settled payment)
+or `failed`, instead of polling `payments get` by hand. You can also wait on an
+existing payment: `rail0 payments wait <rail0Id> [--until <status>]` (default: until
+no transaction is still in flight).
+
+**Confirmations.** The irreversible actions (`void`, `release`, `refund`) prompt for
+a `y/N` confirmation before broadcasting; pass `--yes` to skip it (and to run them
+in a non-interactive shell, where they otherwise refuse). `keys rm` and
+`wallets delete` confirm the same way.
 
 The signing key is resolved in this order: `--private-key` (`-p` / `--pk`, where `@name` pulls the key from the OS keychain) > `RAIL0_PRIVATE_KEY` env var. If none is set, the CLI prompts for the key **hidden** on a terminal (or reads one line from a piped stdin), so it never lands in the shell history or process arguments — the same masked input as `keys add`.
 

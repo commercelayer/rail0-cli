@@ -1,0 +1,62 @@
+.nh
+.TH "RAIL0" "1" "Jul 2026" "rail0 CLI" ""
+
+.SH NAME
+rail0-payments-transactions - List on-chain transactions for a payment
+
+
+.SH SYNOPSIS
+\fBrail0 payments transactions  [flags]\fP
+
+
+.SH DESCRIPTION
+List on-chain transactions for a payment
+
+
+.SH OPTIONS
+\fB-h\fP, \fB--help\fP[=false]
+	help for transactions
+
+.PP
+\fB--page\fP=0
+	Page number (1-based)
+
+.PP
+\fB--per-page\fP=0
+	Results per page
+
+.PP
+\fB--sort\fP=""
+	Sort fields (e.g. -submitted_at,operation)
+
+
+.SH OPTIONS INHERITED FROM PARENT COMMANDS
+\fB--base-url\fP=""
+	RAIL0 gateway base URL (env: RAIL0_BASE_URL)
+
+.PP
+\fB--debug\fP[=false]
+	Print HTTP request/response details to stderr
+
+.PP
+\fB--json\fP[=false]
+	Force plain (uncolored) JSON output (useful in scripts)
+
+.PP
+\fB--pretty\fP[=false]
+	Use the key-value/table view instead of JSON (terminal only)
+
+.PP
+\fB-q\fP, \fB--quiet\fP[=false]
+	Print only the result's id/hash, one per line (useful in scripts)
+
+
+.SH EXAMPLE
+.EX
+  rail0 payments transactions 0xabc123…
+  rail0 payments transactions 0xabc123… --sort -submitted_at
+.EE
+
+
+.SH SEE ALSO
+\fBrail0-payments(1)\fP

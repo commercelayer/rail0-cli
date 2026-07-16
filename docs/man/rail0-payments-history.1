@@ -1,0 +1,58 @@
+.nh
+.TH "RAIL0" "1" "Jul 2026" "rail0 CLI" ""
+
+.SH NAME
+rail0-payments-history - Show a payment's chronological history
+
+
+.SH SYNOPSIS
+\fBrail0 payments history  [flags]\fP
+
+
+.SH DESCRIPTION
+Print the timeline of everything that happened to a payment since it was
+created: the created and signed milestones and every on-chain transaction
+(authorize/capture/void/release/refund/dispute/close_dispute), oldest first.
+Only the most significant fields are shown per entry (time, event, status,
+amount, tx hash, block).
+
+.PP
+The argument is a UUID or a rail0_id (0x…, 64 hex). Requires login — the
+timeline is readable only by the payment's payer or payee.
+
+
+.SH OPTIONS
+\fB-h\fP, \fB--help\fP[=false]
+	help for history
+
+
+.SH OPTIONS INHERITED FROM PARENT COMMANDS
+\fB--base-url\fP=""
+	RAIL0 gateway base URL (env: RAIL0_BASE_URL)
+
+.PP
+\fB--debug\fP[=false]
+	Print HTTP request/response details to stderr
+
+.PP
+\fB--json\fP[=false]
+	Force plain (uncolored) JSON output (useful in scripts)
+
+.PP
+\fB--pretty\fP[=false]
+	Use the key-value/table view instead of JSON (terminal only)
+
+.PP
+\fB-q\fP, \fB--quiet\fP[=false]
+	Print only the result's id/hash, one per line (useful in scripts)
+
+
+.SH EXAMPLE
+.EX
+  rail0 payments history 0xabc123…
+  rail0 payments history 019e748b-…
+.EE
+
+
+.SH SEE ALSO
+\fBrail0-payments(1)\fP

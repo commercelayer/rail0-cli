@@ -1,0 +1,57 @@
+.nh
+.TH "RAIL0" "1" "Jul 2026" "rail0 CLI" ""
+
+.SH NAME
+rail0-wallets-update - Update label or active status on a wallet (by id or 0x address)
+
+
+.SH SYNOPSIS
+\fBrail0 wallets update  [flags]\fP
+
+
+.SH DESCRIPTION
+Update label or active status on a wallet (by id or 0x address)
+
+
+.SH OPTIONS
+\fB--active\fP=""
+	Set active flag ('true' or 'false')
+
+.PP
+\fB-h\fP, \fB--help\fP[=false]
+	help for update
+
+.PP
+\fB-l\fP, \fB--label\fP=""
+	New wallet label
+
+
+.SH OPTIONS INHERITED FROM PARENT COMMANDS
+\fB--base-url\fP=""
+	RAIL0 gateway base URL (env: RAIL0_BASE_URL)
+
+.PP
+\fB--debug\fP[=false]
+	Print HTTP request/response details to stderr
+
+.PP
+\fB--json\fP[=false]
+	Force plain (uncolored) JSON output (useful in scripts)
+
+.PP
+\fB--pretty\fP[=false]
+	Use the key-value/table view instead of JSON (terminal only)
+
+.PP
+\fB-q\fP, \fB--quiet\fP[=false]
+	Print only the result's id/hash, one per line (useful in scripts)
+
+
+.SH EXAMPLE
+.EX
+  rail0 wallets update 0xABCD… --label "New label" --active true
+.EE
+
+
+.SH SEE ALSO
+\fBrail0-wallets(1)\fP

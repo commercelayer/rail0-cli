@@ -1,0 +1,62 @@
+.nh
+.TH "RAIL0" "1" "Jul 2026" "rail0 CLI" ""
+
+.SH NAME
+rail0-wallets-balances - Read a wallet's live on-chain balances (by id or 0x address)
+
+
+.SH SYNOPSIS
+\fBrail0 wallets balances  [flags]\fP
+
+
+.SH DESCRIPTION
+Read a wallet's live on-chain balances across the configured chains.
+
+.PP
+Each chain reports the native gas-token balance and the active token balances,
+or an error if that chain's RPC was unreachable (reported per chain, so one dead
+RPC never hides the others). Use --chain-id / --symbol to narrow the result.
+
+
+.SH OPTIONS
+\fB--chain-id\fP=0
+	Restrict to one chain id
+
+.PP
+\fB-h\fP, \fB--help\fP[=false]
+	help for balances
+
+.PP
+\fB-s\fP, \fB--symbol\fP=""
+	Restrict tokens to this symbol, e.g. USDC (alias: --token)
+
+
+.SH OPTIONS INHERITED FROM PARENT COMMANDS
+\fB--base-url\fP=""
+	RAIL0 gateway base URL (env: RAIL0_BASE_URL)
+
+.PP
+\fB--debug\fP[=false]
+	Print HTTP request/response details to stderr
+
+.PP
+\fB--json\fP[=false]
+	Force plain (uncolored) JSON output (useful in scripts)
+
+.PP
+\fB--pretty\fP[=false]
+	Use the key-value/table view instead of JSON (terminal only)
+
+.PP
+\fB-q\fP, \fB--quiet\fP[=false]
+	Print only the result's id/hash, one per line (useful in scripts)
+
+
+.SH EXAMPLE
+.EX
+  rail0 wallets balances 0xABCD… --chain-id 84532 --symbol USDC
+.EE
+
+
+.SH SEE ALSO
+\fBrail0-wallets(1)\fP

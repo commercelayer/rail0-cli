@@ -1,0 +1,49 @@
+.nh
+.TH "RAIL0" "1" "Jul 2026" "rail0 CLI" ""
+
+.SH NAME
+rail0-webhooks - Webhook subscription management (requires login)
+
+
+.SH SYNOPSIS
+\fBrail0 webhooks [flags]\fP
+
+
+.SH DESCRIPTION
+Manage webhook subscriptions for the authenticated account.
+
+.PP
+A webhook subscribes to exactly one payment-lifecycle topic (e.g.
+payments.captured) and delivers a signed callback to your endpoint. The
+shared secret used to verify delivery signatures is returned only once, on
+create and rotate-secret.
+
+
+.SH OPTIONS
+\fB-h\fP, \fB--help\fP[=false]
+	help for webhooks
+
+
+.SH OPTIONS INHERITED FROM PARENT COMMANDS
+\fB--base-url\fP=""
+	RAIL0 gateway base URL (env: RAIL0_BASE_URL)
+
+.PP
+\fB--debug\fP[=false]
+	Print HTTP request/response details to stderr
+
+.PP
+\fB--json\fP[=false]
+	Force plain (uncolored) JSON output (useful in scripts)
+
+.PP
+\fB--pretty\fP[=false]
+	Use the key-value/table view instead of JSON (terminal only)
+
+.PP
+\fB-q\fP, \fB--quiet\fP[=false]
+	Print only the result's id/hash, one per line (useful in scripts)
+
+
+.SH SEE ALSO
+\fBrail0(1)\fP, \fBrail0-webhooks-create(1)\fP, \fBrail0-webhooks-delete(1)\fP, \fBrail0-webhooks-disable(1)\fP, \fBrail0-webhooks-enable(1)\fP, \fBrail0-webhooks-event-callbacks(1)\fP, \fBrail0-webhooks-get(1)\fP, \fBrail0-webhooks-list(1)\fP, \fBrail0-webhooks-reset-circuit(1)\fP, \fBrail0-webhooks-rotate-secret(1)\fP, \fBrail0-webhooks-update(1)\fP

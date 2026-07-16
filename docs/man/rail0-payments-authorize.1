@@ -1,0 +1,78 @@
+.nh
+.TH "RAIL0" "1" "Jul 2026" "rail0 CLI" ""
+
+.SH NAME
+rail0-payments-authorize - Authorize a payment (prepare, sign, and broadcast)
+
+
+.SH SYNOPSIS
+\fBrail0 payments authorize  [flags]\fP
+
+
+.SH DESCRIPTION
+Prepare the transaction that calls authorize() on the RAIL0 contract,
+pulling funds from the payer into escrow.
+
+.PP
+The payer must have created and signed the payment first via
+\&'payments create -p' (create + sign in one atomic step).
+The API returns 202 immediately. The payment stays at "signed" until
+rail0-indexer confirms the on-chain event and the API transitions it to
+"authorized". Poll 'payments get \&' until payment=authorized
+and the authorize transaction shows confirmed.
+
+.PP
+Pass --private-key (-p): the CLI signs locally and broadcasts in one step.
+
+
+.SH OPTIONS
+\fB-h\fP, \fB--help\fP[=false]
+	help for authorize
+
+.PP
+\fB-p\fP, \fB--private-key\fP=""
+	Caller's secp256k1 private key (0x-prefixed hex); signs and broadcasts in one step
+
+.PP
+\fB--timeout\fP=2m0s
+	Max time to wait when --wait is set
+
+.PP
+\fB-w\fP, \fB--wait\fP[=false]
+	Block until the operation confirms on-chain (or fails)
+
+
+.SH OPTIONS INHERITED FROM PARENT COMMANDS
+\fB--base-url\fP=""
+	RAIL0 gateway base URL (env: RAIL0_BASE_URL)
+
+.PP
+\fB--debug\fP[=false]
+	Print HTTP request/response details to stderr
+
+.PP
+\fB--json\fP[=false]
+	Force plain (uncolored) JSON output (useful in scripts)
+
+.PP
+\fB--pretty\fP[=false]
+	Use the key-value/table view instead of JSON (terminal only)
+
+.PP
+\fB-q\fP, \fB--quiet\fP[=false]
+	Print only the result's id/hash, one per line (useful in scripts)
+
+
+.SH EXAMPLE
+.EX
+  # 1. Payer creates and signs the payment in one step
+  rail0 payments create --from 0xBuyer… --to 0xMerchant… \\
+    --token 0x3600… --amount 1.00 --chain-id 5042002 -p 0xPayerKey…
+
+  # 2. Payee authorizes
+  rail0 payments authorize <rail0Id> -p 0xPayeeKey…
+.EE
+
+
+.SH SEE ALSO
+\fBrail0-payments(1)\fP

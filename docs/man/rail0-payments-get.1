@@ -1,0 +1,69 @@
+.nh
+.TH "RAIL0" "1" "Jul 2026" "rail0 CLI" ""
+
+.SH NAME
+rail0-payments-get - Fetch the current state of a payment
+
+
+.SH SYNOPSIS
+\fBrail0 payments get  [flags]\fP
+
+
+.SH DESCRIPTION
+Fetch a payment's current status from the RAIL0 gateway together with live
+on-chain balances (capturableAmount, refundableAmount) when the payment
+is in an active on-chain state.
+
+.PP
+Requires login — a payment is readable only by its payer or payee. Run
+\&'rail0 auth login -p 0xKey…' first (any wallet can log in, no account needed).
+
+.PP
+Status values:
+  unsigned   — created, payer signature not yet submitted
+  signed              — payer signature stored, awaiting payee action
+  authorized          — funds held in escrow, capture available
+  charged             — one-shot charge executed, refund available
+  captured            — funds fully captured by payee
+  partially_captured  — partial capture executed; remaining escrow still capturable
+  voided              — authorization cancelled (only before any capture), funds returned to payer
+  released            — full authorization released back to payer (total release, nothing captured)
+  refunded            — payment fully settled by refund (escrow and refundable both drained)
+  partially_refunded  — legacy; no longer produced (a partial refund leaves the status unchanged)
+  failed              — terminal failure; payment cannot proceed
+
+
+.SH OPTIONS
+\fB-h\fP, \fB--help\fP[=false]
+	help for get
+
+
+.SH OPTIONS INHERITED FROM PARENT COMMANDS
+\fB--base-url\fP=""
+	RAIL0 gateway base URL (env: RAIL0_BASE_URL)
+
+.PP
+\fB--debug\fP[=false]
+	Print HTTP request/response details to stderr
+
+.PP
+\fB--json\fP[=false]
+	Force plain (uncolored) JSON output (useful in scripts)
+
+.PP
+\fB--pretty\fP[=false]
+	Use the key-value/table view instead of JSON (terminal only)
+
+.PP
+\fB-q\fP, \fB--quiet\fP[=false]
+	Print only the result's id/hash, one per line (useful in scripts)
+
+
+.SH EXAMPLE
+.EX
+  rail0 payments get 0xabc123…
+.EE
+
+
+.SH SEE ALSO
+\fBrail0-payments(1)\fP

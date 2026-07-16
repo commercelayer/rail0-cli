@@ -1,0 +1,64 @@
+.nh
+.TH "RAIL0" "1" "Jul 2026" "rail0 CLI" ""
+
+.SH NAME
+rail0-payment-methods - Discover a merchant's accepted wallets/tokens (public, no login)
+
+
+.SH SYNOPSIS
+\fBrail0 payment-methods [flags]\fP
+
+
+.SH DESCRIPTION
+List a merchant's active payment methods: its active wallets, each with the
+active tokens (and chains) it accepts.
+
+.PP
+Public — no login required. Identify the merchant with exactly one of --account
+(all its active wallets) or --address (just that one wallet; accepts an @alias).
+
+
+.SH OPTIONS
+\fB--account\fP=""
+	Merchant account id — list all its active wallets
+
+.PP
+\fB-A\fP, \fB--address\fP=""
+	A merchant wallet address (0x… or @alias) — list just that wallet
+
+.PP
+\fB-h\fP, \fB--help\fP[=false]
+	help for payment-methods
+
+
+.SH OPTIONS INHERITED FROM PARENT COMMANDS
+\fB--base-url\fP=""
+	RAIL0 gateway base URL (env: RAIL0_BASE_URL)
+
+.PP
+\fB--debug\fP[=false]
+	Print HTTP request/response details to stderr
+
+.PP
+\fB--json\fP[=false]
+	Force plain (uncolored) JSON output (useful in scripts)
+
+.PP
+\fB--pretty\fP[=false]
+	Use the key-value/table view instead of JSON (terminal only)
+
+.PP
+\fB-q\fP, \fB--quiet\fP[=false]
+	Print only the result's id/hash, one per line (useful in scripts)
+
+
+.SH EXAMPLE
+.EX
+  rail0 payment-methods --account 019e748b-…
+  rail0 payment-methods --address 0xABCD…
+  rail0 payment-methods --address @payee
+.EE
+
+
+.SH SEE ALSO
+\fBrail0(1)\fP

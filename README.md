@@ -45,6 +45,13 @@ Manual build (no alias) is still just `go build -o rail0 . && mv rail0 /usr/loca
 Check the installed version with `rail0 version` (or `rail0 --version`); `bin/build`
 stamps it from `git describe`.
 
+### Reference docs
+
+`bin/docs` regenerates the full command reference straight from the command tree —
+Markdown in `docs/cli/` (for a docs site) and man pages in `docs/man/`. Run it after
+changing any command, flag, or help text. The generator lives in `tools/gendocs`, so
+its doc dependencies never enter the shipped binary.
+
 ---
 
 ## Shell completion

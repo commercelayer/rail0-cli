@@ -1,0 +1,59 @@
+.nh
+.TH "RAIL0" "1" "Jul 2026" "rail0 CLI" ""
+
+.SH NAME
+rail0-tokens - List supported tokens (symbols used in --token)
+
+
+.SH SYNOPSIS
+\fBrail0 tokens [flags]\fP
+
+
+.SH DESCRIPTION
+List supported tokens (symbols used in --token)
+
+
+.SH OPTIONS
+\fB-c\fP, \fB--chain-id\fP=0
+	Filter by EVM chain ID (e.g. 5042002)
+
+.PP
+\fB-h\fP, \fB--help\fP[=false]
+	help for tokens
+
+.PP
+\fB-s\fP, \fB--symbol\fP=""
+	Filter by token symbol (case-insensitive, e.g. USDC)
+
+
+.SH OPTIONS INHERITED FROM PARENT COMMANDS
+\fB--base-url\fP=""
+	RAIL0 gateway base URL (env: RAIL0_BASE_URL)
+
+.PP
+\fB--debug\fP[=false]
+	Print HTTP request/response details to stderr
+
+.PP
+\fB--json\fP[=false]
+	Force plain (uncolored) JSON output (useful in scripts)
+
+.PP
+\fB--pretty\fP[=false]
+	Use the key-value/table view instead of JSON (terminal only)
+
+.PP
+\fB-q\fP, \fB--quiet\fP[=false]
+	Print only the result's id/hash, one per line (useful in scripts)
+
+
+.SH EXAMPLE
+.EX
+  rail0 tokens
+  rail0 tokens --chain-id 5042002
+  rail0 tokens --symbol USDC
+.EE
+
+
+.SH SEE ALSO
+\fBrail0(1)\fP

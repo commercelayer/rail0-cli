@@ -1,0 +1,75 @@
+.nh
+.TH "RAIL0" "1" "Jul 2026" "rail0 CLI" ""
+
+.SH NAME
+rail0-webhooks-event-callbacks - List delivery attempts for a webhook
+
+
+.SH SYNOPSIS
+\fBrail0 webhooks event-callbacks  [flags]\fP
+
+
+.SH DESCRIPTION
+List delivery attempts for a webhook
+
+
+.SH OPTIONS
+\fB-h\fP, \fB--help\fP[=false]
+	help for event-callbacks
+
+.PP
+\fB--payment-id\fP=""
+	Filter by the payment the delivery is for
+
+.PP
+\fB--since\fP=""
+	Only deliveries at/after this ISO-8601 time
+
+.PP
+\fB--sort\fP=""
+	Sort fields (e.g. -created_at)
+
+.PP
+\fB--status\fP=""
+	Filter by delivery status ('pending', 'delivered', 'failed')
+
+.PP
+\fB--topic\fP=""
+	Filter by event topic (e.g. payments.captured)
+
+.PP
+\fB--until\fP=""
+	Only deliveries at/before this ISO-8601 time
+
+
+.SH OPTIONS INHERITED FROM PARENT COMMANDS
+\fB--base-url\fP=""
+	RAIL0 gateway base URL (env: RAIL0_BASE_URL)
+
+.PP
+\fB--debug\fP[=false]
+	Print HTTP request/response details to stderr
+
+.PP
+\fB--json\fP[=false]
+	Force plain (uncolored) JSON output (useful in scripts)
+
+.PP
+\fB--pretty\fP[=false]
+	Use the key-value/table view instead of JSON (terminal only)
+
+.PP
+\fB-q\fP, \fB--quiet\fP[=false]
+	Print only the result's id/hash, one per line (useful in scripts)
+
+
+.SH EXAMPLE
+.EX
+  rail0 webhooks event-callbacks whk_abc123 --status failed
+  rail0 webhooks event-callbacks whk_abc123 --topic payments.captured
+  rail0 webhooks event-callbacks whk_abc123 --payment-id 0x… --since 2026-01-01T00:00:00Z
+.EE
+
+
+.SH SEE ALSO
+\fBrail0-webhooks(1)\fP

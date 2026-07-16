@@ -39,6 +39,11 @@ func Execute() {
 	}
 }
 
+// Root exposes the assembled command tree so out-of-band tools (bin/docs, which
+// generates the CLI reference) can walk it — keeping the doc-generation
+// dependencies out of the shipped binary, which never imports them.
+func Root() *cobra.Command { return rootCmd }
+
 func init() {
 	rootCmd.PersistentFlags().StringVar(&baseURL, "base-url", "", "RAIL0 gateway base URL (env: RAIL0_BASE_URL)")
 	rootCmd.PersistentFlags().BoolVar(&debug, "debug", false, "Print HTTP request/response details to stderr")

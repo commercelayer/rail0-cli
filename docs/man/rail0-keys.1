@@ -1,0 +1,61 @@
+.nh
+.TH "RAIL0" "1" "Jul 2026" "rail0 CLI" ""
+
+.SH NAME
+rail0-keys - Manage signing keys in the OS keychain (lists names when run bare)
+
+
+.SH SYNOPSIS
+\fBrail0 keys [flags]\fP
+
+
+.SH DESCRIPTION
+Save signing keys in the OS keychain and reference them as "@name" on the
+--private-key flag (e.g. 'rail0 payments create -p @payer'), instead of pasting
+a raw key or exporting RAIL0_PRIVATE_KEY.
+
+.PP
+The secret never touches the config file or your shell history — only the key
+names are tracked locally so they can be listed. Backends: macOS Keychain,
+Windows Credential Manager, Linux Secret Service. On a system without one (e.g.
+headless Linux) these commands return an error; use --private-key /
+RAIL0_PRIVATE_KEY there.
+
+
+.SH OPTIONS
+\fB-h\fP, \fB--help\fP[=false]
+	help for keys
+
+
+.SH OPTIONS INHERITED FROM PARENT COMMANDS
+\fB--base-url\fP=""
+	RAIL0 gateway base URL (env: RAIL0_BASE_URL)
+
+.PP
+\fB--debug\fP[=false]
+	Print HTTP request/response details to stderr
+
+.PP
+\fB--json\fP[=false]
+	Force plain (uncolored) JSON output (useful in scripts)
+
+.PP
+\fB--pretty\fP[=false]
+	Use the key-value/table view instead of JSON (terminal only)
+
+.PP
+\fB-q\fP, \fB--quiet\fP[=false]
+	Print only the result's id/hash, one per line (useful in scripts)
+
+
+.SH EXAMPLE
+.EX
+  rail0 keys add payer
+  rail0 payments create -p @payer …
+  rail0 keys
+  rail0 keys rm payer
+.EE
+
+
+.SH SEE ALSO
+\fBrail0(1)\fP, \fBrail0-keys-add(1)\fP, \fBrail0-keys-address(1)\fP, \fBrail0-keys-rm(1)\fP

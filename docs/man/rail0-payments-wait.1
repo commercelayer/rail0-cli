@@ -1,0 +1,62 @@
+.nh
+.TH "RAIL0" "1" "Jul 2026" "rail0 CLI" ""
+
+.SH NAME
+rail0-payments-wait - Block until a payment settles (or reaches a given status)
+
+
+.SH SYNOPSIS
+\fBrail0 payments wait  [flags]\fP
+
+
+.SH DESCRIPTION
+Poll a payment until it settles, then print its final state.
+
+.PP
+By default it waits until no transaction is still in flight (pending/submitted).
+With --until it instead waits for a specific payment status.
+
+
+.SH OPTIONS
+\fB-h\fP, \fB--help\fP[=false]
+	help for wait
+
+.PP
+\fB--timeout\fP=2m0s
+	Max time to wait
+
+.PP
+\fB--until\fP=""
+	Wait until the payment reaches this status (e.g. captured, refunded)
+
+
+.SH OPTIONS INHERITED FROM PARENT COMMANDS
+\fB--base-url\fP=""
+	RAIL0 gateway base URL (env: RAIL0_BASE_URL)
+
+.PP
+\fB--debug\fP[=false]
+	Print HTTP request/response details to stderr
+
+.PP
+\fB--json\fP[=false]
+	Force plain (uncolored) JSON output (useful in scripts)
+
+.PP
+\fB--pretty\fP[=false]
+	Use the key-value/table view instead of JSON (terminal only)
+
+.PP
+\fB-q\fP, \fB--quiet\fP[=false]
+	Print only the result's id/hash, one per line (useful in scripts)
+
+
+.SH EXAMPLE
+.EX
+  rail0 payments wait 0xrail0Id…
+  rail0 payments wait 0xrail0Id… --until captured
+.EE
+
+
+.SH SEE ALSO
+\fBrail0-payments(1)\fP

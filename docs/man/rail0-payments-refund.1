@@ -1,0 +1,90 @@
+.nh
+.TH "RAIL0" "1" "Jul 2026" "rail0 CLI" ""
+
+.SH NAME
+rail0-payments-refund - Refund a payment (prepare, sign, and broadcast)
+
+
+.SH SYNOPSIS
+\fBrail0 payments refund  [flags]\fP
+
+
+.SH DESCRIPTION
+Prepare the transaction that calls refund() on the RAIL0 contract,
+pulling refundAmount from the payee and returning it to the payer.
+
+.PP
+The payment must be in 'charged', 'captured', or 'partially_captured' status
+with a positive refundableAmount. Partial refunds are supported: pass --amount
+less than refundableAmount.
+
+.PP
+No separate approval step is needed: the CLI signs the payee's EIP-3009
+ReceiveWithAuthorization payload locally with the same key, so the refund
+funds are pulled from the payee without a prior allowance grant.
+The API returns 202 immediately; poll 'payments get \&'. The status
+advances to "refunded" only when the payment is fully settled (both escrow and
+refundable drained); a partial refund leaves the status unchanged.
+
+.PP
+Pass --private-key (-p): the CLI signs locally and broadcasts in one step.
+
+
+.SH OPTIONS
+\fB-a\fP, \fB--amount\fP=""
+	Amount to refund as a decimal in token units (e.g. 1.00); > 0 and ≤ refundable
+
+.PP
+\fB-h\fP, \fB--help\fP[=false]
+	help for refund
+
+.PP
+\fB-p\fP, \fB--private-key\fP=""
+	Caller's secp256k1 private key (0x-prefixed hex); signs and broadcasts in one step
+
+.PP
+\fB--timeout\fP=2m0s
+	Max time to wait when --wait is set
+
+.PP
+\fB-w\fP, \fB--wait\fP[=false]
+	Block until the operation confirms on-chain (or fails)
+
+.PP
+\fB-y\fP, \fB--yes\fP[=false]
+	Skip the confirmation prompt (required to run non-interactively)
+
+
+.SH OPTIONS INHERITED FROM PARENT COMMANDS
+\fB--base-url\fP=""
+	RAIL0 gateway base URL (env: RAIL0_BASE_URL)
+
+.PP
+\fB--debug\fP[=false]
+	Print HTTP request/response details to stderr
+
+.PP
+\fB--json\fP[=false]
+	Force plain (uncolored) JSON output (useful in scripts)
+
+.PP
+\fB--pretty\fP[=false]
+	Use the key-value/table view instead of JSON (terminal only)
+
+.PP
+\fB-q\fP, \fB--quiet\fP[=false]
+	Print only the result's id/hash, one per line (useful in scripts)
+
+
+.SH EXAMPLE
+.EX
+  # Full refund
+  rail0 payments refund 0xrail0Id… --amount 1.00 -p 0xPayeeKey…
+
+  # Partial refund
+  rail0 payments refund 0xrail0Id… --amount 0.25 -p 0xPayeeKey…
+.EE
+
+
+.SH SEE ALSO
+\fBrail0-payments(1)\fP

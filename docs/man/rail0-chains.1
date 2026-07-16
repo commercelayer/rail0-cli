@@ -1,0 +1,65 @@
+.nh
+.TH "RAIL0" "1" "Jul 2026" "rail0 CLI" ""
+
+.SH NAME
+rail0-chains - List supported blockchains (chain IDs used in --chain-id)
+
+
+.SH SYNOPSIS
+\fBrail0 chains [flags]\fP
+
+
+.SH DESCRIPTION
+List the blockchains supported by the environment.
+
+.PP
+Filter with --symbol (the chain's native symbol, e.g. ETH / USDC / CELO) and/or
+--network-type (testnet | mainnet). Both match case-insensitively; combine them
+to narrow further.
+
+
+.SH OPTIONS
+\fB-h\fP, \fB--help\fP[=false]
+	help for chains
+
+.PP
+\fB-n\fP, \fB--network-type\fP=""
+	Filter by network type: testnet or mainnet
+
+.PP
+\fB-s\fP, \fB--symbol\fP=""
+	Filter by native symbol (e.g. ETH, USDC, CELO)
+
+
+.SH OPTIONS INHERITED FROM PARENT COMMANDS
+\fB--base-url\fP=""
+	RAIL0 gateway base URL (env: RAIL0_BASE_URL)
+
+.PP
+\fB--debug\fP[=false]
+	Print HTTP request/response details to stderr
+
+.PP
+\fB--json\fP[=false]
+	Force plain (uncolored) JSON output (useful in scripts)
+
+.PP
+\fB--pretty\fP[=false]
+	Use the key-value/table view instead of JSON (terminal only)
+
+.PP
+\fB-q\fP, \fB--quiet\fP[=false]
+	Print only the result's id/hash, one per line (useful in scripts)
+
+
+.SH EXAMPLE
+.EX
+  rail0 chains
+  rail0 chains --symbol USDC
+  rail0 chains --network-type testnet
+  rail0 chains -s ETH -n mainnet
+.EE
+
+
+.SH SEE ALSO
+\fBrail0(1)\fP

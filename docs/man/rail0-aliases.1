@@ -1,0 +1,57 @@
+.nh
+.TH "RAIL0" "1" "Jul 2026" "rail0 CLI" ""
+
+.SH NAME
+rail0-aliases - Address book — list saved addresses, or manage them with add/rm
+
+
+.SH SYNOPSIS
+\fBrail0 aliases [flags]\fP
+
+
+.SH DESCRIPTION
+Manage a global address book stored in the config file.
+
+.PP
+Run bare to list the saved aliases. Once an alias is set, reference it as
+"@name" on any address flag (--from / --to / --address) instead of pasting a
+raw 0x address.
+
+
+.SH OPTIONS
+\fB-h\fP, \fB--help\fP[=false]
+	help for aliases
+
+
+.SH OPTIONS INHERITED FROM PARENT COMMANDS
+\fB--base-url\fP=""
+	RAIL0 gateway base URL (env: RAIL0_BASE_URL)
+
+.PP
+\fB--debug\fP[=false]
+	Print HTTP request/response details to stderr
+
+.PP
+\fB--json\fP[=false]
+	Force plain (uncolored) JSON output (useful in scripts)
+
+.PP
+\fB--pretty\fP[=false]
+	Use the key-value/table view instead of JSON (terminal only)
+
+.PP
+\fB-q\fP, \fB--quiet\fP[=false]
+	Print only the result's id/hash, one per line (useful in scripts)
+
+
+.SH EXAMPLE
+.EX
+  rail0 aliases
+  rail0 aliases add payee 0xAbC123…
+  rail0 aliases rm payee
+  rail0 wallets alias 0xAbC123… payee
+.EE
+
+
+.SH SEE ALSO
+\fBrail0(1)\fP, \fBrail0-aliases-add(1)\fP, \fBrail0-aliases-rm(1)\fP

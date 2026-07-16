@@ -1,0 +1,90 @@
+.nh
+.TH "RAIL0" "1" "Jul 2026" "rail0 CLI" ""
+
+.SH NAME
+rail0-payments-create - Create a payment and sign it with the payer's key
+
+
+.SH SYNOPSIS
+\fBrail0 payments create [flags]\fP
+
+
+.SH DESCRIPTION
+Create a RAIL0 payment and sign the EIP-3009 payload with the payer's key in
+one step (--private-key / -p). The API stores the signature; the payee can then
+authorize. If --private-key is omitted, the CLI prompts for it (hidden) on a
+terminal — so the key stays out of the shell history and process arguments.
+
+
+.SH OPTIONS
+\fB-a\fP, \fB--amount\fP=""
+	Amount as a decimal in token units (e.g. '1.00' for 1 USDC); the gateway converts to base units
+
+.PP
+\fB-c\fP, \fB--chain-id\fP=0
+	EVM chain ID as listed in GET /blockchains (e.g. 5042002)
+
+.PP
+\fB-C\fP, \fB--charge\fP[=false]
+	Create with mode=charge (immediate transfer, no escrow); default is authorize (escrow then capture)
+
+.PP
+\fB-d\fP, \fB--description\fP=""
+	Optional reconciliation note (e.g. order id / invoice); prompted when omitted on a terminal
+
+.PP
+\fB-F\fP, \fB--from\fP=""
+	Payer wallet address (from) (0x-prefixed, funds are pulled from here)
+
+.PP
+\fB-h\fP, \fB--help\fP[=false]
+	help for create
+
+.PP
+\fB-f\fP, \fB--payment-file\fP=""
+	Path to a JSON file with the full request body (overrides individual flags)
+
+.PP
+\fB-p\fP, \fB--private-key\fP=""
+	Payer's secp256k1 private key (0x-prefixed hex); creates the payment and signs locally
+
+.PP
+\fB-T\fP, \fB--to\fP=""
+	Payee wallet address (to) (0x-prefixed, address from 'wallets')
+
+.PP
+\fB-t\fP, \fB--token\fP=""
+	Token symbol as listed in GET /tokens (e.g. USDC)
+
+
+.SH OPTIONS INHERITED FROM PARENT COMMANDS
+\fB--base-url\fP=""
+	RAIL0 gateway base URL (env: RAIL0_BASE_URL)
+
+.PP
+\fB--debug\fP[=false]
+	Print HTTP request/response details to stderr
+
+.PP
+\fB--json\fP[=false]
+	Force plain (uncolored) JSON output (useful in scripts)
+
+.PP
+\fB--pretty\fP[=false]
+	Use the key-value/table view instead of JSON (terminal only)
+
+.PP
+\fB-q\fP, \fB--quiet\fP[=false]
+	Print only the result's id/hash, one per line (useful in scripts)
+
+
+.SH EXAMPLE
+.EX
+  rail0 payments create \\
+    -F 0xBuyer… -T 0xMerchant… -t USDC -a 10.50 -c 5042002 \\
+    -p 0xPayerKey…
+.EE
+
+
+.SH SEE ALSO
+\fBrail0-payments(1)\fP

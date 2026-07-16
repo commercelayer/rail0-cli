@@ -1,0 +1,82 @@
+.nh
+.TH "RAIL0" "1" "Jul 2026" "rail0 CLI" ""
+
+.SH NAME
+rail0-payments-capture - Capture a payment (prepare, sign, and broadcast)
+
+
+.SH SYNOPSIS
+\fBrail0 payments capture  [flags]\fP
+
+
+.SH DESCRIPTION
+Prepare the transaction that calls capture() on the RAIL0 contract.
+
+.PP
+The payment must be in 'authorized' or 'partially_captured' status.
+Partial captures are supported: pass --amount less than capturableAmount
+to capture a portion; the remaining balance stays available until
+authorizationExpiry.
+The API returns 202 immediately. The payment stays at "authorized" until
+rail0-indexer confirms and the API transitions it to "captured" or
+"partially_captured". Poll 'payments get \&' until the payment
+reaches the expected state and the capture transaction shows confirmed.
+
+.PP
+Pass --private-key (-p): the CLI signs locally and broadcasts in one step.
+
+
+.SH OPTIONS
+\fB-a\fP, \fB--amount\fP=""
+	Amount to capture as a decimal in token units (e.g. 1.00); > 0 and ≤ capturable
+
+.PP
+\fB-h\fP, \fB--help\fP[=false]
+	help for capture
+
+.PP
+\fB-p\fP, \fB--private-key\fP=""
+	Caller's secp256k1 private key (0x-prefixed hex); signs and broadcasts in one step
+
+.PP
+\fB--timeout\fP=2m0s
+	Max time to wait when --wait is set
+
+.PP
+\fB-w\fP, \fB--wait\fP[=false]
+	Block until the operation confirms on-chain (or fails)
+
+
+.SH OPTIONS INHERITED FROM PARENT COMMANDS
+\fB--base-url\fP=""
+	RAIL0 gateway base URL (env: RAIL0_BASE_URL)
+
+.PP
+\fB--debug\fP[=false]
+	Print HTTP request/response details to stderr
+
+.PP
+\fB--json\fP[=false]
+	Force plain (uncolored) JSON output (useful in scripts)
+
+.PP
+\fB--pretty\fP[=false]
+	Use the key-value/table view instead of JSON (terminal only)
+
+.PP
+\fB-q\fP, \fB--quiet\fP[=false]
+	Print only the result's id/hash, one per line (useful in scripts)
+
+
+.SH EXAMPLE
+.EX
+  # Full capture
+  rail0 payments capture 0xrail0Id… --amount 1.00 -p 0xPayeeKey…
+
+  # Partial capture
+  rail0 payments capture 0xrail0Id… --amount 0.50 -p 0xPayeeKey…
+.EE
+
+
+.SH SEE ALSO
+\fBrail0-payments(1)\fP

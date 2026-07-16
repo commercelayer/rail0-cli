@@ -1,0 +1,73 @@
+.nh
+.TH "RAIL0" "1" "Jul 2026" "rail0 CLI" ""
+
+.SH NAME
+rail0-payments-dispute - Open a dispute (payer-submitted, signal-only): prepare, sign, broadcast
+
+
+.SH SYNOPSIS
+\fBrail0 payments dispute  [flags]\fP
+
+
+.SH DESCRIPTION
+Prepare the transaction that calls dispute() on the RAIL0 contract, then
+sign and submit it like any other operation (the gateway broadcasts it).
+
+.PP
+Disputes are payer-driven and signal-only: they move no money. Only the payer
+may dispute, while the refund window is open and the merchant holds the funds.
+
+.PP
+Pass --private-key (-p): the CLI signs locally with the payer key and broadcasts.
+
+
+.SH OPTIONS
+\fB-h\fP, \fB--help\fP[=false]
+	help for dispute
+
+.PP
+\fB-p\fP, \fB--private-key\fP=""
+	Caller's secp256k1 private key (0x-prefixed hex); signs and broadcasts in one step
+
+.PP
+\fB--reason\fP=""
+	bytes32 reason code (0x…); defaults to zero
+
+.PP
+\fB--timeout\fP=2m0s
+	Max time to wait when --wait is set
+
+.PP
+\fB-w\fP, \fB--wait\fP[=false]
+	Block until the operation confirms on-chain (or fails)
+
+
+.SH OPTIONS INHERITED FROM PARENT COMMANDS
+\fB--base-url\fP=""
+	RAIL0 gateway base URL (env: RAIL0_BASE_URL)
+
+.PP
+\fB--debug\fP[=false]
+	Print HTTP request/response details to stderr
+
+.PP
+\fB--json\fP[=false]
+	Force plain (uncolored) JSON output (useful in scripts)
+
+.PP
+\fB--pretty\fP[=false]
+	Use the key-value/table view instead of JSON (terminal only)
+
+.PP
+\fB-q\fP, \fB--quiet\fP[=false]
+	Print only the result's id/hash, one per line (useful in scripts)
+
+
+.SH EXAMPLE
+.EX
+  rail0 payments dispute 0xrail0Id… -p 0xPayerKey… --reason 0x…
+.EE
+
+
+.SH SEE ALSO
+\fBrail0-payments(1)\fP, \fBrail0-payments-dispute-close(1)\fP

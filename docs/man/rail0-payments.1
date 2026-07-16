@@ -1,0 +1,61 @@
+.nh
+.TH "RAIL0" "1" "Jul 2026" "rail0 CLI" ""
+
+.SH NAME
+rail0-payments - Payment lifecycle operations
+
+
+.SH SYNOPSIS
+\fBrail0 payments [flags]\fP
+
+
+.SH DESCRIPTION
+Manage the full RAIL0 payment lifecycle.
+
+.PP
+Every on-chain operation is atomic: pass --private-key (-p) and the CLI prepares
+the unsigned transaction, signs it locally, and broadcasts it in a single step.
+
+.PP
+rail0 payments authorize  -p 0xYourPrivateKey…
+
+.PP
+Authorize-and-capture flow:
+  1. payments create -F 0xBuyer… -p 0xPayerKey…  — payer creates + signs
+  2. payments authorize  -p 0xPayeeKey…  — payee authorizes
+  3. payments capture    -a  -p 0xPayeeKey…  — payee captures
+
+.PP
+Charge (one-shot) flow:
+  1. payments create -C -F 0xBuyer… -p 0xPayerKey…
+  2. payments charge  -p 0xPayeeKey…
+
+
+.SH OPTIONS
+\fB-h\fP, \fB--help\fP[=false]
+	help for payments
+
+
+.SH OPTIONS INHERITED FROM PARENT COMMANDS
+\fB--base-url\fP=""
+	RAIL0 gateway base URL (env: RAIL0_BASE_URL)
+
+.PP
+\fB--debug\fP[=false]
+	Print HTTP request/response details to stderr
+
+.PP
+\fB--json\fP[=false]
+	Force plain (uncolored) JSON output (useful in scripts)
+
+.PP
+\fB--pretty\fP[=false]
+	Use the key-value/table view instead of JSON (terminal only)
+
+.PP
+\fB-q\fP, \fB--quiet\fP[=false]
+	Print only the result's id/hash, one per line (useful in scripts)
+
+
+.SH SEE ALSO
+\fBrail0(1)\fP, \fBrail0-payments-authorize(1)\fP, \fBrail0-payments-capture(1)\fP, \fBrail0-payments-charge(1)\fP, \fBrail0-payments-create(1)\fP, \fBrail0-payments-dispute(1)\fP, \fBrail0-payments-disputes(1)\fP, \fBrail0-payments-get(1)\fP, \fBrail0-payments-history(1)\fP, \fBrail0-payments-list(1)\fP, \fBrail0-payments-refund(1)\fP, \fBrail0-payments-release(1)\fP, \fBrail0-payments-transactions(1)\fP, \fBrail0-payments-void(1)\fP, \fBrail0-payments-wait(1)\fP

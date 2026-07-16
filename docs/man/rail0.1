@@ -1,0 +1,48 @@
+.nh
+.TH "RAIL0" "1" "Jul 2026" "rail0 CLI" ""
+
+.SH NAME
+rail0 - CLI for the RAIL0 stablecoin payment protocol
+
+
+.SH SYNOPSIS
+\fBrail0 [flags]\fP
+
+
+.SH DESCRIPTION
+rail0 is a command-line interface for the RAIL0 stablecoin payment gateway.
+
+.PP
+Defaults to https://api.rail0.xyz. Override with --base-url or RAIL0_BASE_URL.
+
+.PP
+Use 'rail0  --help' for detailed usage of any command.
+
+
+.SH OPTIONS
+\fB--base-url\fP=""
+	RAIL0 gateway base URL (env: RAIL0_BASE_URL)
+
+.PP
+\fB--debug\fP[=false]
+	Print HTTP request/response details to stderr
+
+.PP
+\fB-h\fP, \fB--help\fP[=false]
+	help for rail0
+
+.PP
+\fB--json\fP[=false]
+	Force plain (uncolored) JSON output (useful in scripts)
+
+.PP
+\fB--pretty\fP[=false]
+	Use the key-value/table view instead of JSON (terminal only)
+
+.PP
+\fB-q\fP, \fB--quiet\fP[=false]
+	Print only the result's id/hash, one per line (useful in scripts)
+
+
+.SH SEE ALSO
+\fBrail0-aliases(1)\fP, \fBrail0-auth(1)\fP, \fBrail0-chains(1)\fP, \fBrail0-config(1)\fP, \fBrail0-health(1)\fP, \fBrail0-keys(1)\fP, \fBrail0-payment-methods(1)\fP, \fBrail0-payments(1)\fP, \fBrail0-tokens(1)\fP, \fBrail0-version(1)\fP, \fBrail0-wallets(1)\fP, \fBrail0-webhooks(1)\fP

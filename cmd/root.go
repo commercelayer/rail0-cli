@@ -18,6 +18,7 @@ var (
 	debug     bool
 	jsonOut   bool
 	prettyOut bool
+	quietOut  bool
 )
 
 var rootCmd = &cobra.Command{
@@ -34,7 +35,7 @@ Use 'rail0 <command> --help' for detailed usage of any command.`,
 
 func Execute() {
 	if err := rootCmd.Execute(); err != nil {
-		ui.Fatal(humanizeError(err))
+		ui.FatalCode(humanizeError(err), exitCode(err))
 	}
 }
 
@@ -43,10 +44,12 @@ func init() {
 	rootCmd.PersistentFlags().BoolVar(&debug, "debug", false, "Print HTTP request/response details to stderr")
 	rootCmd.PersistentFlags().BoolVar(&jsonOut, "json", false, "Force plain (uncolored) JSON output (useful in scripts)")
 	rootCmd.PersistentFlags().BoolVar(&prettyOut, "pretty", false, "Use the key-value/table view instead of JSON (terminal only)")
+	rootCmd.PersistentFlags().BoolVarP(&quietOut, "quiet", "q", false, "Print only the result's id/hash, one per line (useful in scripts)")
 
 	cobra.OnInitialize(func() {
 		ui.SetJSON(jsonOut)
 		ui.SetPretty(prettyOut)
+		ui.SetQuiet(quietOut)
 	})
 
 	rootCmd.AddCommand(paymentsCmd, walletsCmd, paymentMethodsCmd, webhooksCmd, chainsCmd, tokensCmd, authCmd, healthCmd, aliasesCmd, keysCmd, configCmd)

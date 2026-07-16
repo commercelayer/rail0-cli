@@ -17,6 +17,7 @@ import (
 var (
 	jsonMode   bool
 	prettyMode bool
+	quietMode  bool
 )
 
 // SetJSON forces plain JSON output regardless of TTY state.
@@ -25,6 +26,11 @@ func SetJSON(on bool) { jsonMode = on }
 // SetPretty selects the key-value/table view (--pretty) on a TTY instead of the
 // default colorized JSON.
 func SetPretty(on bool) { prettyMode = on }
+
+// SetQuiet selects minimal output (--quiet): just the primary identifier of the
+// result (rail0_id / transaction_hash / id), one per line for a list — so scripts
+// can capture it without a JSON parser.
+func SetQuiet(on bool) { quietMode = on }
 
 func isTerminal(f *os.File) bool { return term.IsTerminal(f.Fd()) }
 
@@ -45,6 +51,13 @@ func RunAPI(fn func() (any, error)) error {
 // starts and is cleared the moment the response arrives, right before the result
 // is rendered. Behaviour is otherwise identical.
 func RunAPIWithMessage(msg string, fn func() (any, error)) error {
+	if quietMode {
+		data, err := fn()
+		if err != nil {
+			return err
+		}
+		return printQuiet(data)
+	}
 	if jsonMode || !isTerminal(os.Stdout) {
 		data, err := fn()
 		if err != nil {
@@ -110,6 +123,50 @@ func printJSON(v any) error {
 	}
 	fmt.Println(string(b))
 	return nil
+}
+
+// printQuiet emits only the result's primary identifier (--quiet), so a script can
+// capture it with `$(...)` and no JSON parser. For a paginated list it prints one
+// id per line. Falls back to plain JSON for a shape with no recognisable id.
+func printQuiet(v any) error {
+	if v == nil {
+		return nil
+	}
+	b, err := json.Marshal(v)
+	if err != nil {
+		return fmt.Errorf("marshal output: %w", err)
+	}
+	var m map[string]any
+	if json.Unmarshal(b, &m) == nil {
+		if data, ok := m["data"].([]any); ok { // paginated list → one id per line
+			for _, item := range data {
+				if id := quietID(item); id != "" {
+					fmt.Println(id)
+				}
+			}
+			return nil
+		}
+		if id := quietID(m); id != "" {
+			fmt.Println(id)
+			return nil
+		}
+	}
+	return printJSON(v) // no id to extract — don't hide the payload
+}
+
+// quietID picks the most useful identifier from a decoded object, in priority
+// order: the logical rail0_id, then a transaction hash, then a bare id.
+func quietID(v any) string {
+	m, ok := v.(map[string]any)
+	if !ok {
+		return ""
+	}
+	for _, k := range []string{"rail0_id", "transaction_hash", "id"} {
+		if s, ok := m[k].(string); ok && s != "" {
+			return s
+		}
+	}
+	return ""
 }
 
 // printStyled prints v as colorized, indented JSON-like text for a terminal. It
@@ -499,7 +556,11 @@ func renderPlainStr(key, s string) string {
 }
 
 // Fatal prints a styled error to stderr and exits with code 1.
-func Fatal(err error) {
+func Fatal(err error) { FatalCode(err, 1) }
+
+// FatalCode prints a styled error to stderr and exits with the given code, so
+// scripts can distinguish error classes (auth vs not-found vs rejected vs …).
+func FatalCode(err error, code int) {
 	if isTerminal(os.Stderr) {
 		mark := lipgloss.NewStyle().Foreground(lipgloss.Color("203")).Bold(true).Render("✗")
 		body := ErrStyle.Render(err.Error())
@@ -507,5 +568,5 @@ func Fatal(err error) {
 	} else {
 		fmt.Fprintf(os.Stderr, "Error: %s\n", err)
 	}
-	os.Exit(1)
+	os.Exit(code)
 }

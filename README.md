@@ -71,6 +71,21 @@ config file. Precedence is: **flag  >  env var  >  config file  >  built-in defa
 | `--debug`    | —                    | Print HTTP request/response details to stderr    |
 | `--json`     | —                    | Force plain (uncolored) JSON output (useful in scripts) |
 | `--pretty`   | —                    | Key-value/table view instead of JSON (terminal only) |
+| `--quiet` / `-q` | —                | Print only the result's id/hash, one per line — no JSON parser needed |
+
+### Scripting
+
+`--quiet` prints just the primary identifier of the result (`rail0_id`, else the
+transaction hash, else `id`; one per line for a list), so you can capture it
+directly: `id=$(rail0 payments create … -q)`.
+
+Exit codes distinguish the failure class: `0` success, `3` unauthorized, `4`
+forbidden, `5` not found, `6` conflict, `7` rejected (422), `8` gateway error
+(5xx), `9` network, `1` otherwise.
+
+Errors carry an actionable hint where the cause is known — e.g. a `422` on
+`capture` explains the amount exceeds the capturable balance, and an on-chain
+`RefundExpired` revert says the refund window has closed.
 
 Minimal setup:
 

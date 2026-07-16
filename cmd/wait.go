@@ -75,6 +75,9 @@ func waitForOp(ctx context.Context, client *rail0.Client, rail0Id, op string, ti
 				if reason == "" {
 					reason = "reverted"
 				}
+				if h := hintFor(tx.ErrorCode, ""); h != "" {
+					return nil, fmt.Errorf("%s failed on-chain: %s — %s", op, reason, h)
+				}
 				return nil, fmt.Errorf("%s failed on-chain: %s", op, reason)
 			}
 		}

@@ -6,7 +6,6 @@ import (
 	"net/url"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/rail0/cli/internal/token"
 	"github.com/rail0/cli/internal/ui"
@@ -21,7 +20,10 @@ var authCmd = &cobra.Command{
 
 // ── auth login ────────────────────────────────────────────────────────────────
 
-var loginPrivateKey string
+var (
+	loginPrivateKey string
+	loginShowToken  bool
+)
 
 var authLoginCmd = &cobra.Command{
 	Use:   "login",
@@ -39,12 +41,15 @@ payee). A gateway account only unlocks merchant-scoped features.
 
 The token is saved to ~/.cache/rail0/token and used automatically by all
 commands that require authentication (e.g. 'payments list').
-Override with the RAIL0_TOKEN environment variable.
+Override with the RAIL0_TOKEN environment variable. On success the command
+prints the session (address, expiry) but NOT the raw token — pass --token (-t)
+to also print the token itself, or run 'rail0 token' later.
 
 The signing key is resolved like every other signing command: pass -p as a raw
 0x-prefixed hex key, as @name for a key saved in the OS keychain ('rail0 keys
 add'), or omit it to fall back to the RAIL0_PRIVATE_KEY environment variable.`,
-	Example: `  rail0 auth login -p @payee     # or -p 0xYourPrivateKey…`,
+	Example: `  rail0 auth login -p @payee     # or -p 0xYourPrivateKey…
+  rail0 auth login -p @payee -t  # also print the token + its expiry`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := context.Background()
 		client := newClient()
@@ -80,7 +85,9 @@ add'), or omit it to fall back to the RAIL0_PRIVATE_KEY environment variable.`,
 			fmt.Fprintf(os.Stderr, "Token saved to %s\n", tokenPath)
 		}
 
-		return ui.RunAPI(func() (any, error) { return authResp, nil })
+		// Print the session summary; include the raw token only with --token.
+		summary := loginSummary(authResp, loginShowToken)
+		return ui.RunAPI(func() (any, error) { return summary, nil })
 	},
 }
 
@@ -110,36 +117,22 @@ var authStatusCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		t := token.Load()
 		if t == "" {
-			fmt.Println("Not logged in. Run: rail0 auth login -p 0xYourKey…")
+			fmt.Fprintln(os.Stderr, "Not logged in. "+loginHint)
 			return nil
 		}
 		claims, err := parseJWTClaims(t)
 		if err != nil {
-			fmt.Println("Token invalid or expired. Run: rail0 auth login -p 0xYourKey…")
+			fmt.Fprintln(os.Stderr, "Token invalid or expired. "+loginHint)
 			return nil
 		}
-		exp := time.Unix(int64(claims["exp"].(float64)), 0).UTC()
-		expiresIn := time.Until(exp).Round(time.Minute)
-		var expiresInStr string
-		if expiresIn <= 0 {
-			expiresInStr = "expired"
-		} else {
-			h := int(expiresIn.Hours())
-			m := int(expiresIn.Minutes()) % 60
-			if h > 0 {
-				expiresInStr = fmt.Sprintf("%dh %dm", h, m)
-			} else {
-				expiresInStr = fmt.Sprintf("%dm", m)
-			}
-		}
+		expiresAt, expiresIn := tokenExpiry(claims)
 		return ui.RunAPI(func() (any, error) {
-			info := map[string]any{
+			return map[string]any{
 				"address":    claims["sub"],
 				"account_id": claims["account_id"],
-				"expires_at": exp.Format(time.RFC3339),
-				"expires_in": expiresInStr,
-			}
-			return info, nil
+				"expires_at": expiresAt,
+				"expires_in": expiresIn,
+			}, nil
 		})
 	},
 }
@@ -165,6 +158,8 @@ func init() {
 		"Signing key: 0x-prefixed hex, @name for an OS-keychain key ('rail0 keys add'), or RAIL0_PRIVATE_KEY")
 	authLoginCmd.Flags().StringVar(&loginPrivateKey, "pk", "", "Alias for --private-key")
 	_ = authLoginCmd.Flags().MarkHidden("pk")
+	authLoginCmd.Flags().BoolVarP(&loginShowToken, "token", "t", false,
+		"After signing in, also print the JWT token and its expiry to the terminal")
 
 	authCmd.AddCommand(authLoginCmd, authStatusCmd, authLogoutCmd)
 }

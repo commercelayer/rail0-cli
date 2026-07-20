@@ -1,0 +1,68 @@
+# GoReleaser — build cross-platform `rail0` binaries and publish them to a
+# GitHub Release on every `v*` tag. See .github/workflows/release.yml.
+#
+# The CLI is pure Go (no cgo), so every target is a single static binary that
+# runs on the user's machine with no toolchain, no libc, nothing to install.
+# Validate locally with `goreleaser check` and `goreleaser build --snapshot --clean`
+# (needs the sibling ../rail0-go, per the replace directive in go.mod).
+version: 2
+
+project_name: rail0
+
+before:
+  hooks:
+    - go mod download
+
+builds:
+  - id: rail0
+    main: .
+    binary: rail0
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    # Stamp the version into cmd.version, exactly like bin/build does.
+    ldflags:
+      - -s -w -X github.com/rail0/cli/cmd.version={{ .Version }}
+    goos:
+      - darwin
+      - linux
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      # No Windows/arm64 target for now.
+      - goos: windows
+        goarch: arm64
+
+archives:
+  - id: rail0
+    # e.g. rail0_1.2.0_darwin_arm64.tar.gz  (README* / LICENSE* auto-included)
+    name_template: "rail0_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    formats:
+      - tar.gz
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+
+checksum:
+  name_template: "checksums.txt"
+
+changelog:
+  use: github
+  sort: asc
+  # Conventional Commits are used across the project; keep noise out of notes.
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+
+release:
+  github:
+    owner: commercelayer
+    name: rail0-cli
+  draft: false
+  prerelease: auto

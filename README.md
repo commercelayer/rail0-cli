@@ -14,6 +14,28 @@ Command-line interface for the [RAIL0](https://rail0.xyz) stablecoin payment pro
 
 ## Installation
 
+### Prebuilt binary (recommended)
+
+`rail0` is a single static binary — no Go toolchain, no dependencies. Download the
+archive for your OS/arch from the [latest release](https://github.com/commercelayer/rail0-cli/releases/latest),
+unpack it, and put `rail0` on your `PATH`:
+
+```sh
+# macOS/Linux (example: macOS arm64) — pick the asset matching your platform
+tar -xzf rail0_<version>_darwin_arm64.tar.gz
+sudo mv rail0 /usr/local/bin/
+rail0 version
+```
+
+On Windows, download the `.zip` and put `rail0.exe` on your `PATH`.
+
+> **macOS Gatekeeper / Windows SmartScreen:** the binaries are not code-signed yet,
+> so the OS may block the first run. On macOS clear the quarantine flag once with
+> `xattr -d com.apple.quarantine /usr/local/bin/rail0` (or right-click → Open); on
+> Windows choose "More info → Run anyway".
+
+### From source (development)
+
 Both repositories must be present as siblings:
 
 ```
@@ -23,8 +45,8 @@ parent-directory/
 ```
 
 ```sh
-git clone https://github.com/DrPierlu/rail0-cli
-git clone https://github.com/DrPierlu/rail0-go
+git clone https://github.com/commercelayer/rail0-cli
+git clone https://github.com/commercelayer/rail0-go
 cd rail0-cli
 make install            # installs `rail0` + the short `r0` alias into /usr/local/bin
 ```

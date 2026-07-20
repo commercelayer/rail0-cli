@@ -1,0 +1,57 @@
+# Build and publish cross-platform `rail0` binaries to a GitHub Release on every
+# `v*` tag (via GoReleaser — see .goreleaser.yaml).
+#
+#   git tag v1.2.0 && git push origin v1.2.0
+#
+# rail0-cli depends on rail0-go through `replace github.com/rail0/go-sdk =>
+# ../rail0-go` (go.mod). rail0-go is PRIVATE, and the default GITHUB_TOKEN only
+# grants access to this repo, so the sibling checkout needs a dedicated token:
+#
+#   Secret RAIL0_GO_TOKEN — a fine-grained PAT (or deploy key) with
+#   `contents: read` on commercelayer/rail0-go. Add it under
+#   Settings → Secrets and variables → Actions in commercelayer/rail0-cli.
+#
+# Both repos are checked out as siblings under the workspace so `../rail0-go`
+# resolves; GoReleaser runs inside the rail0-cli checkout.
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write # create the GitHub Release + upload assets
+
+jobs:
+  goreleaser:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout rail0-cli
+        uses: actions/checkout@v4
+        with:
+          path: rail0-cli
+          fetch-depth: 0 # full history + tags for `git describe` / changelog
+
+      - name: Checkout rail0-go (private sibling; resolves ../rail0-go)
+        uses: actions/checkout@v4
+        with:
+          repository: commercelayer/rail0-go
+          ref: main
+          path: rail0-go
+          token: ${{ secrets.RAIL0_GO_TOKEN }}
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache-dependency-path: rail0-cli/go.sum
+
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          version: "~> v2"
+          args: release --clean
+          workdir: rail0-cli
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

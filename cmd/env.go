@@ -119,6 +119,7 @@ A stored value is still the lowest-priority source, so --base-url or
 RAIL0_BASE_URL override it for a single command.`,
 	Example: `  rail0 env                 # list environments, marking the current one
   rail0 env staging         # switch to staging
+  rail0 env staging -d      # ...and also print the resulting parameters
   rail0 env current         # show the active environment
   rail0 env current -d      # ...with every parameter's effective value`,
 	Args: cobra.MaximumNArgs(1),
@@ -126,7 +127,7 @@ RAIL0_BASE_URL override it for a single command.`,
 		if len(args) == 0 {
 			return listEnvironments()
 		}
-		return switchEnv(args[0])
+		return switchEnv(args[0], envDetails)
 	},
 }
 
@@ -147,8 +148,10 @@ func listEnvironments() error {
 
 // switchEnv applies an environment's settings to the config file. Each value is
 // validated through the same validator as `config set` before being persisted,
-// so a switch can never write a value the commands would reject.
-func switchEnv(name string) error {
+// so a switch can never write a value the commands would reject. The
+// confirmation is just the status and env name; the resulting parameters are
+// listed only when details is set (the -d flag), matching `env current`.
+func switchEnv(name string, details bool) error {
 	e, err := lookupEnv(name)
 	if err != nil {
 		return err
@@ -175,9 +178,19 @@ func switchEnv(name string) error {
 	if err := cfg.Save(); err != nil {
 		return err
 	}
-	return ui.RunAPI(func() (any, error) {
-		return map[string]any{"status": "switched", "env": name, "settings": e.settings}, nil
-	})
+	return ui.RunAPI(func() (any, error) { return switchResult(name, details), nil })
+}
+
+// switchResult builds the confirmation payload for a switch: status + env name,
+// plus each parameter's effective value and origin only when details is set
+// (the -d flag). Split out from switchEnv so the gating is unit-testable
+// without persisting or capturing stdout.
+func switchResult(name string, details bool) map[string]any {
+	out := map[string]any{"status": "switched", "env": name}
+	if details {
+		out["settings"] = envParamRows()
+	}
+	return out
 }
 
 var envCurrentCmd = &cobra.Command{
@@ -199,6 +212,9 @@ var envCurrentCmd = &cobra.Command{
 }
 
 func init() {
-	envCurrentCmd.Flags().BoolVarP(&envDetails, "details", "d", false, "Show every parameter's effective value and origin")
+	// --details/-d is persistent on `env`, so both `env <name>` (switch) and
+	// `env current` accept it: without it they print just status/name; with it
+	// they also list each parameter's effective value and origin.
+	envCmd.PersistentFlags().BoolVarP(&envDetails, "details", "d", false, "Also print each parameter's effective value and origin")
 	envCmd.AddCommand(envCurrentCmd)
 }

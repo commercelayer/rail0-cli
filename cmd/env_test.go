@@ -19,7 +19,7 @@ func isolate(t *testing.T) {
 func TestEnvSwitchWritesSettings(t *testing.T) {
 	isolate(t)
 
-	if err := switchEnv("staging"); err != nil {
+	if err := switchEnv("staging", false); err != nil {
 		t.Fatalf("switch staging: %v", err)
 	}
 	cfg, _ := config.Load()
@@ -73,10 +73,22 @@ func TestEnvCommandTree(t *testing.T) {
 	if sub, _, err := envCmd.Find([]string{"current"}); err != nil || sub == nil || sub.Name() != "current" {
 		t.Errorf("env current: not found (%v)", err)
 	}
-	if envCurrentCmd.Flags().Lookup("details") == nil {
-		t.Error("env current should have a --details flag")
+	if envCmd.PersistentFlags().Lookup("details") == nil {
+		t.Error("env should have a persistent --details flag")
 	}
-	if f := envCurrentCmd.Flags().ShorthandLookup("d"); f == nil {
-		t.Error("env current --details should have a -d shorthand")
+	if envCmd.PersistentFlags().ShorthandLookup("d") == nil {
+		t.Error("env --details should have a -d shorthand")
+	}
+}
+
+func TestEnvSwitchDetailsGating(t *testing.T) {
+	// The switch confirmation lists parameters only with -d; bare it is just
+	// status + env name.
+	if _, ok := switchResult("staging", false)["settings"]; ok {
+		t.Error("switch without -d must omit settings")
+	}
+	res := switchResult("staging", true)
+	if _, ok := res["settings"]; !ok {
+		t.Error("switch with -d must include settings")
 	}
 }

@@ -27,10 +27,12 @@ Use 'rail0 <command> --help' for detailed usage of any command.
 * [rail0 auth](rail0_auth.md)	 - Authenticate with the RAIL0 gateway using SIWE
 * [rail0 chains](rail0_chains.md)	 - List supported blockchains (chain IDs used in --chain-id)
 * [rail0 config](rail0_config.md)	 - Manage persisted CLI defaults (e.g. base-url)
+* [rail0 env](rail0_env.md)	 - Switch the active environment (development/staging/production) in one shot
 * [rail0 health](rail0_health.md)	 - Report gateway health (liveness/readiness)
 * [rail0 keys](rail0_keys.md)	 - Manage signing keys in the OS keychain (lists names when run bare)
 * [rail0 payment-methods](rail0_payment-methods.md)	 - Discover a merchant's accepted wallets/tokens (public, no login)
 * [rail0 payments](rail0_payments.md)	 - Payment lifecycle operations
+* [rail0 token](rail0_token.md)	 - Print the stored session token, or suggest logging in
 * [rail0 tokens](rail0_tokens.md)	 - List supported tokens (symbols used in --token)
 * [rail0 version](rail0_version.md)	 - Print the rail0 CLI version
 * [rail0 wallets](rail0_wallets.md)	 - Manage the logged-in account's wallets (lists when run bare)

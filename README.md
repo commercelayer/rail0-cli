@@ -127,6 +127,30 @@ rail0 config path                              # config file location
 A stored value is the lowest-priority source, so `--base-url` or `RAIL0_BASE_URL`
 still override it for a single command.
 
+### Environments (`env`)
+
+Switch a whole bundle of settings at once instead of setting each key by hand.
+Today the only per-environment parameter is `base-url`:
+
+| Environment | base-url |
+| --- | --- |
+| `development` | `http://localhost:9292` |
+| `staging` | `https://rail0-gateway-staging.fly.dev` |
+| `production` | `https://api.rail0.xyz` |
+
+```sh
+rail0 env                 # list environments + parameters, marking the current one
+rail0 env staging         # switch to staging (writes its settings to the config file)
+rail0 env current         # show the active environment
+rail0 env current -d      # ...with every parameter's effective value + origin
+```
+
+`env <name>` writes the environment's settings through the same config file as
+`config set`, so precedence is unchanged — `--base-url` / `RAIL0_BASE_URL` still
+override for a single command. `env current` reports the environment the
+*effective* configuration matches (so it's accurate even if you set a value with
+`config set`), or `custom` if it matches none.
+
 ### Address book (aliases)
 
 Save frequently-used addresses and reference them as `@name` on any address flag

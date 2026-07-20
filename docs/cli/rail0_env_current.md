@@ -16,8 +16,7 @@ rail0 env current [flags]
 ### Options
 
 ```
-  -d, --details   Show every parameter's effective value and origin
-  -h, --help      help for current
+  -h, --help   help for current
 ```
 
 ### Options inherited from parent commands
@@ -25,6 +24,7 @@ rail0 env current [flags]
 ```
       --base-url string   RAIL0 gateway base URL (env: RAIL0_BASE_URL)
       --debug             Print HTTP request/response details to stderr
+  -d, --details           Also print each parameter's effective value and origin
       --json              Force plain (uncolored) JSON output (useful in scripts)
       --pretty            Use the key-value/table view instead of JSON (terminal only)
   -q, --quiet             Print only the result's id/hash, one per line (useful in scripts)

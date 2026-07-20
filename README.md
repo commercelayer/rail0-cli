@@ -141,6 +141,7 @@ Today the only per-environment parameter is `base-url`:
 ```sh
 rail0 env                 # list environments + parameters, marking the current one
 rail0 env staging         # switch to staging (writes its settings to the config file)
+rail0 env staging -d      # ...and also print the resulting parameters
 rail0 env current         # show the active environment
 rail0 env current -d      # ...with every parameter's effective value + origin
 ```

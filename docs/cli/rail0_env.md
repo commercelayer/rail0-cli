@@ -22,6 +22,7 @@ rail0 env [name] [flags]
 ```
   rail0 env                 # list environments, marking the current one
   rail0 env staging         # switch to staging
+  rail0 env staging -d      # ...and also print the resulting parameters
   rail0 env current         # show the active environment
   rail0 env current -d      # ...with every parameter's effective value
 ```
@@ -29,7 +30,8 @@ rail0 env [name] [flags]
 ### Options
 
 ```
-  -h, --help   help for env
+  -d, --details   Also print each parameter's effective value and origin
+  -h, --help      help for env
 ```
 
 ### Options inherited from parent commands

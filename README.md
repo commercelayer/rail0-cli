@@ -6,35 +6,17 @@ Command-line interface for the [RAIL0](https://rail0.xyz) stablecoin payment pro
 
 ## Requirements
 
-- Go ≥ 1.22
-- The [rail0-go](https://github.com/DrPierlu/rail0-go) SDK cloned as a sibling directory (used via a `replace` directive in `go.mod`)
-- Access to a RAIL0 gateway instance
+- Go ≥ 1.25 (matches the `go` directive in `go.mod`)
+- The [rail0-go](https://github.com/commercelayer/rail0-go) SDK cloned as a sibling directory (used via a `replace` directive in `go.mod`)
+- Access to a RAIL0 gateway instance (for the commands that call it — building/`rail0 --help` need no gateway)
 
 ---
 
 ## Installation
 
-### Prebuilt binary (recommended)
-
-`rail0` is a single static binary — no Go toolchain, no dependencies. Download the
-archive for your OS/arch from the [latest release](https://github.com/commercelayer/rail0-cli/releases/latest),
-unpack it, and put `rail0` on your `PATH`:
-
-```sh
-# macOS/Linux (example: macOS arm64) — pick the asset matching your platform
-tar -xzf rail0_<version>_darwin_arm64.tar.gz
-sudo mv rail0 /usr/local/bin/
-rail0 version
-```
-
-On Windows, download the `.zip` and put `rail0.exe` on your `PATH`.
-
-> **macOS Gatekeeper / Windows SmartScreen:** the binaries are not code-signed yet,
-> so the OS may block the first run. On macOS clear the quarantine flag once with
-> `xattr -d com.apple.quarantine /usr/local/bin/rail0` (or right-click → Open); on
-> Windows choose "More info → Run anyway".
-
-### From source (development)
+Build from source: clone this repo and the `rail0-go` SDK **as siblings**, then
+build. rail0-cli imports the SDK through `replace github.com/rail0/go-sdk =>
+../rail0-go` (see `go.mod`), so `rail0-go` must sit next to `rail0-cli`.
 
 Both repositories must be present as siblings:
 

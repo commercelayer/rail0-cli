@@ -201,7 +201,8 @@ Save signing keys in the **OS keychain** and reference them as `@name` on the
 `--private-key` flag, instead of pasting a raw key or exporting `RAIL0_PRIVATE_KEY`.
 The same `@name` sigil as the address book — the **flag decides** which it means:
 `@name` on `--private-key`/`-p` is a key, on `--from`/`--to`/`--address` it's an
-address alias.
+address alias. When a signing command has no key and prompts for one interactively,
+that hidden prompt also accepts `@name` (not just a raw 0x key).
 
 The secret never touches the config file or your shell history (`keys add`
 prompts for it, hidden). Only the key **names** are tracked in `config.yaml` so

@@ -1,10 +1,13 @@
 package cmd
 
 import (
+	"io"
+	"os"
 	"reflect"
 	"testing"
 
 	rail0 "github.com/rail0/go-sdk"
+	"github.com/zalando/go-keyring"
 )
 
 // allowedSigners must mirror the gateway's ensure_signed_by! guard: payee-only
@@ -63,6 +66,26 @@ func TestSigningKeyOrPrompt_PassThrough(t *testing.T) {
 	t.Setenv("RAIL0_PRIVATE_KEY", "0xenvkey")
 	if got, err := signingKeyOrPrompt(""); err != nil || got != "0xenvkey" {
 		t.Errorf("env fallback: got %q err %v", got, err)
+	}
+}
+
+// An "@name" typed at the interactive prompt must resolve to the saved keychain
+// key, exactly like the --private-key flag.
+func TestSigningKeyOrPrompt_PromptAlias(t *testing.T) {
+	keyring.MockInit() // in-memory keychain — never touches the real OS store
+	t.Setenv("RAIL0_PRIVATE_KEY", "")
+	if err := keyring.Set(keyringService, "payer", testKeyHex); err != nil {
+		t.Fatalf("seed keychain: %v", err)
+	}
+	// Feed "@payer" to the hidden prompt via piped stdin (the non-TTY read path).
+	old := os.Stdin
+	r, w, _ := os.Pipe()
+	os.Stdin = r
+	t.Cleanup(func() { os.Stdin = old })
+	go func() { io.WriteString(w, "@payer\n"); w.Close() }()
+
+	if got, err := signingKeyOrPrompt(""); err != nil || got != testKeyHex {
+		t.Fatalf("prompt @name: got %q err %v", got, err)
 	}
 }
 

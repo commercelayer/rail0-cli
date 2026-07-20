@@ -293,12 +293,18 @@ func signingKeyOrPrompt(explicitKey string) (string, error) {
 	if key, err := resolveSigningKey(explicitKey); err == nil {
 		return key, nil
 	}
-	key, err := promptSecret("Private key (0x-prefixed hex, hidden)")
+	key, err := promptSecret("Private key (0x-prefixed hex, or @name for a saved key; hidden)")
 	if err != nil {
 		return "", err
 	}
 	if key = strings.TrimSpace(key); key == "" {
 		return "", errors.New("no signing key provided")
+	}
+	// Accept the same "@name" keychain reference as the --private-key flag, so the
+	// interactive prompt and the flag behave identically — a saved key can be used
+	// without pasting the raw secret.
+	if strings.HasPrefix(key, "@") {
+		return loadKey(strings.TrimPrefix(key, "@"))
 	}
 	return key, nil
 }

@@ -27,7 +27,9 @@ payee). A gateway account only unlocks merchant-scoped features.
 .PP
 The token is saved to ~/.cache/rail0/token and used automatically by all
 commands that require authentication (e.g. 'payments list').
-Override with the RAIL0_TOKEN environment variable.
+Override with the RAIL0_TOKEN environment variable. On success the command
+prints the session (address, expiry) but NOT the raw token — pass --token (-t)
+to also print the token itself, or run 'rail0 token' later.
 
 .PP
 The signing key is resolved like every other signing command: pass -p as a raw
@@ -42,6 +44,10 @@ add'), or omit it to fall back to the RAIL0_PRIVATE_KEY environment variable.
 .PP
 \fB-p\fP, \fB--private-key\fP=""
 	Signing key: 0x-prefixed hex, @name for an OS-keychain key ('rail0 keys add'), or RAIL0_PRIVATE_KEY
+
+.PP
+\fB-t\fP, \fB--token\fP[=false]
+	After signing in, also print the JWT token and its expiry to the terminal
 
 
 .SH OPTIONS INHERITED FROM PARENT COMMANDS
@@ -68,6 +74,7 @@ add'), or omit it to fall back to the RAIL0_PRIVATE_KEY environment variable.
 .SH EXAMPLE
 .EX
   rail0 auth login -p @payee     # or -p 0xYourPrivateKey…
+  rail0 auth login -p @payee -t  # also print the token + its expiry
 .EE
 
 

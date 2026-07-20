@@ -1,0 +1,61 @@
+.nh
+.TH "RAIL0" "1" "Jul 2026" "rail0 CLI" ""
+
+.SH NAME
+rail0-env - Switch the active environment (development/staging/production) in one shot
+
+
+.SH SYNOPSIS
+\fBrail0 env [name] [flags]\fP
+
+
+.SH DESCRIPTION
+Switch a bundle of CLI settings at once by selecting an environment.
+
+.PP
+Run bare to list the environments and their parameters, with the current one
+marked. Pass a name to switch: it writes that environment's settings (today just
+base-url) to the config file, so every command uses them.
+
+.PP
+A stored value is still the lowest-priority source, so --base-url or
+RAIL0_BASE_URL override it for a single command.
+
+
+.SH OPTIONS
+\fB-h\fP, \fB--help\fP[=false]
+	help for env
+
+
+.SH OPTIONS INHERITED FROM PARENT COMMANDS
+\fB--base-url\fP=""
+	RAIL0 gateway base URL (env: RAIL0_BASE_URL)
+
+.PP
+\fB--debug\fP[=false]
+	Print HTTP request/response details to stderr
+
+.PP
+\fB--json\fP[=false]
+	Force plain (uncolored) JSON output (useful in scripts)
+
+.PP
+\fB--pretty\fP[=false]
+	Use the key-value/table view instead of JSON (terminal only)
+
+.PP
+\fB-q\fP, \fB--quiet\fP[=false]
+	Print only the result's id/hash, one per line (useful in scripts)
+
+
+.SH EXAMPLE
+.EX
+  rail0 env                 # list environments, marking the current one
+  rail0 env staging         # switch to staging
+  rail0 env current         # show the active environment
+  rail0 env current -d      # ...with every parameter's effective value
+.EE
+
+
+.SH SEE ALSO
+\fBrail0(1)\fP, \fBrail0-env-current(1)\fP

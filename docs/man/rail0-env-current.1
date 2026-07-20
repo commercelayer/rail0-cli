@@ -1,0 +1,54 @@
+.nh
+.TH "RAIL0" "1" "Jul 2026" "rail0 CLI" ""
+
+.SH NAME
+rail0-env-current - Show the active environment (--details for every parameter)
+
+
+.SH SYNOPSIS
+\fBrail0 env current [flags]\fP
+
+
+.SH DESCRIPTION
+Show the active environment (--details for every parameter)
+
+
+.SH OPTIONS
+\fB-d\fP, \fB--details\fP[=false]
+	Show every parameter's effective value and origin
+
+.PP
+\fB-h\fP, \fB--help\fP[=false]
+	help for current
+
+
+.SH OPTIONS INHERITED FROM PARENT COMMANDS
+\fB--base-url\fP=""
+	RAIL0 gateway base URL (env: RAIL0_BASE_URL)
+
+.PP
+\fB--debug\fP[=false]
+	Print HTTP request/response details to stderr
+
+.PP
+\fB--json\fP[=false]
+	Force plain (uncolored) JSON output (useful in scripts)
+
+.PP
+\fB--pretty\fP[=false]
+	Use the key-value/table view instead of JSON (terminal only)
+
+.PP
+\fB-q\fP, \fB--quiet\fP[=false]
+	Print only the result's id/hash, one per line (useful in scripts)
+
+
+.SH EXAMPLE
+.EX
+  rail0 env current
+  rail0 env current --details
+.EE
+
+
+.SH SEE ALSO
+\fBrail0-env(1)\fP

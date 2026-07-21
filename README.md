@@ -217,6 +217,13 @@ The payer creates the payment and signs the EIP-712 payload with their key
 rail0 payments create -F 0xBuyer… -T 0xMerchant… -t USDC -a 10.50 -c 5042002 -p 0xPayerKey…
 ```
 
+> **Auto sign-in.** The gateway requires a SIWE session for every `/payments`
+> write and binds the payment to the payer (the `payer` must equal the signed-in
+> address). `payments create` handles this: it signs in with the payer's key (the
+> same `-p` key it signs the payload with) when there's no valid session for that
+> address — so no separate `rail0 auth login` is needed, and the session's address
+> matches `--from`.
+
 **Token/chain discovery from the payee.** On a terminal, if you give `--to` but
 omit `--token` and/or `--chain-id`, the CLI looks up what that merchant accepts
 (public `GET /payment_methods` for the payee address) and prompts you to pick
@@ -287,6 +294,8 @@ Either works with or without a session (subject to the endpoint's own auth — t
 ## Commands
 
 ### Authentication
+
+Every `/payments` operation requires a SIWE session (the gateway rejects anonymous writes and binds a created payment to the payer). Reads and merchant action commands need a prior `auth login`; **`payments create` signs in automatically** with the payer key, so a buyer needs no separate login step (see [Payer — `payments create`](#payer--payments-create)).
 
 #### `auth login`
 

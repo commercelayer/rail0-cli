@@ -212,7 +212,6 @@ terminal — so the key stays out of the shell history and process arguments.`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := context.Background()
-		client := newClient()
 
 		// Create + sign: payer signs the EIP-712 payload locally with the key
 		// (--private-key, or RAIL0_PRIVATE_KEY).
@@ -235,6 +234,14 @@ terminal — so the key stays out of the shell history and process arguments.`,
 		if !strings.EqualFold(signer, string(req.Payer)) {
 			return fmt.Errorf("signing key address %s does not match the payer %s (--from) — you're signing with the wrong key", signer, req.Payer)
 		}
+		// The gateway gates every /payments write behind a SIWE session, and
+		// create requires the payer to BE the authenticated address. Sign in with
+		// the payer's key (the same one we sign the payload with) so the session's
+		// address == payer; a no-op when already logged in as the payer.
+		if err := ensureSession(ctx, signingKey, string(req.Payer)); err != nil {
+			return err
+		}
+		client := newClient()
 		return ui.RunAPIWithMessage("Creating payment…", func() (any, error) {
 			created, err := client.Payments.Create(ctx, req)
 			if err != nil {

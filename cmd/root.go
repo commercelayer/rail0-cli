@@ -2,9 +2,12 @@
 package cmd
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
+	"strings"
+	"time"
 
 	charmlog "github.com/charmbracelet/log"
 	"github.com/rail0/cli/internal/token"
@@ -72,6 +75,40 @@ func newClient() *rail0.Client {
 		opts.Logger = makeDebugLogger()
 	}
 	return rail0.NewClient(opts)
+}
+
+// ensureSession guarantees a valid SIWE session whose address matches `addr`
+// before a write to /payments. The gateway now gates every /payments endpoint on
+// a session, and `create` additionally requires the payer to BE the authenticated
+// address — so this signs in with the caller's key (the same key the command
+// signs the payload with, hence the session address == addr) when the stored
+// token is missing, expired, or for a different address. A no-op when already
+// logged in as `addr`. The token is saved so follow-up reads (e.g. payments get)
+// reuse the session.
+func ensureSession(ctx context.Context, keyHex, addr string) error {
+	if t := token.Load(); t != "" {
+		if claims, err := parseJWTClaims(t); err == nil {
+			sub, _ := claims["sub"].(string)
+			exp, _ := claims["exp"].(float64)
+			if strings.EqualFold(sub, addr) && int64(exp) > time.Now().Unix() {
+				return nil
+			}
+		}
+	}
+	privKey, err := rail0.HexToPrivateKey(keyHex)
+	if err != nil {
+		return fmt.Errorf("invalid signing key: %w", err)
+	}
+	authResp, err := rail0.NewClient(rail0.ClientOptions{BaseURL: resolveBaseURL()}).
+		Auth.Login(ctx, privKey, siweHost(resolveBaseURL()))
+	if err != nil {
+		return fmt.Errorf("sign-in failed (required to create a payment): %w", err)
+	}
+	if err := token.Save(authResp.Token); err != nil {
+		return err
+	}
+	fmt.Fprintf(os.Stderr, "Signed in as %s\n", addr)
+	return nil
 }
 
 // currentAccountID returns the account id of the logged-in session (the JWT

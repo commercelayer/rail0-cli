@@ -104,14 +104,32 @@ func (f *createPaymentFlags) addTo(cmd *cobra.Command) {
 		"Optional reconciliation note (e.g. order id / invoice); prompted when omitted on a terminal")
 }
 
-// build constructs a rail0.CreatePaymentRequest.
+// build constructs and validates a rail0.CreatePaymentRequest. It resolves the
+// request (buildResolved) and then enforces the cross-field invariant that a
+// payment can't be sent from an address to itself.
+func (f *createPaymentFlags) build() (rail0.CreatePaymentRequest, error) {
+	req, err := f.buildResolved()
+	if err != nil {
+		return rail0.CreatePaymentRequest{}, err
+	}
+	// from and to must differ. Checked on the RESOLVED request (0x addresses), so
+	// it also catches two aliases — or an alias and a raw address — pointing to
+	// the same wallet. Compared case-insensitively. The gateway enforces this too.
+	if req.Payer != "" && strings.EqualFold(req.Payer, req.Payee) {
+		return rail0.CreatePaymentRequest{}, fmt.Errorf(
+			"payer (--from) and payee (--to) must be different addresses — a payment can't be sent from an address to itself")
+	}
+	return req, nil
+}
+
+// buildResolved constructs a rail0.CreatePaymentRequest.
 //
 // Resolution order:
 //  1. --payment-file: reads and unmarshals the JSON file.
 //  2. If required flags are missing and stdin is a TTY, launches the interactive
 //     form (prompting only for the fields not already supplied on the command line).
 //  3. Otherwise validates that all required fields are present.
-func (f *createPaymentFlags) build() (rail0.CreatePaymentRequest, error) {
+func (f *createPaymentFlags) buildResolved() (rail0.CreatePaymentRequest, error) {
 	if f.paymentFile != "" {
 		b, err := os.ReadFile(f.paymentFile)
 		if err != nil {

@@ -205,7 +205,10 @@ var paymentsSignCmd = &cobra.Command{
 	Long: `Create a RAIL0 payment and sign the EIP-3009 payload with the payer's key in
 one step (--private-key / -p). The API stores the signature; the payee can then
 authorize. If --private-key is omitted, the CLI prompts for it (hidden) on a
-terminal — so the key stays out of the shell history and process arguments.`,
+terminal — so the key stays out of the shell history and process arguments.
+
+--from (payer) and --to (payee) must be different addresses: a payment can't be
+sent from an address to itself.`,
 	Example: `  rail0 payments create \
     -F 0xBuyer… -T 0xMerchant… -t USDC -a 10.50 -c 5042002 \
     -p 0xPayerKey…`,

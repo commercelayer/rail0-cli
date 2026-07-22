@@ -102,7 +102,7 @@ func ensureSession(ctx context.Context, keyHex, addr string) error {
 	authResp, err := rail0.NewClient(rail0.ClientOptions{BaseURL: resolveBaseURL()}).
 		Auth.Login(ctx, privKey, siweHost(resolveBaseURL()))
 	if err != nil {
-		return fmt.Errorf("sign-in failed (required to create a payment): %w", err)
+		return fmt.Errorf("sign-in failed: %w", err)
 	}
 	if err := token.Save(authResp.Token); err != nil {
 		return err

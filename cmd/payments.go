@@ -328,6 +328,13 @@ func ensureSignerFor(ctx context.Context, client *rail0.Client, rail0ID, signing
 	if err != nil {
 		return err
 	}
+	// The gateway gates the whole /payments surface behind a SIWE session and
+	// these reads are participant-only. The command holds the signer's key, so
+	// sign in as that address up front (no separate `auth login` needed) — a
+	// no-op when already logged in as it. Mirrors what `create` does. (#48)
+	if err := ensureSession(ctx, signingKey, signer); err != nil {
+		return err
+	}
 	p, err := client.Payments.Get(ctx, rail0ID)
 	if err != nil {
 		return err

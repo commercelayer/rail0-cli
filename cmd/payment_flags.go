@@ -52,23 +52,38 @@ func validateAmount(v string) error {
 }
 
 // lookupTokenAddress turns a token symbol into its address on chainID via
-// GET /tokens. It returns the resolved address, the symbols available on that
-// chain (for a helpful error), and an error when the symbol isn't listed. Shared
-// by resolve() and the interactive token validator so the symbol→address rule
-// lives in one place.
-func lookupTokenAddress(ctx context.Context, chainID int, symbol string) (string, []string, error) {
+// GET /tokens. It returns the resolved address, the token's decimals (for
+// precision checks), the symbols available on that chain (for a helpful error),
+// and an error when the symbol isn't listed. Shared by resolve() and the
+// interactive token validator so the symbol→address rule lives in one place.
+func lookupTokenAddress(ctx context.Context, chainID int, symbol string) (string, int, []string, error) {
 	tokens, err := newClient().Tokens.List(ctx, rail0.ListTokensParams{ChainID: chainID})
 	if err != nil {
-		return "", nil, fmt.Errorf("fetch tokens: %w", err)
+		return "", 0, nil, fmt.Errorf("fetch tokens: %w", err)
 	}
 	syms := make([]string, 0, len(tokens))
 	for _, t := range tokens {
 		syms = append(syms, t.Symbol)
 		if strings.EqualFold(t.Symbol, symbol) {
-			return string(t.Address), syms, nil
+			return string(t.Address), t.Decimals, syms, nil
 		}
 	}
-	return "", syms, fmt.Errorf("unknown token %q on chain %d — available: %s", symbol, chainID, strings.Join(syms, ", "))
+	return "", 0, syms, fmt.Errorf("unknown token %q on chain %d — available: %s", symbol, chainID, strings.Join(syms, ", "))
+}
+
+// assertAmountPrecision rejects a human amount carrying more decimal places than
+// the token supports — the gateway would reject it (422 invalid_amount), so we
+// fail early with a clearer message once the token's decimals are known.
+func assertAmountPrecision(amount string, decimals int) error {
+	s := strings.TrimSpace(amount)
+	i := strings.IndexByte(s, '.')
+	if i < 0 {
+		return nil
+	}
+	if frac := len(s) - i - 1; frac > decimals {
+		return fmt.Errorf("amount %q has %d decimal places, but the token supports at most %d", s, frac, decimals)
+	}
+	return nil
 }
 
 // createPaymentFlags collects the CLI flags for the `payments create` command.
@@ -200,7 +215,7 @@ func (f *createPaymentFlags) assertTokenKnown() error {
 	if f.token == "" || f.chainID == 0 {
 		return nil
 	}
-	_, _, err := lookupTokenAddress(context.Background(), f.chainID, f.token)
+	_, _, _, err := lookupTokenAddress(context.Background(), f.chainID, f.token)
 	return err
 }
 
@@ -302,7 +317,7 @@ func (f *createPaymentFlags) buildInteractive() (rail0.CreatePaymentRequest, err
 					if cid == 0 {
 						return nil
 					}
-					_, _, err := lookupTokenAddress(context.Background(), cid, s)
+					_, _, _, err := lookupTokenAddress(context.Background(), cid, s)
 					return err
 				}))
 		case "amount":
@@ -379,8 +394,12 @@ func (f *createPaymentFlags) resolve() (rail0.CreatePaymentRequest, error) {
 	}
 
 	// Resolve token symbol → address on the selected chain.
-	tokenAddress, _, err := lookupTokenAddress(ctx, f.chainID, f.token)
+	tokenAddress, decimals, _, err := lookupTokenAddress(ctx, f.chainID, f.token)
 	if err != nil {
+		return rail0.CreatePaymentRequest{}, err
+	}
+	// Reject an over-precise amount now that the token's decimals are known.
+	if err := assertAmountPrecision(f.amount, decimals); err != nil {
 		return rail0.CreatePaymentRequest{}, err
 	}
 

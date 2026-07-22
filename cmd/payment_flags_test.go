@@ -1,7 +1,10 @@
 package cmd
 
 import (
+	"os"
+	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	rail0 "github.com/rail0/go-sdk"
@@ -164,5 +167,36 @@ func TestAcceptedMethods(t *testing.T) {
 				t.Errorf("acceptedMethods(%q, %d) = %v, want %v", tc.token, tc.chainID, got, tc.want)
 			}
 		})
+	}
+}
+
+// build() must reject a payment whose payer and payee are the same address (a
+// payment to oneself), compared case-insensitively. Exercised via --payment-file
+// so the check runs without touching the network (token resolution).
+func TestBuildRejectsSelfPayment(t *testing.T) {
+	dir := t.TempDir()
+	write := func(payer, payee string) string {
+		p := filepath.Join(dir, "pay.json")
+		body := `{"chain_id":5042002,"mode":"authorize","amount":"1.00",` +
+			`"token":"0x3600000000000000000000000000000000000000",` +
+			`"payer":"` + payer + `","payee":"` + payee + `"}`
+		if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	self := "0x" + strings.Repeat("ab", 20)
+	other := "0x" + strings.Repeat("cd", 20)
+
+	// payer == payee (upper-cased → still equal, case-insensitively) → rejected.
+	f := createPaymentFlags{paymentFile: write(self, strings.ToUpper(self))}
+	if _, err := f.build(); err == nil {
+		t.Fatal("expected an error when payer == payee, got nil")
+	}
+
+	// distinct payer/payee → accepted.
+	f = createPaymentFlags{paymentFile: write(self, other)}
+	if _, err := f.build(); err != nil {
+		t.Fatalf("unexpected error for distinct payer/payee: %v", err)
 	}
 }

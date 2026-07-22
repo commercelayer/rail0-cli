@@ -9,6 +9,9 @@ one step (--private-key / -p). The API stores the signature; the payee can then
 authorize. If --private-key is omitted, the CLI prompts for it (hidden) on a
 terminal — so the key stays out of the shell history and process arguments.
 
+--from (payer) and --to (payee) must be different addresses: a payment can't be
+sent from an address to itself.
+
 ```
 rail0 payments create [flags]
 ```

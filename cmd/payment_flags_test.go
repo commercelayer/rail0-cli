@@ -200,3 +200,26 @@ func TestBuildRejectsSelfPayment(t *testing.T) {
 		t.Fatalf("unexpected error for distinct payer/payee: %v", err)
 	}
 }
+
+// assertAmountPrecision rejects an amount with more decimals than the token
+// supports (the gateway would 422); no decimals or within the limit passes.
+func TestAssertAmountPrecision(t *testing.T) {
+	cases := []struct {
+		amount   string
+		decimals int
+		wantErr  bool
+	}{
+		{"10", 6, false},
+		{"10.5", 6, false},
+		{"10.123456", 6, false}, // exactly at the limit
+		{"10.1234567", 6, true}, // one too many
+		{"1.00", 0, true},       // a 0-decimal token rejects any fraction
+		{"1", 0, false},
+		{" 2.50 ", 2, false}, // trimmed
+	}
+	for _, tc := range cases {
+		if err := assertAmountPrecision(tc.amount, tc.decimals); (err != nil) != tc.wantErr {
+			t.Errorf("assertAmountPrecision(%q, %d) error = %v, wantErr = %v", tc.amount, tc.decimals, err, tc.wantErr)
+		}
+	}
+}

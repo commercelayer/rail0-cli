@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/rail0/cli/internal/ui"
 	rail0 "github.com/rail0/go-sdk"
@@ -104,12 +105,28 @@ var walletsGetCmd = &cobra.Command{
 
 var createWalletAddress string
 var createWalletLabel string
+var createWalletKey string
 
 var walletsCreateCmd = &cobra.Command{
-	Use:     "create",
-	Short:   "Register a new EVM wallet address on the account",
-	Example: `  rail0 wallets create --address 0xABCD… --label "Main wallet"`,
-	Args:    cobra.NoArgs,
+	Use:   "create",
+	Short: "Register a new EVM wallet address on the account (SIWE proof-of-ownership)",
+	Long: `Register a wallet on the logged-in account.
+
+The gateway requires a SIWE proof-of-ownership of the address being added: this
+command fetches a single-use nonce, builds the SAME EIP-4361 message as
+'auth login' (signed for the added address), signs it, and submits the
+message + signature. So you must hold the private key OF THE ADDRESS you are
+adding, resolved exactly like the signing commands — pass -p as a raw 0x hex
+key, as @name for an OS-keychain key ('rail0 keys add'), or omit it to fall back
+to RAIL0_PRIVATE_KEY (you are prompted if none is set).
+
+The added address need NOT be your session address — a merchant may register
+several payee wallets — but the key must match --address (the command derives
+the signer from the key and rejects a mismatch). Addresses are globally unique:
+one already registered to any account is refused (409).`,
+	Example: `  rail0 wallets create --address 0xABCD… -p @payee --label "Main wallet"
+  rail0 wallets create --address @payee --pk 0xYourKey…`,
+	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		account, err := currentAccountID()
 		if err != nil {
@@ -121,9 +138,45 @@ var walletsCreateCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		req := rail0.CreateWalletRequest{Address: addr, Label: createWalletLabel}
+
+		// Resolve the key of the address being ADDED (not the session key) the
+		// same way every signing command does — flag / @keychain / env / prompt.
+		keyHex, err := signingKeyOrPrompt(createWalletKey)
+		if err != nil {
+			return err
+		}
+		// The proof only counts if it's signed by the added address's own key, so
+		// derive the signer and reject a mismatch locally with a clear message —
+		// before the gateway rejects it with a 422 signer_mismatch.
+		signer, err := addressFromKey(keyHex)
+		if err != nil {
+			return err
+		}
+		if !strings.EqualFold(signer, addr) {
+			return fmt.Errorf("the signing key controls %s, but --address is %s — adding a wallet needs the key OF the address being added", signer, addr)
+		}
+		privKey, err := rail0.HexToPrivateKey(keyHex)
+		if err != nil {
+			return fmt.Errorf("invalid private key: %w", err)
+		}
+
+		client := newClient()
 		return ui.RunAPI(func() (any, error) {
-			return newClient().Wallets.Create(context.Background(), account, req)
+			// Same SIWE handshake as login (host-only domain, default chain), but
+			// ProveAddress does NOT log in — the request is authorized by the
+			// existing merchant session (its bearer token is on `client`), while
+			// the proof attests control of the added address.
+			proof, err := client.Auth.ProveAddress(context.Background(), privKey, siweHost(resolveBaseURL()))
+			if err != nil {
+				return nil, err
+			}
+			req := rail0.CreateWalletRequest{
+				Address:   addr,
+				Message:   proof.Message,
+				Signature: proof.Signature,
+				Label:     createWalletLabel,
+			}
+			return client.Wallets.Create(context.Background(), account, req)
 		})
 	},
 }
@@ -251,6 +304,10 @@ func init() {
 	walletsCreateCmd.Flags().StringVarP(&createWalletAddress, "address", "A", "", "EVM wallet address (0x-prefixed hex, or @alias)")
 	_ = walletsCreateCmd.MarkFlagRequired("address")
 	walletsCreateCmd.Flags().StringVarP(&createWalletLabel, "label", "l", "", "Human-readable wallet label")
+	walletsCreateCmd.Flags().StringVarP(&createWalletKey, "private-key", "p", "",
+		"Signing key OF the address being added: 0x hex, @name for an OS-keychain key ('rail0 keys add'), or RAIL0_PRIVATE_KEY")
+	walletsCreateCmd.Flags().StringVar(&createWalletKey, "pk", "", "Alias for --private-key")
+	_ = walletsCreateCmd.Flags().MarkHidden("pk")
 
 	// wallets update
 	walletsUpdateCmd.Flags().StringVarP(&updateWalletLabel, "label", "l", "", "New wallet label")

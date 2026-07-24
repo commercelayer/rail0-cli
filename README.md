@@ -370,16 +370,31 @@ rail0 wallets get <wallet_uuid>
 
 #### `wallets create`
 
-Register a new EVM wallet address on the account.
+Register a new EVM wallet address on the account. The gateway requires a **SIWE
+proof-of-ownership** of the address being added, so this command needs the
+private key **of that address**: it fetches a nonce, builds and signs the same
+EIP-4361 message as `auth login` (for the added address), and submits the
+message + signature. The added address need not be your session address (a
+merchant may register several payee wallets), but the key must match `--address`
+— the command derives the signer from the key and rejects a mismatch. Addresses
+are globally unique; one already registered to any account is refused.
+
+The key is resolved like every signing command: `-p` as a raw `0x` hex key, as
+`@name` for an OS-keychain key (`rail0 keys add`), or `RAIL0_PRIVATE_KEY` (you
+are prompted if none is set).
 
 ```sh
-rail0 wallets create --address 0xABCD… --label "Treasury"
+rail0 wallets create --address 0xABCD… -p @treasury --label "Treasury"
+rail0 wallets create --address @payee --pk 0xYourKey…
 ```
 
 | Flag | Short | Required | Description |
 |------|-------|----------|-------------|
-| `--address` | `-A` | yes | EVM wallet address (0x-prefixed, or `@alias`) |
+| `--address` | `-A` | yes | EVM wallet address to add (0x-prefixed, or `@alias`) |
+| `--private-key` | `-p` | yes¹ | Signing key **of the address being added**: `0x` hex, `@name` (keychain), or `RAIL0_PRIVATE_KEY` |
 | `--label` | `-l` | no | Human-readable label |
+
+¹ Falls back to `RAIL0_PRIVATE_KEY`, then an interactive hidden prompt.
 
 #### `wallets update <wallet>`
 

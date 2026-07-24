@@ -45,7 +45,7 @@ func TestAPIHint(t *testing.T) {
 	cases := []struct {
 		name string
 		err  *rail0.APIError
-		want string
+		want string // substring the hint must contain (apiHint may append an actionable suffix from errorHints)
 	}{
 		{"message preferred", &rail0.APIError{Code: "no_active_contract", Message: "no active contract"}, "no active contract"},
 		{"code-only fallback", &rail0.APIError{Code: "no_active_contract"}, "no_active_contract"},
@@ -53,8 +53,8 @@ func TestAPIHint(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := apiHint(tc.err); got != tc.want {
-				t.Errorf("apiHint = %q, want %q", got, tc.want)
+			if got := apiHint(tc.err); !strings.Contains(got, tc.want) {
+				t.Errorf("apiHint = %q, want substring %q", got, tc.want)
 			}
 		})
 	}

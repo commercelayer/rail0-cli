@@ -56,8 +56,14 @@ func validateAmount(v string) error {
 // precision checks), the symbols available on that chain (for a helpful error),
 // and an error when the symbol isn't listed. Shared by resolve() and the
 // interactive token validator so the symbol→address rule lives in one place.
+//
+// Filters to ACTIVE tokens: /tokens returns retired ones too (an existing
+// payment references its token forever and must stay resolvable), but this is
+// the create path — offering a retired symbol would only produce a 422 from the
+// gateway, and listing it among "available" symbols would be misleading.
 func lookupTokenAddress(ctx context.Context, chainID int, symbol string) (string, int, []string, error) {
-	tokens, err := newClient().Tokens.List(ctx, rail0.ListTokensParams{ChainID: chainID})
+	activeOnly := true
+	tokens, err := newClient().Tokens.List(ctx, rail0.ListTokensParams{ChainID: chainID, Active: &activeOnly})
 	if err != nil {
 		return "", 0, nil, fmt.Errorf("fetch tokens: %w", err)
 	}
@@ -538,14 +544,18 @@ func (f *createPaymentFlags) pickChainFromCatalog() {
 }
 
 // pickTokenFromCatalog fills f.token from the active tokens on the chosen chain
-// (GET /tokens?chain_id=): a single token is taken automatically, several are
-// offered as a picker. Needs f.chainID set (the token catalog is per-chain), so
-// it's a no-op until the chain is known. Best-effort, like pickChainFromCatalog.
+// (GET /tokens?chain_id=&active=true): a single token is taken automatically,
+// several are offered as a picker. Needs f.chainID set (the token catalog is
+// per-chain), so it's a no-op until the chain is known. Best-effort, like
+// pickChainFromCatalog. Active-only for the same reason as lookupTokenAddress —
+// this is the create path, so a retired token is not a choice worth offering.
 func (f *createPaymentFlags) pickTokenFromCatalog() {
 	if f.chainID == 0 {
 		return
 	}
-	tokens, err := newClient().Tokens.List(context.Background(), rail0.ListTokensParams{ChainID: f.chainID})
+	activeOnly := true
+	tokens, err := newClient().Tokens.List(context.Background(),
+		rail0.ListTokensParams{ChainID: f.chainID, Active: &activeOnly})
 	if err != nil || len(tokens) == 0 {
 		return
 	}

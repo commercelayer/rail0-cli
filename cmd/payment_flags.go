@@ -74,7 +74,7 @@ func lookupTokenAddress(ctx context.Context, chainID int, symbol string) (string
 			return string(t.Address), t.Decimals, syms, nil
 		}
 	}
-	return "", 0, syms, fmt.Errorf("unknown token %q on chain %d — available: %s", symbol, chainID, strings.Join(syms, ", "))
+	return "", 0, syms, fmt.Errorf("unknown token %q on %s — available: %s", symbol, chainLabel(chainID), strings.Join(syms, ", "))
 }
 
 // assertAmountPrecision rejects a human amount carrying more decimal places than
@@ -486,7 +486,7 @@ func (f *createPaymentFlags) proposeFromPaymentMethods() {
 	if len(methods) > 1 {
 		opts := make([]huh.Option[string], 0, len(methods))
 		for i, m := range methods {
-			opts = append(opts, huh.NewOption(fmt.Sprintf("%s · chain %d", m.symbol, m.chainID), strconv.Itoa(i)))
+			opts = append(opts, huh.NewOption(fmt.Sprintf("%s · %s", m.symbol, chainLabel(m.chainID)), strconv.Itoa(i)))
 		}
 		var chosen string
 		if err := huh.NewSelect[string]().
@@ -502,7 +502,7 @@ func (f *createPaymentFlags) proposeFromPaymentMethods() {
 	} else {
 		// Exactly one accepted method given what was already supplied — take it
 		// and say so, since no picker is shown.
-		fmt.Fprintf(os.Stderr, "Using the merchant's %s on chain %d\n", pick.symbol, pick.chainID)
+		fmt.Fprintf(os.Stderr, "Using the merchant's %s on %s\n", pick.symbol, chainLabel(pick.chainID))
 	}
 
 	if f.token == "" {
@@ -514,12 +514,13 @@ func (f *createPaymentFlags) proposeFromPaymentMethods() {
 }
 
 // pickChainFromCatalog fills f.chainID from the public chain catalog
-// (GET /blockchains): a single active chain is taken automatically, several are
-// offered as a picker. Best-effort — on a fetch error or an empty catalog it
-// returns quietly, leaving the field to the free-text prompt.
+// (GET /blockchains, cached by chainCatalog): a single active chain is taken
+// automatically, several are offered as a picker, each labelled with its name.
+// Best-effort — on a fetch error or an empty catalog it returns quietly, leaving
+// the field to the free-text prompt.
 func (f *createPaymentFlags) pickChainFromCatalog() {
-	chains, err := newClient().Chains.List(context.Background())
-	if err != nil || len(chains) == 0 {
+	chains := chainCatalog()
+	if len(chains) == 0 {
 		return
 	}
 	if len(chains) == 1 {
@@ -528,7 +529,7 @@ func (f *createPaymentFlags) pickChainFromCatalog() {
 	}
 	opts := make([]huh.Option[string], 0, len(chains))
 	for i, c := range chains {
-		opts = append(opts, huh.NewOption(fmt.Sprintf("%s (%d)", c.Name, c.ChainID), strconv.Itoa(i)))
+		opts = append(opts, huh.NewOption(formatChainLabel(c.Name, c.ChainID), strconv.Itoa(i)))
 	}
 	var chosen string
 	if err := huh.NewSelect[string]().
@@ -569,7 +570,7 @@ func (f *createPaymentFlags) pickTokenFromCatalog() {
 	}
 	var chosen string
 	if err := huh.NewSelect[string]().
-		Title(fmt.Sprintf("Select the token on chain %d", f.chainID)).
+		Title(fmt.Sprintf("Select the token on %s", chainLabel(f.chainID))).
 		Options(opts...).
 		Value(&chosen).
 		Run(); err != nil {
@@ -586,7 +587,7 @@ func (f *createPaymentFlags) methodPromptTitle() string {
 	case f.token == "" && f.chainID == 0:
 		return "Select the token and chain the merchant accepts"
 	case f.token == "":
-		return fmt.Sprintf("Select the token to pay on chain %d", f.chainID)
+		return fmt.Sprintf("Select the token to pay on %s", chainLabel(f.chainID))
 	default:
 		return fmt.Sprintf("Select the chain to pay %s on", f.token)
 	}

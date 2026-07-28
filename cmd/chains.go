@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 
 	rail0 "github.com/rail0/go-sdk"
 
@@ -39,6 +40,49 @@ to narrow further.`,
 				rail0.ListChainsParams{NetworkType: networkType, Symbol: chainsSymbol})
 		})
 	},
+}
+
+var (
+	chainCatalogOnce sync.Once
+	chainCatalogList []rail0.Blockchain
+)
+
+// chainCatalog returns the environment's active blockchains (GET /blockchains),
+// fetched at most once per process: the interactive create flow labels a chain
+// in several prompts, and re-fetching the catalog for each of them would add a
+// round-trip per keystroke-free prompt. Best-effort — a fetch error caches the
+// empty slice, so callers degrade to the bare chain id instead of retrying (and
+// stalling) against an unreachable gateway on every label.
+func chainCatalog() []rail0.Blockchain {
+	chainCatalogOnce.Do(func() {
+		chains, err := newClient().Chains.List(context.Background())
+		if err != nil {
+			return
+		}
+		chainCatalogList = chains
+	})
+	return chainCatalogList
+}
+
+// chainLabel renders a chain id for humans, e.g. "Base Sepolia (84532)", using
+// the cached catalog to resolve the name.
+func chainLabel(id int) string {
+	for _, c := range chainCatalog() {
+		if c.ChainID == id {
+			return formatChainLabel(c.Name, id)
+		}
+	}
+	return formatChainLabel("", id)
+}
+
+// formatChainLabel is the single place the "name (id)" wording is decided; an
+// unknown name (unreachable catalog, or an id outside this environment) falls
+// back to "chain <id>", which still reads as a sentence in the prompts.
+func formatChainLabel(name string, id int) string {
+	if name == "" {
+		return fmt.Sprintf("chain %d", id)
+	}
+	return fmt.Sprintf("%s (%d)", name, id)
 }
 
 func init() {

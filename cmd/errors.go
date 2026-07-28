@@ -24,7 +24,9 @@ func humanizeError(err error) error {
 	if errors.As(err, &apiErr) {
 		switch {
 		case apiErr.Status == 401:
-			return errors.New("not authorized (HTTP 401) — run 'rail0 auth login' first")
+			// The gateway distinguishes missing_authorization from token_expired and
+			// invalid_token; say which one rather than collapsing all three.
+			return fmt.Errorf("not authorized (HTTP 401)%s — run 'rail0 auth login' first", detail(apiHint(apiErr)))
 		case apiErr.Status == 403:
 			return fmt.Errorf("forbidden (HTTP 403)%s", detail(apiHint(apiErr)))
 		case apiErr.Status == 404:
@@ -33,6 +35,8 @@ func humanizeError(err error) error {
 			return fmt.Errorf("already exists / conflict (HTTP 409)%s", detail(apiHint(apiErr)))
 		case apiErr.Status == 422:
 			return fmt.Errorf("request rejected (HTTP 422)%s", detail(apiHint(apiErr)))
+		case apiErr.Status == 501:
+			return fmt.Errorf("the gateway cannot handle this request (HTTP 501)%s", detail(apiHint(apiErr)))
 		case apiErr.Status >= 500:
 			// Surface the gateway's own detail (e.g. signing_payload_unavailable /
 			// rpc_unreachable) instead of masking every 5xx as "try again".
@@ -69,13 +73,20 @@ func detail(msg string) string {
 	return ": " + msg
 }
 
-// apiHint returns the gateway's human message, or its machine-readable code when
-// there's no message — so even bodies like {"status":"no_active_contract"} (no
-// message field) still produce an informative hint instead of nothing. The
-// optional `reason` sub-cause is appended when the message doesn't already carry it.
+// apiHint composes what the user reads after the HTTP status: the gateway's own
+// sentence first, then this CLI's extra advice for that code.
+//
+// The gateway sends code/title/detail, so `Detail` is a sentence written to be shown
+// as-is and is always present — it is the text, not a fallback. The local hint is
+// appended only when it says something the gateway cannot: which rail0 command to run
+// next. Falling back to the bare Code stays for an older gateway, whose bodies could
+// carry a code and nothing else.
 func apiHint(e *rail0.APIError) string {
-	msg := e.Message
-	if strings.TrimSpace(msg) == "" {
+	msg := strings.TrimSpace(e.Detail)
+	if msg == "" {
+		msg = strings.TrimSpace(e.Message)
+	}
+	if msg == "" {
 		msg = e.Code
 	}
 	if r := strings.TrimSpace(e.Reason); r != "" && !strings.Contains(msg, r) {
@@ -108,6 +119,27 @@ var errorHints = map[string]string{
 	"nothing_to_dispute":           "a dispute needs a merchant-held (refundable) balance",
 	"transaction_not_overwritable": "a transaction for this operation is already in flight — wait for it with 'rail0 payments wait <id>'",
 	"signer_mismatch":              "the signing key doesn't match the payment's payer/payee — use the right wallet's key",
+	"config_hash_mismatch":         "this payment and its on-chain deployment disagree — check it with 'rail0 payments get <id>'; it can't be operated as recorded",
+	"payment_not_on_chain":         "the contract has no record of this payment — check its transactions with 'rail0 payments transactions <id>'",
+	"unsupported_contract_version": "this payment's RAIL0 deployment isn't one the gateway supports — nothing to do client-side, the gateway needs upgrading",
+	// token-level reverts: the token refused, not RAIL0
+	"insufficient_token_balance":  "the paying wallet is short of the token — check it with 'rail0 wallets balances <id-or-address>'",
+	"invalid_token_signature":     "the EIP-3009 signature didn't recover to the paying wallet — wrong key, chain, token or amount; re-run the command with the right -p key",
+	"authorization_already_used":  "that authorization was already spent — each is single-use, create a fresh payment",
+	"authorization_not_yet_valid": "the authorization isn't valid yet (validAfter is in the future)",
+	"token_account_blocked":       "the token issuer has blocklisted one of the wallets in this transfer",
+	"token_paused":                "the token contract is paused by its issuer — nothing can settle right now",
+	// broadcast rejections: never reached the chain
+	"insufficient_gas_funds":  "the sending wallet can't cover gas — fund it with the chain's native token ('rail0 chains' shows which)",
+	"nonce_too_low":           "that nonce is already used on-chain — re-run the command to prepare a fresh transaction",
+	"replacement_underpriced": "another transaction with that nonce is pending — wait for it with 'rail0 payments wait <id>'",
+	"gas_price_too_low":       "the fee is below what the node accepts — re-run the command to pick up current fees",
+	"already_known":           "the node already has this transaction — wait for it with 'rail0 payments wait <id>'",
+	"rpc_unavailable":         "no RPC endpoint answered — the transaction was not submitted, retry in a moment",
+	// authorization: which party the session is missing
+	"not_the_payee":     "only the merchant (payee) can do this — 'rail0 auth login' with the payee's key",
+	"not_the_payer":     "only the buyer (payer) can do this — 'rail0 auth login' with the payer's key",
+	"not_a_participant": "only the payer and the payee can read a payment — sign in as one of them",
 	// contract reverts (surfaced as contract_revert, or on a failed transaction)
 	"not_payee":                  "only the merchant (payee) may do this — sign with the payee's key",
 	"not_payer":                  "only the buyer (payer) may do this — sign with the payer's key",

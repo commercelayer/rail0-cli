@@ -97,9 +97,20 @@ Exit codes distinguish the failure class: `0` success, `3` unauthorized, `4`
 forbidden, `5` not found, `6` conflict, `7` rejected (422), `8` gateway error
 (5xx), `9` network, `1` otherwise.
 
-Errors carry an actionable hint where the cause is known — e.g. a `422` on
-`capture` explains the amount exceeds the capturable balance, and an on-chain
-`RefundExpired` revert says the refund window has closed.
+Errors are printed as the gateway's own sentence plus, where the CLI can add
+something, the command to run next: a `422` on `capture` explains that the amount
+exceeds the capturable balance and points at `rail0 payments get <id>`, and a wallet
+with no gas is named as such rather than as an opaque RPC failure.
+
+The failures you actually hit are mostly not raised by RAIL0: the token reverts when
+the buyer is short of balance (`insufficient_token_balance`), signed with the wrong
+key (`invalid_token_signature`) or reuses an authorization
+(`authorization_already_used`), and the node refuses a transaction that never reaches
+the chain (`insufficient_gas_funds`, `nonce_too_low`). All of these arrive with a
+title and a sentence instead of raw revert bytes or `rpc_error: -32000`.
+
+A failed transaction shows the same code and sentence in `rail0 payments
+transactions <id>`, whether it reverted on-chain or was refused before broadcast.
 
 The list commands (`payments list`, `payments transactions`, `payments disputes`,
 `webhooks list`) take `--page` and `--per-page`; `payments list` also accepts

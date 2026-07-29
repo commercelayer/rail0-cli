@@ -23,6 +23,14 @@ type opFilter struct {
 
 func boolPointer(b bool) *bool { return &b }
 
+// `partially_refunded` appears below and is NOT dead, despite `payments get`'s help
+// describing it as "legacy; no longer produced". Both statements are true: no new
+// payment reaches that status (a partial refund leaves the status unchanged), but the
+// gateway deliberately keeps it in its CAPTURABLE_FROM / REFUNDABLE_FROM sets so
+// operations on HISTORICAL rows still resolve. Since these filters exist to mirror
+// those guards, dropping it here would not remove dead code — it would make the
+// picker hide a payment the gateway would happily act on, forcing the id to be pasted
+// by hand. Remove it only together with the gateway's sets. (#52)
 var opFilters = map[string]opFilter{
 	// authorize/charge both act on a signed payment, but only in their own mode.
 	"authorize": {statuses: []string{"signed"}, mode: "authorize"},

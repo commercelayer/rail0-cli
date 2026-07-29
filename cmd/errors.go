@@ -6,6 +6,7 @@ import (
 	"net"
 	"strings"
 	"syscall"
+	"time"
 
 	rail0 "github.com/rail0/go-sdk"
 )
@@ -35,6 +36,8 @@ func humanizeError(err error) error {
 			return fmt.Errorf("already exists / conflict (HTTP 409)%s", detail(apiHint(apiErr)))
 		case apiErr.Status == 422:
 			return fmt.Errorf("request rejected (HTTP 422)%s", detail(apiHint(apiErr)))
+		case apiErr.Status == 429:
+			return fmt.Errorf("rate limited (HTTP 429)%s", detail(rateLimitHint(apiErr)))
 		case apiErr.Status == 501:
 			return fmt.Errorf("the gateway cannot handle this request (HTTP 501)%s", detail(apiHint(apiErr)))
 		case apiErr.Status >= 500:
@@ -96,6 +99,26 @@ func apiHint(e *rail0.APIError) string {
 		msg = strings.TrimSpace(msg + " — " + h)
 	}
 	return msg
+}
+
+// rateLimitHint composes what follows "rate limited (HTTP 429)".
+//
+// The gateway shapes its own 429 through API::Errors and its detail already names the
+// window — "Rate limit reached. Retry in 60 seconds." — so that sentence is preferred
+// and the parsed Retry-After is deliberately NOT appended on top of it: the same
+// number twice in one line reads like two different facts.
+//
+// The header is the fallback for a 429 the gateway did not produce. An upstream proxy,
+// CDN or load balancer sends Retry-After with no rail0 error body, and that is exactly
+// the case where the CLI has nothing else to tell the user. (#49)
+func rateLimitHint(e *rail0.APIError) string {
+	if msg := strings.TrimSpace(apiHint(e)); msg != "" {
+		return msg
+	}
+	if e.RetryAfter > 0 {
+		return fmt.Sprintf("retry in %s", e.RetryAfter.Round(time.Second))
+	}
+	return "retry shortly"
 }
 
 // errorHints maps a gateway/contract error code to an actionable next step, so a
@@ -179,9 +202,15 @@ var ErrAborted = errors.New("aborted")
 // codes below.
 const ExitCodeAborted = 130
 
+// ExitCodeRateLimited is the status for an HTTP 429. Distinct so a script can tell
+// "slow down and retry" apart from a real failure — the one API error class where
+// re-running the identical command later is the correct response. (#49)
+const ExitCodeRateLimited = 10
+
 // exitCode maps an error to a distinct process exit status so scripts can branch
 // on the class of failure: 3 auth, 4 forbidden, 5 not-found, 6 conflict,
-// 7 rejected (422), 8 upstream (5xx), 9 network, 130 user-cancelled, 1 otherwise.
+// 7 rejected (422), 8 upstream (5xx), 9 network, 10 rate-limited,
+// 130 user-cancelled, 1 otherwise.
 func exitCode(err error) int {
 	// Checked before the API/transport classification: a cancellation is not a
 	// failure of the request, and may not even have made one.
@@ -204,6 +233,8 @@ func exitCode(err error) int {
 			return 6
 		case apiErr.Status == 422:
 			return 7
+		case apiErr.Status == 429:
+			return ExitCodeRateLimited
 		case apiErr.Status >= 500:
 			return 8
 		}

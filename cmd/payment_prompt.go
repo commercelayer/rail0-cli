@@ -49,6 +49,13 @@ var opFilters = map[string]opFilter{
 // ones op can act on, and shows a picker; when none match (or the list can't be
 // fetched — e.g. release run by the un-authenticated payer) it falls back to a
 // free-text prompt. Non-interactive with no argument → error.
+//
+// Whatever it returns goes straight into the request path: the gateway resolves
+// EITHER identifier form there — the payment's UUID or its logical rail0_id (0x + 64
+// hex) — so no client-side resolution step is needed, with or without a session.
+// (The CLI historically pre-resolved a rail0_id to its UUID through an authenticated
+// list filter; resolvePaymentID was the passthrough left behind when that stopped
+// being necessary, and is now gone. #72)
 func pickPaymentID(ctx context.Context, client *rail0.Client, args []string, op string) (string, error) {
 	if len(args) > 0 {
 		return args[0], nil

@@ -62,10 +62,7 @@ Status values:
 		return ui.RunAPI(func() (any, error) {
 			ctx := context.Background()
 			client := newClient()
-			id, err := resolvePaymentID(ctx, client, args[0])
-			if err != nil {
-				return nil, err
-			}
+			id := args[0]
 			return client.Payments.Get(ctx, id)
 		})
 	},
@@ -180,10 +177,7 @@ var paymentsTransactionsCmd = &cobra.Command{
 		return ui.RunAPI(func() (any, error) {
 			ctx := context.Background()
 			client := newClient()
-			id, err := resolvePaymentID(ctx, client, args[0])
-			if err != nil {
-				return nil, err
-			}
+			id := args[0]
 			p := rail0.ListTransactionsParams{Sort: paymentsTransactionsSort, Page: paymentsTransactionsPage, PerPage: paymentsTransactionsPerPage}
 			resp, err := client.Payments.Transactions(ctx, id, p)
 			if err != nil {
@@ -343,7 +337,10 @@ func ensureSignerFor(ctx context.Context, client *rail0.Client, rail0ID, signing
 	if err != nil {
 		return nil, err
 	}
-	allowed := allowedSigners(op, p)
+	allowed, err := allowedSigners(op, p)
+	if err != nil {
+		return err
+	}
 	for _, a := range allowed {
 		if strings.EqualFold(signer, a) {
 			return &signingContext{payment: p, signer: signer}, nil
@@ -353,17 +350,36 @@ func ensureSignerFor(ctx context.Context, client *rail0.Client, rail0ID, signing
 		signer, op, strings.Join(allowed, " or "))
 }
 
+// canonicalOp folds the two vocabularies the CLI uses for an operation onto one key.
+// The picker filter and the signer check take a human LABEL ("close dispute", which
+// also has to read correctly inside an error sentence), while submitThenWait takes
+// the gateway's wire name ("close_dispute"). The two coincide for every operation
+// EXCEPT close_dispute — which is exactly why the drift between them was invisible.
+func canonicalOp(op string) string {
+	return strings.ReplaceAll(strings.TrimSpace(strings.ToLower(op)), " ", "_")
+}
+
 // allowedSigners lists the addresses the contract accepts as msg.sender for op:
-// dispute/close are payer-only, release is payer-or-payee, every other operation
-// is payee-only.
-func allowedSigners(op string, p *rail0.Payment) []string {
-	switch op {
-	case "dispute", "close dispute":
-		return []string{string(p.Payer)}
+// dispute/close_dispute are payer-only, release is payer-or-payee, every other
+// operation is payee-only.
+//
+// An unrecognised operation is an ERROR rather than a silent payee-only default.
+// The default was the hazard: for the two payer-only operations it produces the
+// opposite of the right answer, rejecting the payer — the ONLY party permitted to
+// sign them — with a "wrong key?" message pointing nowhere near the real cause. A
+// caller passing the wire form "close_dispute" to a function keyed on the label
+// "close dispute" was one plausible way in, and canonicalOp now closes that door
+// too. (#72)
+func allowedSigners(op string, p *rail0.Payment) ([]string, error) {
+	switch canonicalOp(op) {
+	case "dispute", "close_dispute":
+		return []string{string(p.Payer)}, nil
 	case "release":
-		return []string{string(p.Payer), string(p.Payee)}
-	default: // authorize, charge, capture, void, refund
-		return []string{string(p.Payee)}
+		return []string{string(p.Payer), string(p.Payee)}, nil
+	case "authorize", "charge", "capture", "void", "refund":
+		return []string{string(p.Payee)}, nil
+	default:
+		return nil, fmt.Errorf("internal error: no signer rule for operation %q", op)
 	}
 }
 
@@ -403,10 +419,7 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 		if err != nil {
 			return err
 		}
-		rail0Id, err := resolvePaymentID(ctx, client, idInput)
-		if err != nil {
-			return err
-		}
+		rail0Id := idInput
 		return ui.RunAPIWithMessage(actionLabel("Authorizing…"), func() (any, error) {
 			sc, err := ensureSignerFor(ctx, client, rail0Id, signingKey, "authorize")
 			if err != nil {
@@ -463,10 +476,7 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 		if err != nil {
 			return err
 		}
-		rail0Id, err := resolvePaymentID(ctx, client, idInput)
-		if err != nil {
-			return err
-		}
+		rail0Id := idInput
 		return ui.RunAPIWithMessage(actionLabel("Charging…"), func() (any, error) {
 			sc, err := ensureSignerFor(ctx, client, rail0Id, signingKey, "charge")
 			if err != nil {
@@ -528,10 +538,7 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 		if err != nil {
 			return err
 		}
-		rail0Id, err := resolvePaymentID(ctx, client, idInput)
-		if err != nil {
-			return err
-		}
+		rail0Id := idInput
 		// validateAmount was wired only into `create`, so the two commands that
 		// actually move money took the amount raw: `-a 1,50`, `-a 0` or `-a -1` each
 		// burned a session round-trip AND ensureSignerFor's payment fetch before the
@@ -602,10 +609,7 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 		if err != nil {
 			return err
 		}
-		rail0Id, err := resolvePaymentID(ctx, client, idInput)
-		if err != nil {
-			return err
-		}
+		rail0Id := idInput
 		if err := confirmDestructive(fmt.Sprintf("Void payment %s? This returns the full escrow to the payer.", shortID(rail0Id))); err != nil {
 			return err
 		}
@@ -675,10 +679,7 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 		if err != nil {
 			return err
 		}
-		rail0Id, err := resolvePaymentID(ctx, client, idInput)
-		if err != nil {
-			return err
-		}
+		rail0Id := idInput
 		if err := confirmDestructive(fmt.Sprintf("Release payment %s? This returns the uncaptured escrow to the payer.", shortID(rail0Id))); err != nil {
 			return err
 		}
@@ -746,10 +747,7 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 		if err != nil {
 			return err
 		}
-		rail0Id, err := resolvePaymentID(ctx, client, idInput)
-		if err != nil {
-			return err
-		}
+		rail0Id := idInput
 		// Same local check as capture — see the note there. (#61)
 		if refundAmount == "" {
 			refundAmount, err = promptValidated("Amount", "decimal in token units (e.g. 1.00)", false, validateAmount)
@@ -842,10 +840,7 @@ Pass --private-key (-p): the CLI signs locally with the payer key and broadcasts
 		if err != nil {
 			return err
 		}
-		rail0Id, err := resolvePaymentID(ctx, client, idInput)
-		if err != nil {
-			return err
-		}
+		rail0Id := idInput
 		if disputeReason == "" {
 			disputeReason, err = promptValue("Reason", "optional bytes32 reason (0x…); blank for none", true)
 			if err != nil {
@@ -892,10 +887,7 @@ var paymentsDisputeCloseCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		rail0Id, err := resolvePaymentID(ctx, client, idInput)
-		if err != nil {
-			return err
-		}
+		rail0Id := idInput
 		if closeDisputeReason == "" {
 			closeDisputeReason, err = promptValue("Reason", "optional bytes32 reason (0x…); blank for none", true)
 			if err != nil {
@@ -943,10 +935,7 @@ var paymentsDisputesCmd = &cobra.Command{
 		return ui.RunAPI(func() (any, error) {
 			ctx := context.Background()
 			client := newClient()
-			id, err := resolvePaymentID(ctx, client, args[0])
-			if err != nil {
-				return nil, err
-			}
+			id := args[0]
 			resp, err := client.Payments.Disputes(ctx, id,
 				rail0.ListDisputesParams{Status: disputesStatus, Sort: disputesSort, Page: disputesPage, PerPage: disputesPerPage})
 			if err != nil {

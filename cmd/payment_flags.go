@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/x/term"
@@ -51,6 +52,41 @@ func validateAmount(v string) error {
 	return nil
 }
 
+var (
+	tokenCatalogMu    sync.Mutex
+	tokenCatalogCache = map[int][]rail0.Token{}
+)
+
+// activeTokens returns the ACTIVE tokens on chainID (GET /tokens), fetched at most once
+// per chain per process. Mirrors chainCatalog (cmd/chains.go) for the same reason: an
+// interactive create consulted this list three to four times for the SAME chain —
+// assertTokenKnown, the huh field validator (re-run on every submit attempt), resolve,
+// and the token picker — each on a freshly constructed client, so the form visibly
+// stalled between prompts on a slow link. (#69)
+//
+// One deliberate difference from chainCatalog: a FAILURE is not cached. Chains cache
+// the empty slice and degrade to a bare chain id, which is a cosmetic fallback. Here an
+// empty list means "unknown token — available: " and the user could not recover inside
+// the same command, so a transient error stays retryable.
+//
+// Active-only for the same reason as lookupTokenAddress: /tokens also returns retired
+// tokens (an existing payment references its token forever), but this is the create
+// path, where offering one would only earn a 422.
+func activeTokens(ctx context.Context, chainID int) ([]rail0.Token, error) {
+	tokenCatalogMu.Lock()
+	defer tokenCatalogMu.Unlock()
+	if cached, ok := tokenCatalogCache[chainID]; ok {
+		return cached, nil
+	}
+	activeOnly := true
+	tokens, err := newClient().Tokens.List(ctx, rail0.ListTokensParams{ChainID: chainID, Active: &activeOnly})
+	if err != nil {
+		return nil, err
+	}
+	tokenCatalogCache[chainID] = tokens
+	return tokens, nil
+}
+
 // lookupTokenAddress turns a token symbol into its address on chainID via
 // GET /tokens. It returns the resolved address, the token's decimals (for
 // precision checks), the symbols available on that chain (for a helpful error),
@@ -62,8 +98,7 @@ func validateAmount(v string) error {
 // the create path — offering a retired symbol would only produce a 422 from the
 // gateway, and listing it among "available" symbols would be misleading.
 func lookupTokenAddress(ctx context.Context, chainID int, symbol string) (string, int, []string, error) {
-	activeOnly := true
-	tokens, err := newClient().Tokens.List(ctx, rail0.ListTokensParams{ChainID: chainID, Active: &activeOnly})
+	tokens, err := activeTokens(ctx, chainID)
 	if err != nil {
 		return "", 0, nil, fmt.Errorf("fetch tokens: %w", err)
 	}
@@ -554,9 +589,7 @@ func (f *createPaymentFlags) pickTokenFromCatalog() {
 	if f.chainID == 0 {
 		return
 	}
-	activeOnly := true
-	tokens, err := newClient().Tokens.List(context.Background(),
-		rail0.ListTokensParams{ChainID: f.chainID, Active: &activeOnly})
+	tokens, err := activeTokens(context.Background(), f.chainID)
 	if err != nil || len(tokens) == 0 {
 		return
 	}

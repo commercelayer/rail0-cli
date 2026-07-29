@@ -339,7 +339,7 @@ func ensureSignerFor(ctx context.Context, client *rail0.Client, rail0ID, signing
 	}
 	allowed, err := allowedSigners(op, p)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	for _, a := range allowed {
 		if strings.EqualFold(signer, a) {

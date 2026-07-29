@@ -147,12 +147,19 @@ func promptValidated(label, desc string, optional bool, check func(string) error
 	return v, nil
 }
 
-// abortOrReturn exits cleanly on Ctrl-C/ESC (as the create form does); any other
+// abortOrReturn ends the process on Ctrl-C/ESC (as the create form does); any other
 // error is left for the caller to handle.
+//
+// It exits NON-ZERO. It used to exit 0, which told a caller the operation had
+// succeeded: `rail0 payments refund <id> && mark_refunded_in_db` ran the second
+// command when the operator cancelled at the amount prompt. Exiting here rather than
+// returning an error is deliberate — Ctrl-C should end the command immediately, not
+// fall through to the free-text fallback that `pickFromList` returning false
+// triggers. (#65)
 func abortOrReturn(err error) {
 	if errors.Is(err, huh.ErrUserAborted) {
 		fmt.Fprintln(os.Stderr)
-		os.Exit(0)
+		os.Exit(ExitCodeAborted)
 	}
 }
 

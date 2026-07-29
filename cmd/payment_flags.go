@@ -399,9 +399,11 @@ func (f *createPaymentFlags) buildInteractive() (rail0.CreatePaymentRequest, err
 	// here when a required field OR the description is missing, so this holds.)
 	if len(fields) > 0 {
 		if err := huh.NewForm(huh.NewGroup(fields...)).Run(); err != nil {
+			// Non-zero: cancelling the create form is not success. See
+			// abortOrReturn / ExitCodeAborted. (#65)
 			if errors.Is(err, huh.ErrUserAborted) {
 				fmt.Fprintln(os.Stderr)
-				os.Exit(0)
+				os.Exit(ExitCodeAborted)
 			}
 			return rail0.CreatePaymentRequest{}, err
 		}

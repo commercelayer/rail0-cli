@@ -207,7 +207,9 @@ func promptSecret(label string) (string, error) {
 	var v string
 	err := huh.NewInput().Title(label).EchoMode(huh.EchoModePassword).Value(&v).Run()
 	if errors.Is(err, huh.ErrUserAborted) {
-		return "", errors.New("aborted")
+		// ErrAborted, not a fresh error: cancelling the key prompt is the same
+		// "user said no" as any other cancellation, and must exit 130. (#65)
+		return "", ErrAborted
 	}
 	return v, err
 }

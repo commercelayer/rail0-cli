@@ -6,6 +6,7 @@ import (
 	"strings"
 	"syscall"
 	"testing"
+	"time"
 
 	rail0 "github.com/rail0/go-sdk"
 )
@@ -113,5 +114,75 @@ func TestDecliningAConfirmationIsAnAbort(t *testing.T) {
 	}
 	if got := exitCode(err); got == 0 {
 		t.Error("the refusal must not exit 0")
+	}
+}
+
+// A 429 must be recognised rather than falling through to the SDK's raw message,
+// and must not repeat the retry window twice: the gateway's own detail already
+// names it, so rateLimitHint prefers that sentence over the Retry-After header.
+func TestHumanizeError429(t *testing.T) {
+	cases := []struct {
+		name     string
+		err      *rail0.APIError
+		want     string
+		wantOnce string // substring that must appear exactly once
+	}{
+		{
+			name: "gateway-shaped 429 with a detail and a header",
+			err: &rail0.APIError{
+				Status: 429, Code: "rate_limited",
+				Detail:     "Rate limit reached. Retry in 60 seconds.",
+				RetryAfter: 60 * time.Second,
+			},
+			want:     "rate limited (HTTP 429): Rate limit reached. Retry in 60 seconds.",
+			wantOnce: "60",
+		},
+		{
+			// A proxy/CDN 429: Retry-After present, no rail0 body.
+			name: "bare 429 with only a Retry-After header",
+			err:  &rail0.APIError{Status: 429, RetryAfter: 90 * time.Second},
+			want: "rate limited (HTTP 429): retry in 1m30s",
+		},
+		{
+			name: "bare 429 with nothing at all",
+			err:  &rail0.APIError{Status: 429},
+			want: "rate limited (HTTP 429): retry shortly",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := humanizeError(tc.err).Error()
+			if !strings.Contains(got, tc.want) {
+				t.Errorf("humanizeError = %q, want it to contain %q", got, tc.want)
+			}
+			if tc.wantOnce != "" && strings.Count(got, tc.wantOnce) != 1 {
+				t.Errorf("humanizeError = %q: %q appears %d times, want exactly 1 (the window must not be repeated)",
+					got, tc.wantOnce, strings.Count(got, tc.wantOnce))
+			}
+		})
+	}
+}
+
+// A 429 gets its own exit code: re-running the same command later is the correct
+// response, which no other API error class shares.
+func TestExitCode429IsDistinct(t *testing.T) {
+	got := exitCode(&rail0.APIError{Status: 429})
+	if got != ExitCodeRateLimited {
+		t.Fatalf("exitCode(429) = %d, want %d", got, ExitCodeRateLimited)
+	}
+	for _, other := range []int{
+		exitCode(&rail0.APIError{Status: 401}),
+		exitCode(&rail0.APIError{Status: 403}),
+		exitCode(&rail0.APIError{Status: 404}),
+		exitCode(&rail0.APIError{Status: 409}),
+		exitCode(&rail0.APIError{Status: 422}),
+		exitCode(&rail0.APIError{Status: 500}),
+		exitCode(&rail0.APIError{Status: 0}),
+		exitCode(ErrAborted),
+		exitCode(errors.New("generic")),
+	} {
+		if other == got {
+			t.Errorf("exit code %d is shared with another error class; 429 must be distinct", got)
+		}
 	}
 }

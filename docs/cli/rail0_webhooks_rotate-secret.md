@@ -16,6 +16,7 @@ rail0 webhooks rotate-secret <webhook_id> [flags]
 
 ```
   -h, --help   help for rotate-secret
+  -y, --yes    Skip the confirmation prompt (required to run non-interactively)
 ```
 
 ### Options inherited from parent commands

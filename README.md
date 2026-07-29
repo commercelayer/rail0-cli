@@ -283,7 +283,7 @@ Every on-chain action command (`authorize`, `charge`, `capture`, `void`, `releas
 | `--private-key` | `-p` | Caller's secp256k1 private key: 0x-prefixed hex, or `@name` for a key saved in the OS keychain (`rail0 keys add`) |
 | `--wait` | `-w` | Block until the operation confirms on-chain (or fails) instead of returning at the `202` |
 | `--timeout` | — | Max time to wait with `--wait` (default `2m`) |
-| `--yes` | `-y` | Skip the confirmation prompt on the irreversible ops (`void`/`release`/`refund`); required to run them non-interactively |
+| `--yes` | `-y` | Skip the confirmation prompt on any irreversible op (`void`/`release`/`refund`, `keys rm`, `wallets delete`, `webhooks delete`/`rotate-secret`); required to run them non-interactively |
 
 **Waiting for confirmation.** The gateway returns `202` immediately and the indexer
 confirms the on-chain event a moment later. Pass `--wait` to have the command poll
@@ -292,10 +292,16 @@ or `failed`, instead of polling `payments get` by hand. You can also wait on an
 existing payment: `rail0 payments wait <rail0Id> [--until <status>]` (default: until
 no transaction is still in flight).
 
-**Confirmations.** The irreversible actions (`void`, `release`, `refund`) prompt for
-a `y/N` confirmation before broadcasting; pass `--yes` to skip it (and to run them
-in a non-interactive shell, where they otherwise refuse). `keys rm` and
-`wallets delete` confirm the same way.
+**Confirmations.** Every irreversible action prompts for a `y/N` confirmation first;
+pass `--yes` to skip it (and to run it in a non-interactive shell, where it otherwise
+refuses rather than blocking on a hidden prompt). That covers the on-chain ops
+(`void`, `release`, `refund`) and, identically, `keys rm`, `wallets delete`,
+`webhooks delete` and `webhooks rotate-secret`.
+
+`webhooks rotate-secret` is gated for a reason that is easy to miss: it is not
+undoable by rotating back. The previous secret is gone, and from that moment every
+consumer still verifying `X-Rail0-Signature` against it rejects deliveries — so a
+mistyped webhook id silently breaks production verification.
 
 The signing key is resolved in this order: `--private-key` (`-p` / `--pk`, where `@name` pulls the key from the OS keychain) > `RAIL0_PRIVATE_KEY` env var. If none is set, the CLI prompts for the key **hidden** on a terminal (or reads one line from a piped stdin), so it never lands in the shell history or process arguments — the same masked input as `keys add`.
 

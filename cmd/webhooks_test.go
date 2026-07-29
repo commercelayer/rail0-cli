@@ -1,6 +1,11 @@
 package cmd
 
-import "testing"
+import (
+	"strings"
+	"testing"
+
+	"github.com/spf13/cobra"
+)
 
 func TestParseBoolFlag(t *testing.T) {
 	cases := []struct {
@@ -36,3 +41,53 @@ func TestParseBoolFlag(t *testing.T) {
 }
 
 func boolPtr(b bool) *bool { return &b }
+
+// `webhooks delete` and `webhooks rotate-secret` had no confirmation gate while
+// every sibling destructive command did (#67). These tests cover the gate itself,
+// which nothing did before — hence the sweep below rather than two isolated cases.
+
+// The whole destructive surface, so a command added later without a gate fails here
+// instead of shipping. `rotate-secret` counts: the previous secret is gone and every
+// consumer still verifying with it starts rejecting deliveries.
+func TestEveryDestructiveCommandHasTheYesFlag(t *testing.T) {
+	destructive := map[*cobra.Command][]string{
+		webhooksDeleteCmd:       {"webhooks", "delete"},
+		webhooksRotateSecretCmd: {"webhooks", "rotate-secret"},
+		walletsDeleteCmd:        {"wallets", "delete"},
+		keysRemoveCmd:           {"keys", "rm"},
+	}
+	for cmd, path := range destructive {
+		if cmd.Flags().Lookup("yes") == nil {
+			t.Errorf("%s: missing -y/--yes, so it cannot be confirmed or run non-interactively",
+				strings.Join(path, " "))
+		}
+	}
+}
+
+// The gate must run BEFORE the API call: under test there is no TTY, so
+// confirmDestructive refuses and the command must fail with that refusal rather
+// than by attempting a request. Asserting the message distinguishes the two — a
+// network error here would mean the gate was bypassed.
+func TestDestructiveWebhookCommandsRefuseWithoutATTY(t *testing.T) {
+	// assumeYes is a package-level var shared by every --yes flag, so a previous
+	// test (or command) setting it would leak in.
+	assumeYes = false
+	t.Cleanup(func() { assumeYes = false })
+
+	for _, tc := range []struct {
+		name string
+		cmd  *cobra.Command
+	}{
+		{"webhooks delete", webhooksDeleteCmd},
+		{"webhooks rotate-secret", webhooksRotateSecretCmd},
+	} {
+		err := tc.cmd.RunE(tc.cmd, []string{"whk_test123"})
+		if err == nil {
+			t.Errorf("%s: expected a refusal without a TTY, got nil", tc.name)
+			continue
+		}
+		if !strings.Contains(err.Error(), "refusing to run without confirmation") {
+			t.Errorf("%s: failed for the wrong reason (want the confirmation gate): %v", tc.name, err)
+		}
+	}
+}

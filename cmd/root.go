@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 	"strings"
-	"time"
 
 	charmlog "github.com/charmbracelet/log"
 	"github.com/rail0/cli/internal/token"
@@ -87,10 +86,11 @@ func newClient() *rail0.Client {
 // reuse the session.
 func ensureSession(ctx context.Context, keyHex, addr string) error {
 	if t := token.Load(); t != "" {
+		// No expiry re-check here: parseJWTClaims returns an error for an expired
+		// token, so a nil error already means the session is live. (#71)
 		if claims, err := parseJWTClaims(t); err == nil {
 			sub, _ := claims["sub"].(string)
-			exp, _ := claims["exp"].(float64)
-			if strings.EqualFold(sub, addr) && int64(exp) > time.Now().Unix() {
+			if strings.EqualFold(sub, addr) {
 				return nil
 			}
 		}

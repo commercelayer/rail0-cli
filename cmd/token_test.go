@@ -3,6 +3,7 @@ package cmd
 import (
 	"encoding/base64"
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -138,5 +139,51 @@ func TestLoginSummary_OmitsAccountIDWhenAccountLess(t *testing.T) {
 	}
 	if info["address"] != "0xbuyer" {
 		t.Errorf("address: got %v", info["address"])
+	}
+}
+
+// The three failure modes parseJWTClaims must keep apart. Before #71 a corrupt
+// payload and a missing exp both surfaced as "token expired", and the payload
+// decoder was hand-rolled — this pins the distinction and the stdlib behaviour.
+func TestParseJWTClaimsDistinguishesMalformedFromExpired(t *testing.T) {
+	cases := []struct {
+		name, jwt, wantErr string
+	}{
+		{"not three segments", "only.two", "expected 3 dot-separated JWT segments, got 2"},
+		{"payload not base64url", "header.!!!not-base64!!!.sig", "payload is not base64url"},
+		{"payload not JSON", "header." + base64.RawURLEncoding.EncodeToString([]byte("{nope")) + ".sig", "payload is not JSON"},
+		{"no exp claim", makeJWT(t, map[string]any{"sub": "0xabc"}), "missing or non-numeric exp claim"},
+		{"non-numeric exp", makeJWT(t, map[string]any{"exp": "soon"}), "missing or non-numeric exp claim"},
+		{"expired", makeJWT(t, map[string]any{"exp": time.Now().Add(-time.Hour).Unix()}), "token expired"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := parseJWTClaims(tc.jwt)
+			if err == nil {
+				t.Fatalf("parseJWTClaims(%q) = nil error, want %q", tc.jwt, tc.wantErr)
+			}
+			if !strings.Contains(err.Error(), tc.wantErr) {
+				t.Errorf("error = %q, want it to contain %q", err, tc.wantErr)
+			}
+		})
+	}
+}
+
+// A live token round-trips: the payload is unpadded base64url (RawURLEncoding),
+// which is what a real gateway JWT carries.
+func TestParseJWTClaimsAcceptsALiveToken(t *testing.T) {
+	exp := time.Now().Add(time.Hour).Unix()
+	claims, err := parseJWTClaims(makeJWT(t, map[string]any{"sub": "0xABC", "account_id": "acc_1", "exp": exp}))
+	if err != nil {
+		t.Fatalf("parseJWTClaims: %v", err)
+	}
+	if got, _ := claims["sub"].(string); got != "0xABC" {
+		t.Errorf("sub = %q, want 0xABC", got)
+	}
+	if got, _ := claims["account_id"].(string); got != "acc_1" {
+		t.Errorf("account_id = %q, want acc_1", got)
+	}
+	if got, _ := claims["exp"].(float64); int64(got) != exp {
+		t.Errorf("exp = %v, want %d", got, exp)
 	}
 }

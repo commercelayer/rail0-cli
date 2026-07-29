@@ -173,11 +173,14 @@ func makeDebugLogger() rail0.Logger {
 		if e.WillRetry {
 			fields = append(fields, "will_retry", true)
 		}
+		// Bodies are redacted, never logged verbatim: a submit request carries
+		// `signed_transaction`, a login carries `signature`, and the responses carry
+		// the session JWT and webhook shared secrets. See redactBody. (#51)
 		if e.RequestBody != nil {
-			fields = append(fields, "request", e.RequestBody)
+			fields = append(fields, "request", redactBody(e.RequestBody))
 		}
 		if e.ResponseBody != nil {
-			fields = append(fields, "response", e.ResponseBody)
+			fields = append(fields, "response", redactBody(e.ResponseBody))
 		}
 		if e.Err != nil {
 			logger.Error("HTTP", append(fields, "error", e.Err)...)

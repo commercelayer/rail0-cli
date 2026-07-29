@@ -79,8 +79,9 @@ add'), or omit it to fall back to the RAIL0_PRIVATE_KEY environment variable.`,
 
 		tokenPath, saveErr := token.SaveAndReport(authResp.Token)
 		if saveErr != nil {
-			fmt.Fprintf(os.Stderr, "warning: could not save token to disk: %v\n", saveErr)
-			fmt.Fprintf(os.Stderr, "Set RAIL0_TOKEN=%s to authenticate manually.\n", authResp.Token)
+			// Reports the failure and how to recover, but NEVER the token itself —
+			// see tokenSaveFailureNotice for why that matters. (#64)
+			fmt.Fprint(os.Stderr, tokenSaveFailureNotice(saveErr))
 		} else {
 			fmt.Fprintf(os.Stderr, "Token saved to %s\n", tokenPath)
 		}
@@ -89,6 +90,25 @@ add'), or omit it to fall back to the RAIL0_PRIVATE_KEY environment variable.`,
 		summary := loginSummary(authResp, loginShowToken)
 		return ui.RunAPI(func() (any, error) { return summary, nil })
 	},
+}
+
+// tokenSaveFailureNotice is what `auth login` prints when the session could not be
+// persisted. Extracted so the one property that matters here is testable: the raw
+// JWT must NOT appear in it.
+//
+// It used to print `Set RAIL0_TOKEN=<jwt>`, which contradicted the command's own
+// contract — the help text and loginSummary both withhold the token unless --token is
+// passed — and put a live bearer credential into terminal scrollback, CI logs and any
+// `2>` redirect. The trigger is mundane (a read-only filesystem, a sandboxed HOME), so
+// it was not an exotic path. --token stays the single place the value is printed,
+// because there the user asked for it. (#64)
+func tokenSaveFailureNotice(saveErr error) string {
+	return fmt.Sprintf(
+		"warning: could not save token to disk: %v\n"+
+			"The session is valid but was not persisted, so the next command will not be authenticated.\n"+
+			"Re-run with --token to print it, then export it as RAIL0_TOKEN.\n",
+		saveErr,
+	)
 }
 
 // siweHost derives the SIWE domain from a base URL: the bare host WITHOUT the

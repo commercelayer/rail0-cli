@@ -40,10 +40,10 @@ resources (e.g. 'payments list' shows every payment where you are payer or
 payee). A gateway account only unlocks merchant-scoped features.
 
 The token is saved to ~/.cache/rail0/token and used automatically by all
-commands that require authentication (e.g. 'payments list').
-Override with the RAIL0_TOKEN environment variable. On success the command
-prints the session (address, expiry) but NOT the raw token — pass --token (-t)
-to also print the token itself, or run 'rail0 token' later.
+commands that require authentication (e.g. 'payments list') — that file is the
+only place the session is read from. On success the command prints the session
+(address, expiry) but NOT the raw token — pass --token (-t) to also print the
+token itself, or run 'rail0 token' later.
 
 The signing key is resolved like every other signing command: pass -p as a raw
 0x-prefixed hex key, as @name for a key saved in the OS keychain ('rail0 keys
@@ -106,7 +106,8 @@ func tokenSaveFailureNotice(saveErr error) string {
 	return fmt.Sprintf(
 		"warning: could not save token to disk: %v\n"+
 			"The session is valid but was not persisted, so the next command will not be authenticated.\n"+
-			"Re-run with --token to print it, then export it as RAIL0_TOKEN.\n",
+			"Fix the cache directory and sign in again — the token file is the only place a\n"+
+			"session is read from, so there is no variable to fall back to.\n",
 		saveErr,
 	)
 }

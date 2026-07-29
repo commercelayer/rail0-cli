@@ -81,7 +81,6 @@ config file. Precedence is: **flag  >  env var  >  config file  >  built-in defa
 | Flag         | Environment variable | Description                                      |
 |--------------|----------------------|--------------------------------------------------|
 | `--base-url` | `RAIL0_BASE_URL`     | RAIL0 gateway base URL                               |
-| —            | `RAIL0_TOKEN`        | Bearer token sent in the `Authorization` header  |
 | `--debug`    | —                    | Print HTTP request/response details to stderr    |
 | `--json`     | —                    | Force plain (uncolored) JSON output (useful in scripts) |
 | `--pretty`   | —                    | Key-value/table view instead of JSON (terminal only) |
@@ -120,10 +119,12 @@ Minimal setup:
 
 ```sh
 export RAIL0_BASE_URL=https://api.rail0.xyz
-export RAIL0_TOKEN=your_jwt_token
+rail0 auth login -p @payee     # caches a JWT via SIWE; every command reads it from there
 ```
 
-Or use `rail0 auth login` to obtain and cache a JWT via SIWE authentication.
+The session lives only in `~/.cache/rail0/token`. There is no environment variable to
+supply it: the token is a bearer credential, and the environment is the one place it
+would leak into every child process and `env` dump.
 
 ### Persisted defaults (`config`)
 
@@ -357,8 +358,11 @@ Print the cached session JWT and its expiry, so it can be copied or piped. If yo
 
 ```sh
 rail0 token
-export RAIL0_TOKEN="$(rail0 token --json | jq -r .token)"
+TOKEN="$(rail0 token --json | jq -r .token)"   # e.g. to call the gateway with curl
 ```
+
+Exporting it does **not** configure the CLI — it reads the session from its cache file
+and nowhere else.
 
 ---
 
@@ -727,7 +731,7 @@ rail0 payments refund <rail0Id> -a 1.00 -p 0xPayeeKey…
 
 ```sh
 export RAIL0_BASE_URL=https://api.rail0.xyz
-export RAIL0_TOKEN=your_jwt_token
+rail0 auth login -p @buyer
 
 # 1. Payer creates payment and signs EIP-712 locally
 RAIL0_ID=$(rail0 payments create \

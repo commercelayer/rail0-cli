@@ -46,8 +46,12 @@ func TestTokenSaveFailureNoticeNeverContainsTheToken(t *testing.T) {
 	if regexp.MustCompile(`eyJ[A-Za-z0-9_-]{8,}`).MatchString(notice) {
 		t.Errorf("the notice contains something JWT-shaped: %q", notice)
 	}
-	// It must still be actionable — the failure and the way out.
-	for _, want := range []string{"could not save token", "read-only file system", "--token"} {
+	// It must still be actionable — the failure and the way out. The way out is no
+	// longer "--token, then export RAIL0_TOKEN": that variable was removed (#60), so
+	// printing the token buys nothing and the notice points at the cache directory
+	// instead. Asserting the recovery route here, not just the absence of a secret,
+	// is what caught the two changes drifting apart during the rebase.
+	for _, want := range []string{"could not save token", "read-only file system", "sign in again"} {
 		if !strings.Contains(notice, want) {
 			t.Errorf("notice is missing %q: %q", want, notice)
 		}

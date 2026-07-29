@@ -118,10 +118,7 @@ With --until it instead waits for a specific payment status.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		client := newClient()
 		ctx := context.Background()
-		rail0Id, err := resolvePaymentID(ctx, client, args[0])
-		if err != nil {
-			return err
-		}
+		rail0Id := args[0]
 		return ui.RunAPIWithMessage("Waiting…", func() (any, error) {
 			deadline := time.Now().Add(waitTimeout)
 			for {

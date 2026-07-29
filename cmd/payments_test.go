@@ -26,13 +26,37 @@ func TestAllowedSigners(t *testing.T) {
 		{"release", []string{"0xPayer", "0xPayee"}},
 		{"dispute", []string{"0xPayer"}},
 		{"close dispute", []string{"0xPayer"}},
+		// The wire spelling must reach the same rule as the label. Before #72 this
+		// fell through to the payee-only default and rejected the payer, who is the
+		// only party allowed to close a dispute.
+		{"close_dispute", []string{"0xPayer"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.op, func(t *testing.T) {
-			if got := allowedSigners(tc.op, p); !reflect.DeepEqual(got, tc.want) {
+			got, err := allowedSigners(tc.op, p)
+			if err != nil {
+				t.Fatalf("allowedSigners(%q) returned an error: %v", tc.op, err)
+			}
+			if !reflect.DeepEqual(got, tc.want) {
 				t.Errorf("allowedSigners(%q) = %v, want %v", tc.op, got, tc.want)
 			}
 		})
+	}
+}
+
+// An operation with no signer rule must fail loudly. The previous `default:` branch
+// answered payee-only, which is the exact opposite of correct for the payer-only
+// operations and surfaced as a misleading "wrong key?" error.
+func TestAllowedSignersRejectsAnUnknownOperation(t *testing.T) {
+	p := &rail0.Payment{Payer: "0xPayer", Payee: "0xPayee"}
+	for _, op := range []string{"", "settle", "close-dispute", "captur"} {
+		got, err := allowedSigners(op, p)
+		if err == nil {
+			t.Errorf("allowedSigners(%q) = %v with no error; want an error rather than a silent default", op, got)
+		}
+		if got != nil {
+			t.Errorf("allowedSigners(%q) returned %v alongside an error; want nil", op, got)
+		}
 	}
 }
 

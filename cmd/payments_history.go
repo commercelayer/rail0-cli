@@ -36,10 +36,7 @@ timeline is readable only by the payment's payer or payee.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := context.Background()
 		client := newClient()
-		id, err := resolvePaymentID(ctx, client, args[0])
-		if err != nil {
-			return err
-		}
+		id := args[0]
 		return ui.RunAPI(func() (any, error) {
 			payment, err := client.Payments.Get(ctx, id)
 			if err != nil {

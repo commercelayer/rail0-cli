@@ -111,6 +111,15 @@ func pickFromList(ctx context.Context, client *rail0.Client, op string) (string,
 // (returns ""); a required blank re-prompts. Non-interactive: "" for optional,
 // else an error.
 func promptValue(label, desc string, optional bool) (string, error) {
+	return promptValidated(label, desc, optional, nil)
+}
+
+// promptValidated is promptValue with an extra domain check, applied by the huh field
+// itself so a bad value is rejected INLINE — before the prompt is submitted, and long
+// before any network call. Used for the capture/refund amount, where the alternative
+// was learning about a typo from the gateway after a session round-trip and a payment
+// fetch. (#61)
+func promptValidated(label, desc string, optional bool, check func(string) error) (string, error) {
 	if !term.IsTerminal(os.Stdin.Fd()) {
 		if optional {
 			return "", nil
@@ -119,14 +128,18 @@ func promptValue(label, desc string, optional bool) (string, error) {
 	}
 	var v string
 	in := huh.NewInput().Title(label).Description(desc).Value(&v)
-	if !optional {
-		in = in.Validate(func(s string) error {
-			if s == "" {
-				return fmt.Errorf("%s is required", label)
+	in = in.Validate(func(s string) error {
+		if s == "" {
+			if optional {
+				return nil
 			}
-			return nil
-		})
-	}
+			return fmt.Errorf("%s is required", label)
+		}
+		if check != nil {
+			return check(s)
+		}
+		return nil
+	})
 	if err := in.Run(); err != nil {
 		abortOrReturn(err)
 		return "", err

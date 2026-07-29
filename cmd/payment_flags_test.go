@@ -102,6 +102,12 @@ func TestValidateAmount(t *testing.T) {
 		{"negative", "-1.00", true},
 		{"non-numeric", "abc", true},
 		{"trailing token symbol", "1.00 USDC", true},
+		// #61: the slips that used to reach the gateway from capture/refund, since
+		// validateAmount was wired only into `create`.
+		{"comma decimal separator", "1,50", true},
+		{"scientific notation", "1e6", true},
+		{"two decimal points", "1.2.3", true},
+		{"whitespace only", " ", true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

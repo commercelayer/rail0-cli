@@ -520,11 +520,20 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 		if err != nil {
 			return err
 		}
+		// validateAmount was wired only into `create`, so the two commands that
+		// actually move money took the amount raw: `-a 1,50`, `-a 0` or `-a -1` each
+		// burned a session round-trip AND ensureSignerFor's payment fetch before the
+		// gateway answered 422 — while the identical typo on `create` was caught
+		// instantly. Checked here, before any network call, and inside the prompt so
+		// interactive input is rejected inline. (#61)
 		if captureAmount == "" {
-			captureAmount, err = promptValue("Amount", "decimal in token units (e.g. 1.00)", false)
+			captureAmount, err = promptValidated("Amount", "decimal in token units (e.g. 1.00)", false, validateAmount)
 			if err != nil {
 				return err
 			}
+		}
+		if err := validateAmount(captureAmount); err != nil {
+			return err
 		}
 		return ui.RunAPIWithMessage(actionLabel("Capturing…"), func() (any, error) {
 			if err := ensureSignerFor(ctx, client, rail0Id, signingKey, "capture"); err != nil {
@@ -717,11 +726,15 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 		if err != nil {
 			return err
 		}
+		// Same local check as capture — see the note there. (#61)
 		if refundAmount == "" {
-			refundAmount, err = promptValue("Amount", "decimal in token units (e.g. 1.00)", false)
+			refundAmount, err = promptValidated("Amount", "decimal in token units (e.g. 1.00)", false, validateAmount)
 			if err != nil {
 				return err
 			}
+		}
+		if err := validateAmount(refundAmount); err != nil {
+			return err
 		}
 		if err := confirmDestructive(fmt.Sprintf("Refund payment %s? This sends funds back to the payer.", shortID(rail0Id))); err != nil {
 			return err

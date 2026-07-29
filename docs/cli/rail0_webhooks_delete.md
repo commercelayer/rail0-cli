@@ -16,6 +16,7 @@ rail0 webhooks delete <webhook_id> [flags]
 
 ```
   -h, --help   help for delete
+  -y, --yes    Skip the confirmation prompt (required to run non-interactively)
 ```
 
 ### Options inherited from parent commands

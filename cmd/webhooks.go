@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/rail0/cli/internal/ui"
 	rail0 "github.com/rail0/go-sdk"
@@ -148,6 +149,17 @@ var webhooksRotateSecretCmd = &cobra.Command{
 	Example: `  rail0 webhooks rotate-secret whk_abc123`,
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		// Gated like every other destructive command. Rotating is not "undoable by
+		// rotating back": the previous secret is gone, and from the instant this
+		// returns, every live consumer verifying X-Rail0-Signature against the old
+		// one rejects deliveries — a silent production break with no undo. The
+		// prompt names that consequence rather than just asking "are you sure".
+		if err := confirmDestructive(fmt.Sprintf(
+			"Rotate the shared secret for webhook %s? Consumers still verifying with the "+
+				"current secret will reject deliveries until they are updated.", args[0],
+		)); err != nil {
+			return err
+		}
 		return ui.RunAPI(func() (any, error) {
 			return newClient().Webhooks.RotateSecret(context.Background(), args[0])
 		})
@@ -209,6 +221,11 @@ var webhooksDeleteCmd = &cobra.Command{
 	Example: `  rail0 webhooks delete whk_abc123`,
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := confirmDestructive(fmt.Sprintf(
+			"Delete webhook %s? Its delivery history goes with it and this cannot be undone.", args[0],
+		)); err != nil {
+			return err
+		}
 		return ui.RunAPI(func() (any, error) {
 			return nil, newClient().Webhooks.Delete(context.Background(), args[0])
 		})
@@ -258,6 +275,7 @@ func init() {
 
 	webhooksCmd.AddCommand(webhooksEnableCmd)
 	webhooksCmd.AddCommand(webhooksDisableCmd)
+	addYesFlag(webhooksRotateSecretCmd)
 	webhooksCmd.AddCommand(webhooksRotateSecretCmd)
 	webhooksCmd.AddCommand(webhooksResetCircuitCmd)
 
@@ -269,5 +287,6 @@ func init() {
 	webhooksEventCallbacksCmd.Flags().StringVar(&webhooksEventsSort, "sort", "", "Sort fields (e.g. -created_at)")
 	webhooksCmd.AddCommand(webhooksEventCallbacksCmd)
 
+	addYesFlag(webhooksDeleteCmd)
 	webhooksCmd.AddCommand(webhooksDeleteCmd)
 }

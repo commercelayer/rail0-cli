@@ -235,10 +235,12 @@ sent from an address to itself.`,
 		// create requires the payer to BE the authenticated address. Sign in with
 		// the payer's key (the same one we sign the payload with) so the session's
 		// address == payer; a no-op when already logged in as the payer.
-		if err := ensureSession(ctx, signingKey, string(req.Payer)); err != nil {
+		// Build the client FIRST, then sign in on it: Auth.Login stashes the JWT on
+		// the client it runs against, so the order matters. (#59)
+		client := newClient()
+		if err := ensureSession(ctx, client, signingKey, string(req.Payer)); err != nil {
 			return err
 		}
-		client := newClient()
 		return ui.RunAPIWithMessage("Creating payment…", func() (any, error) {
 			created, err := client.Payments.Create(ctx, req)
 			if err != nil {
@@ -330,7 +332,7 @@ func ensureSignerFor(ctx context.Context, client *rail0.Client, rail0ID, signing
 	// these reads are participant-only. The command holds the signer's key, so
 	// sign in as that address up front (no separate `auth login` needed) — a
 	// no-op when already logged in as it. Mirrors what `create` does. (#48)
-	if err := ensureSession(ctx, signingKey, signer); err != nil {
+	if err := ensureSession(ctx, client, signingKey, signer); err != nil {
 		return nil, err
 	}
 	p, err := client.Payments.Get(ctx, rail0ID)

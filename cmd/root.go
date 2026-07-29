@@ -68,11 +68,15 @@ func init() {
 // newClient builds a RAIL0 gateway client.
 // If a JWT is stored (~/.cache/rail0/token), it is sent
 // as Authorization: Bearer on every request.
+//
+// The token goes in ClientOptions.Token, not a hand-built Authorization header.
+// Both end up as the same header, but Token is the SDK's mutable slot: Auth.Login
+// replaces it via SetToken, so a client built with no cached token starts
+// unauthenticated and becomes authenticated the moment ensureSession signs in on it.
+// A static header cannot be replaced that way, and seeding one from a STALE cached
+// token was worse than seeding nothing — it kept being sent. (#59)
 func newClient() *rail0.Client {
-	opts := rail0.ClientOptions{BaseURL: resolveBaseURL()}
-	if t := token.Load(); t != "" {
-		opts.Headers = map[string]string{"Authorization": "Bearer " + t}
-	}
+	opts := rail0.ClientOptions{BaseURL: resolveBaseURL(), Token: token.Load()}
 	if debug {
 		opts.Logger = makeDebugLogger()
 	}
@@ -87,7 +91,14 @@ func newClient() *rail0.Client {
 // token is missing, expired, or for a different address. A no-op when already
 // logged in as `addr`. The token is saved so follow-up reads (e.g. payments get)
 // reuse the session.
-func ensureSession(ctx context.Context, keyHex, addr string) error {
+//
+// It signs in through the CALLER'S client, which is the whole point of taking one.
+// It used to log in on a throwaway `rail0.NewClient(...)`, so Auth.Login stashed the
+// JWT on that client and then discarded it: on a fresh machine with no cached token,
+// the command printed "Signed in as 0x…" and the very next request on the real client
+// — still built with no token — came back 401 "run 'rail0 auth login' first". Logging
+// in here mutates the client the command actually uses. (#59)
+func ensureSession(ctx context.Context, client *rail0.Client, keyHex, addr string) error {
 	if t := token.Load(); t != "" {
 		// No expiry re-check here: parseJWTClaims returns an error for an expired
 		// token, so a nil error already means the session is live. (#71)
@@ -102,8 +113,9 @@ func ensureSession(ctx context.Context, keyHex, addr string) error {
 	if err != nil {
 		return fmt.Errorf("invalid signing key: %w", err)
 	}
-	authResp, err := rail0.NewClient(rail0.ClientOptions{BaseURL: resolveBaseURL()}).
-		Auth.Login(ctx, privKey, siweHost(resolveBaseURL()))
+	// Auth.Login stashes the JWT on the client it is called on (SetToken), so this
+	// leaves `client` authenticated for every subsequent request the command makes.
+	authResp, err := client.Auth.Login(ctx, privKey, siweHost(resolveBaseURL()))
 	if err != nil {
 		return fmt.Errorf("sign-in failed: %w", err)
 	}

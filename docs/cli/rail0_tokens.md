@@ -2,6 +2,15 @@
 
 List supported tokens (symbols used in --token)
 
+### Synopsis
+
+List the token catalog.
+
+Includes RETIRED tokens by default (an existing payment references its token
+forever, so they stay listed and resolvable); each row carries an "active" flag.
+Only an active token can be used for a NEW payment — pass --active to list just
+those, or --active=false to see only the retired ones.
+
 ```
 rail0 tokens [flags]
 ```
@@ -12,11 +21,13 @@ rail0 tokens [flags]
   rail0 tokens
   rail0 tokens --chain-id 5042002
   rail0 tokens --symbol USDC
+  rail0 tokens --active           # only what a new payment can use
 ```
 
 ### Options
 
 ```
+      --active          Filter by active flag (--active, or --active=false for retired only); omit for every token
   -c, --chain-id int    Filter by EVM chain ID (e.g. 5042002)
   -h, --help            help for tokens
   -s, --symbol string   Filter by token symbol (case-insensitive, e.g. USDC)

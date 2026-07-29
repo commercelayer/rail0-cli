@@ -1,0 +1,90 @@
+# Build, vet and test every push and pull request — plus a check that the committed
+# CLI reference is regenerated.
+#
+# Until now nothing ran on a PR: `release.yml` fires only on a `v*` tag, so a change
+# that broke the build or left `docs/` stale was caught either by whoever ran the
+# commands locally, or at release time. The docs half was not hypothetical — `rail0
+# tokens` had gained a whole Long description and an `--active` flag that never reached
+# docs/cli or docs/man. (#68)
+#
+# rail0-cli depends on rail0-go through `replace github.com/rail0/go-sdk =>
+# ../rail0-go` (go.mod). rail0-go is PRIVATE and the default GITHUB_TOKEN only grants
+# access to this repo, so the sibling checkout needs the same dedicated token the
+# release workflow uses:
+#
+#   Secret RAIL0_GO_TOKEN — a fine-grained PAT (or deploy key) with `contents: read`
+#   on commercelayer/rail0-go.
+#
+# Consequence worth knowing: a pull request from a FORK gets no secrets, so the
+# rail0-go checkout — and therefore this whole job — cannot run there. That is
+# acceptable while contributions come from branches in this repo; if forks ever matter,
+# the SDK has to be consumable without a private checkout.
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout rail0-cli
+        uses: actions/checkout@v4
+        with:
+          path: rail0-cli
+
+      - name: Checkout rail0-go (private sibling; resolves ../rail0-go)
+        uses: actions/checkout@v4
+        with:
+          repository: commercelayer/rail0-go
+          ref: main
+          path: rail0-go
+          token: ${{ secrets.RAIL0_GO_TOKEN }}
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache-dependency-path: rail0-cli/go.sum
+
+      # Reported as a diff rather than a bare exit code: "gofmt failed" tells you
+      # nothing, the diff tells you exactly what to run gofmt on.
+      - name: gofmt
+        working-directory: rail0-cli
+        run: |
+          if [ -n "$(gofmt -l .)" ]; then
+            echo "::error::gofmt needed on:"; gofmt -l .
+            gofmt -d .
+            exit 1
+          fi
+
+      - name: Build
+        working-directory: rail0-cli
+        run: go build ./...
+
+      - name: Vet
+        working-directory: rail0-cli
+        run: go vet ./...
+
+      - name: Test
+        working-directory: rail0-cli
+        run: go test ./...
+
+      # The reference docs are GENERATED from the command tree, so a changed flag or
+      # help string silently invalidates them. Regenerate and fail on any diff, which
+      # makes staleness impossible to merge rather than something to notice.
+      - name: Reference docs are up to date
+        working-directory: rail0-cli
+        run: |
+          go run ./tools/gendocs
+          if ! git diff --quiet -- docs/; then
+            echo "::error::docs/ is stale — run 'bin/docs' (or 'go run ./tools/gendocs') and commit the result"
+            git diff --stat -- docs/
+            git diff -- docs/
+            exit 1
+          fi

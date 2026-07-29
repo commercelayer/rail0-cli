@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -221,5 +222,57 @@ func TestAssertAmountPrecision(t *testing.T) {
 		if err := assertAmountPrecision(tc.amount, tc.decimals); (err != nil) != tc.wantErr {
 			t.Errorf("assertAmountPrecision(%q, %d) error = %v, wantErr = %v", tc.amount, tc.decimals, err, tc.wantErr)
 		}
+	}
+}
+
+// An interactive create consulted the token list three to four times for the SAME
+// chain — assertTokenKnown, the huh validator (re-run on every submit attempt),
+// resolve, and the picker — each on a fresh client, so the form stalled between
+// prompts (#69). activeTokens caches per chain for the life of the command.
+func TestActiveTokensServesFromCacheWithoutRefetching(t *testing.T) {
+	tokenCatalogMu.Lock()
+	tokenCatalogCache = map[int][]rail0.Token{}
+	tokenCatalogMu.Unlock()
+	t.Cleanup(func() {
+		tokenCatalogMu.Lock()
+		tokenCatalogCache = map[int][]rail0.Token{}
+		tokenCatalogMu.Unlock()
+	})
+
+	// Point the client at a port nothing is listening on: any real fetch fails.
+	t.Setenv("RAIL0_BASE_URL", "http://127.0.0.1:1")
+
+	// Cold: no cache entry, so it must actually try — and fail.
+	if _, err := activeTokens(context.Background(), 84532); err == nil {
+		t.Fatal("expected a fetch error with no cache entry and no reachable gateway")
+	}
+
+	// A failure must NOT be cached — unlike chainCatalog, an empty token list would
+	// leave the user unable to recover inside the same command.
+	tokenCatalogMu.Lock()
+	_, cached := tokenCatalogCache[84532]
+	tokenCatalogMu.Unlock()
+	if cached {
+		t.Error("a failed fetch must stay retryable, not be cached as an empty list")
+	}
+
+	// Warm: seed the cache and assert it is served without touching the network
+	// (which is still unreachable, so a refetch would error).
+	seeded := []rail0.Token{{Symbol: "USDC", Decimals: 6, ChainID: 84532}}
+	tokenCatalogMu.Lock()
+	tokenCatalogCache[84532] = seeded
+	tokenCatalogMu.Unlock()
+
+	got, err := activeTokens(context.Background(), 84532)
+	if err != nil {
+		t.Fatalf("cached call must not hit the network: %v", err)
+	}
+	if len(got) != 1 || got[0].Symbol != "USDC" {
+		t.Errorf("got %+v, want the seeded catalog", got)
+	}
+
+	// Cached per CHAIN: another chain is a separate entry, so it still fetches.
+	if _, err := activeTokens(context.Background(), 11155420); err == nil {
+		t.Error("a different chain must not be served from another chain's cache")
 	}
 }

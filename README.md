@@ -201,6 +201,14 @@ The secret never touches the config file or your shell history (`keys add`
 prompts for it, hidden). Only the key **names** are tracked in `config.yaml` so
 they can be listed; the secret lives in the keychain.
 
+Because the names live in the config and the secrets live in the keychain, the two
+can **disagree** — delete `config.yaml` to start clean, or copy a config between
+machines, and the keychain may still hold an entry the index no longer lists. `keys
+add` refuses to write over such an orphan (a private key cannot be recovered, so it
+errors rather than asking a yes/no you'd answer by reflex), and `keys rm` will still
+clear one, which is the only way to remove it — `keys` cannot list orphans, since the
+keychain backend cannot be enumerated. That is exactly why the name index exists.
+
 ```sh
 rail0 keys add payer            # prompts for the key (hidden), saves it as "payer"
 rail0 keys                      # lists saved key names (never the secret)

@@ -95,7 +95,11 @@ directly: `id=$(rail0 payments create … -q)`.
 
 Exit codes distinguish the failure class: `0` success, `3` unauthorized, `4`
 forbidden, `5` not found, `6` conflict, `7` rejected (422), `8` gateway error
-(5xx), `9` network, `1` otherwise.
+(5xx), `9` network, `130` cancelled by the user, `1` otherwise.
+
+`130` is what you get by pressing Ctrl-C (or ESC) at any prompt, and by answering `N`
+to a destructive confirmation — the POSIX convention for SIGINT, so `&&` chains stop
+there. Nothing was executed; it is a cancellation, not a failure.
 
 Errors are printed as the gateway's own sentence plus, where the CLI can add
 something, the command to run next: a `422` on `capture` explains that the amount

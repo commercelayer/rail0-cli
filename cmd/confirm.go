@@ -35,6 +35,8 @@ func confirmDestructive(prompt string) error {
 	case "y", "yes":
 		return nil
 	default:
-		return fmt.Errorf("aborted")
+		// ErrAborted so declining a confirmation exits with the same code as
+		// cancelling a prompt — one story for "the user said no". (#65)
+		return ErrAborted
 	}
 }

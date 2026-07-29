@@ -59,3 +59,59 @@ func TestAPIHint(t *testing.T) {
 		})
 	}
 }
+
+// A cancelled operation must never exit 0. `rail0 payments refund <id> &&
+// mark_refunded_in_db` used to run the second command when the operator hit Ctrl-C at
+// the amount prompt, so a database recorded a refund that never happened (#65).
+func TestUserCancellationExitsNonZeroAndDistinctly(t *testing.T) {
+	if got := exitCode(ErrAborted); got != ExitCodeAborted {
+		t.Errorf("exitCode(ErrAborted) = %d, want %d", got, ExitCodeAborted)
+	}
+	if ExitCodeAborted == 0 {
+		t.Fatal("a cancellation must not exit 0 — that is the whole bug")
+	}
+	// Wrapped, as a caller adding context would produce.
+	if got := exitCode(fmt.Errorf("capture: %w", ErrAborted)); got != ExitCodeAborted {
+		t.Errorf("wrapped ErrAborted = %d, want %d", got, ExitCodeAborted)
+	}
+}
+
+// 130 must stay distinct from every other class, or scripts cannot tell "the user
+// cancelled" from "the request failed".
+func TestAbortedCodeDoesNotCollideWithTheOtherClasses(t *testing.T) {
+	others := []int{
+		exitCode(&rail0.APIError{Status: 401}),
+		exitCode(&rail0.APIError{Status: 403}),
+		exitCode(&rail0.APIError{Status: 404}),
+		exitCode(&rail0.APIError{Status: 409}),
+		exitCode(&rail0.APIError{Status: 422}),
+		exitCode(&rail0.APIError{Status: 500}),
+		exitCode(&rail0.APIError{Status: 0}),
+		exitCode(errors.New("something else")),
+	}
+	for _, code := range others {
+		if code == ExitCodeAborted {
+			t.Errorf("exit code %d collides with ExitCodeAborted", code)
+		}
+	}
+}
+
+// Declining a destructive confirmation is the same intent as cancelling a prompt, so
+// it must land on the same code rather than the generic 1.
+func TestDecliningAConfirmationIsAnAbort(t *testing.T) {
+	assumeYes = false
+	t.Cleanup(func() { assumeYes = false })
+
+	// No TTY under test, so confirmDestructive takes the non-interactive branch —
+	// which is a REFUSAL to run, not a cancellation, and stays generic.
+	err := confirmDestructive("delete everything?")
+	if err == nil {
+		t.Fatal("expected a refusal without a TTY")
+	}
+	if errors.Is(err, ErrAborted) {
+		t.Error("the non-interactive refusal is a misuse error, not a user cancellation")
+	}
+	if got := exitCode(err); got == 0 {
+		t.Error("the refusal must not exit 0")
+	}
+}

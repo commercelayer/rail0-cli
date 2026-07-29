@@ -164,10 +164,31 @@ func hintFor(code, reason string) string {
 	return errorHints[reason]
 }
 
+// ErrAborted marks an operation the USER cancelled — Ctrl-C or ESC at a prompt, or
+// declining a destructive confirmation. Distinct from a failure: nothing went wrong,
+// the answer was "no".
+//
+// It still must not exit 0. `rail0 payments refund <id> && mark_refunded_in_db` used
+// to run the second command when the operator hit Ctrl-C at the amount prompt, so a
+// database was marked refunded with no refund behind it. (#65)
+var ErrAborted = errors.New("aborted")
+
+// ExitCodeAborted is the status for a user cancellation. 130 is the POSIX convention
+// for a process terminated by SIGINT (128 + 2) — what a shell reports for Ctrl-C — so
+// scripts and CI already recognise it, and it cannot collide with the API-derived
+// codes below.
+const ExitCodeAborted = 130
+
 // exitCode maps an error to a distinct process exit status so scripts can branch
 // on the class of failure: 3 auth, 4 forbidden, 5 not-found, 6 conflict,
-// 7 rejected (422), 8 upstream (5xx), 9 network, 1 otherwise.
+// 7 rejected (422), 8 upstream (5xx), 9 network, 130 user-cancelled, 1 otherwise.
 func exitCode(err error) int {
+	// Checked before the API/transport classification: a cancellation is not a
+	// failure of the request, and may not even have made one.
+	if errors.Is(err, ErrAborted) {
+		return ExitCodeAborted
+	}
+
 	var apiErr *rail0.APIError
 	if errors.As(err, &apiErr) {
 		switch {

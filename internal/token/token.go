@@ -1,8 +1,16 @@
 // Package token manages the JWT session token for the CLI.
 //
-// Priority: RAIL0_TOKEN env var > ~/.cache/rail0/token file.
-// The token file is written by `rail0 auth login` and read by any command
-// that needs authentication.
+// The token lives in exactly ONE place: ~/.cache/rail0/token, written by
+// `rail0 auth login` and read by any command that needs authentication.
+//
+// There is deliberately no environment-variable override. A RAIL0_TOKEN env var used
+// to take priority over the file, which made `auth login` look broken: it wrote a
+// fresh token to disk, reported success, and every subsequent command kept using the
+// stale env value — so a user with an expired RAIL0_TOKEN exported in their shell
+// re-logged-in endlessly with no effect and no explanation (#60). A single source
+// removes the shadowing entirely rather than reordering it, and keeps a bearer
+// credential out of the environment, where it leaks into child processes and `env`
+// dumps.
 package token
 
 import (
@@ -20,12 +28,9 @@ func tokenFilePath() (string, error) {
 	return filepath.Join(dir, "rail0", "token"), nil
 }
 
-// Load returns the stored JWT, or "" if none is found.
-// Priority: RAIL0_TOKEN env var > cache file.
+// Load returns the stored JWT, or "" if none is found. The cache file is the only
+// source — see the package comment for why there is no env override.
 func Load() string {
-	if t := os.Getenv("RAIL0_TOKEN"); t != "" {
-		return strings.TrimSpace(t)
-	}
 	path, err := tokenFilePath()
 	if err != nil {
 		return ""

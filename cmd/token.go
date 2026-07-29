@@ -27,7 +27,7 @@ var tokenCmd = &cobra.Command{
 	Use:   "token",
 	Short: "Print the stored session token, or suggest logging in",
 	Long: `Print the JWT session token saved by the last 'rail0 auth login' (or taken
-from the RAIL0_TOKEN env var), together with its expiry. If no valid token is
+from ~/.cache/rail0/token), together with its expiry. If no valid token is
 stored, it suggests logging in instead.
 
 This is the singular session token — not to be confused with 'rail0 tokens',

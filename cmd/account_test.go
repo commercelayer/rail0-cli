@@ -15,7 +15,6 @@ func TestResolveAccountID(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("HOME", dir)
 	t.Setenv("XDG_CACHE_HOME", dir)
-	t.Setenv("RAIL0_TOKEN", "")
 	_, err := resolveAccountID("")
 	if err == nil {
 		t.Fatal("no flag + no session must error")

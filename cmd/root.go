@@ -64,7 +64,7 @@ func init() {
 }
 
 // newClient builds a RAIL0 gateway client.
-// If a JWT is stored (RAIL0_TOKEN env var or ~/.cache/rail0/token), it is sent
+// If a JWT is stored (~/.cache/rail0/token), it is sent
 // as Authorization: Bearer on every request.
 func newClient() *rail0.Client {
 	opts := rail0.ClientOptions{BaseURL: resolveBaseURL()}

@@ -26,10 +26,10 @@ payee). A gateway account only unlocks merchant-scoped features.
 
 .PP
 The token is saved to ~/.cache/rail0/token and used automatically by all
-commands that require authentication (e.g. 'payments list').
-Override with the RAIL0_TOKEN environment variable. On success the command
-prints the session (address, expiry) but NOT the raw token — pass --token (-t)
-to also print the token itself, or run 'rail0 token' later.
+commands that require authentication (e.g. 'payments list') — that file is the
+only place the session is read from. On success the command prints the session
+(address, expiry) but NOT the raw token — pass --token (-t) to also print the
+token itself, or run 'rail0 token' later.
 
 .PP
 The signing key is resolved like every other signing command: pass -p as a raw

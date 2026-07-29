@@ -71,6 +71,25 @@ var keysAddCmd = &cobra.Command{
 		if slices.Contains(cfg.Keys, name) {
 			return fmt.Errorf("key %q already exists; remove it first with 'rail0 keys rm %s'", name, name)
 		}
+		// The index is not the only place a key can live. Ask the KEYCHAIN too,
+		// because the two can disagree: delete config.yaml to "start clean", or copy
+		// a config between machines, and the index no longer lists an entry the
+		// keychain still holds. The write below is an unconditional Set, so without
+		// this probe `keys add payer` would overwrite that orphaned secret with no
+		// warning and no way back — and if it held funds, they are gone. A key is the
+		// one thing in this tool that cannot be re-derived, so it refuses rather than
+		// prompting: an interactive "overwrite? [y/N]" is exactly the prompt someone
+		// answers by reflex. (#70)
+		if orphaned, err := keyring.Get(keyringService, name); err == nil && orphaned != "" {
+			return fmt.Errorf(
+				"the OS keychain already holds a key named %q, even though it is not in the local index "+
+					"(a deleted or copied config.yaml does this).\n"+
+					"Refusing to overwrite it — a private key cannot be recovered.\n"+
+					"Inspect it with 'rail0 keys address %s', then either choose another name or "+
+					"delete it deliberately with 'rail0 keys rm %s --yes'",
+				name, name, name,
+			)
+		}
 
 		// Read the secret without it ever being a CLI argument (no shell history).
 		hexKey, err := promptSecret("Private key (0x-prefixed hex, hidden)")
@@ -108,10 +127,24 @@ var keysRemoveCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		if !slices.Contains(cfg.Keys, name) {
-			return fmt.Errorf("unknown key %q", name)
+		// Removal must reach an ORPHANED entry — one the keychain holds but the index
+		// does not list — or `keys add` refusing to overwrite it (#70) would leave the
+		// name permanently unusable: not addable, and not removable either. So when the
+		// index has no such key, fall back to asking the keychain directly. `keys` can't
+		// list these (the keychain backend cannot be enumerated, which is why the index
+		// exists), so this is the only way to clear one.
+		indexed := slices.Contains(cfg.Keys, name)
+		if !indexed {
+			if _, kerr := keyring.Get(keyringService, name); kerr != nil {
+				return fmt.Errorf("unknown key %q", name)
+			}
 		}
-		if err := confirmDestructive(fmt.Sprintf("Remove signing key %q from the OS keychain? This cannot be undone.", name)); err != nil {
+
+		scope := "from the OS keychain"
+		if !indexed {
+			scope = "from the OS keychain (an orphaned entry, not in the local index)"
+		}
+		if err := confirmDestructive(fmt.Sprintf("Remove signing key %q %s? This cannot be undone.", name, scope)); err != nil {
 			return err
 		}
 		if err := keyring.Delete(keyringService, name); err != nil && !errors.Is(err, keyring.ErrNotFound) {

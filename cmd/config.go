@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"net"
 	"net/url"
 	"os"
 	"sort"
@@ -35,12 +36,44 @@ var configKeys = map[string]configKey{
 	},
 }
 
+// validateBaseURL rejects a base URL the CLI must not talk to. Two rules:
+//
+//  1. it has to be an absolute http(s) URL with a host;
+//  2. plaintext http:// is allowed ONLY against a loopback host.
+//
+// The second rule is the substantive one. Every credential the CLI handles crosses
+// this URL — the SIWE signature, the JWT it is exchanged for, and the signed raw
+// transactions — so a plaintext endpoint puts all three on the wire in the clear,
+// and a typo'd or injected RAIL0_BASE_URL used to do that with no warning at all.
+// A local gateway is the one legitimate plaintext case, which is why loopback is
+// carved out rather than http:// being banned outright (`rail0 env development`
+// sets http://localhost:9292). (#62)
 func validateBaseURL(v string) error {
 	u, err := url.Parse(v)
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-		return fmt.Errorf("base-url must be an http(s) URL, e.g. https://api.rail0.xyz")
+		return fmt.Errorf("base-url must be an http(s) URL, e.g. https://api.rail0.xyz (got %q)", v)
+	}
+	if u.Scheme == "http" && !isLoopbackHost(u.Hostname()) {
+		return fmt.Errorf(
+			"base-url %q uses plaintext http:// against a non-loopback host — the SIWE signature, "+
+				"the session token and signed transactions would cross the network in the clear. "+
+				"Use https://, or a loopback host for local development", v)
 	}
 	return nil
+}
+
+// isLoopbackHost reports whether host names the local machine. Covers "localhost"
+// and any *.localhost name (RFC 6761 reserves the whole TLD for loopback), plus
+// literal loopback addresses in either family — url.Hostname() has already stripped
+// the port and the brackets from an IPv6 literal, so net.ParseIP sees a bare "::1".
+func isLoopbackHost(host string) bool {
+	if host == "localhost" || strings.HasSuffix(host, ".localhost") {
+		return true
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		return ip.IsLoopback()
+	}
+	return false
 }
 
 // lookupKey resolves a key name against the whitelist, erroring with the valid

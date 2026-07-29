@@ -29,6 +29,9 @@ var rootCmd = &cobra.Command{
 	Short:         "CLI for the RAIL0 stablecoin payment protocol",
 	SilenceUsage:  true,
 	SilenceErrors: true,
+	// Runs before every subcommand's RunE (no subcommand defines its own
+	// PersistentPreRunE, which would shadow this one). See checkBaseURL. (#62)
+	PersistentPreRunE: func(cmd *cobra.Command, _ []string) error { return checkBaseURL(cmd) },
 	Long: `rail0 is a command-line interface for the RAIL0 stablecoin payment gateway.
 
 Defaults to https://api.rail0.xyz. Override with --base-url or RAIL0_BASE_URL.
@@ -150,9 +153,48 @@ func resolveAccountID(explicit string) (string, error) {
 // --base-url flag > RAIL0_BASE_URL env > config file (`config set base-url`) >
 // config.DefaultBaseURL. Single source of truth shared with the `config`
 // command via effectiveSetting.
+//
+// Deliberately does NOT validate: `rail0 config` has to be able to DISPLAY a bad
+// value so the user can see what is wrong with it. Validation happens in
+// checkBaseURL, wired to every gateway-touching command below. (#62)
 func resolveBaseURL() string {
 	value, _ := effectiveSetting(configKeys["base-url"])
 	return value
+}
+
+// Command trees that never build a gateway client, and are therefore exempt from
+// base-url validation. This exemption is the point, not an oversight: these are the
+// tools used to INSPECT and REPAIR a bad base URL (`rail0 config`, `rail0 env
+// development`), so failing them on the very value they exist to fix would lock the
+// CLI out of its own recovery path. Verified against the newClient() call sites —
+// none of these trees has one.
+var localOnlyCommands = map[string]bool{
+	"config": true, "env": true, "keys": true, "aliases": true,
+	"help": true, "completion": true,
+}
+
+// topLevelName returns the first-level command `cmd` sits under — "payments" for
+// `rail0 payments capture`, "config" for `rail0 config set` — so the exemption above
+// applies to a whole tree rather than being repeated on each leaf.
+func topLevelName(cmd *cobra.Command) string {
+	for c := cmd; c != nil && c.Parent() != nil; c = c.Parent() {
+		if c.Parent().Parent() == nil {
+			return c.Name()
+		}
+	}
+	return cmd.Name()
+}
+
+// checkBaseURL validates the base URL a command is about to talk to, before it can
+// send anything. Attached as the root PersistentPreRunE, so it covers ALL four
+// resolution paths at once — flag, env var, config file, built-in default — which
+// is what validateBaseURL being wired only to `config set` / `env switch` used to
+// miss: --base-url and RAIL0_BASE_URL reached the client entirely unchecked.
+func checkBaseURL(cmd *cobra.Command) error {
+	if localOnlyCommands[topLevelName(cmd)] {
+		return nil
+	}
+	return validateBaseURL(resolveBaseURL())
 }
 
 // makeDebugLogger returns a rail0.Logger that routes HTTP traces through

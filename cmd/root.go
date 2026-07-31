@@ -76,7 +76,8 @@ func init() {
 // A static header cannot be replaced that way, and seeding one from a STALE cached
 // token was worse than seeding nothing — it kept being sent. (#59)
 func newClient() *rail0.Client {
-	opts := rail0.ClientOptions{BaseURL: resolveBaseURL(), Token: token.Load()}
+	baseURL := resolveBaseURL()
+	opts := rail0.ClientOptions{BaseURL: baseURL, Token: token.Load(baseURL)}
 	if debug {
 		opts.Logger = makeDebugLogger()
 	}
@@ -99,7 +100,11 @@ func newClient() *rail0.Client {
 // — still built with no token — came back 401 "run 'rail0 auth login' first". Logging
 // in here mutates the client the command actually uses. (#59)
 func ensureSession(ctx context.Context, client *rail0.Client, keyHex, addr string) error {
-	if t := token.Load(); t != "" {
+	baseURL := resolveBaseURL()
+	// Whether a DIFFERENT live session is already stored decides if we may
+	// persist this one — see the token.Save call below (#95).
+	otherSessionStored := false
+	if t := token.Load(baseURL); t != "" {
 		// No expiry re-check here: parseJWTClaims returns an error for an expired
 		// token, so a nil error already means the session is live. (#71)
 		if claims, err := parseJWTClaims(t); err == nil {
@@ -107,6 +112,7 @@ func ensureSession(ctx context.Context, client *rail0.Client, keyHex, addr strin
 			if strings.EqualFold(sub, addr) {
 				return nil
 			}
+			otherSessionStored = true
 		}
 	}
 	privKey, err := rail0.HexToPrivateKey(keyHex)
@@ -119,7 +125,20 @@ func ensureSession(ctx context.Context, client *rail0.Client, keyHex, addr strin
 	if err != nil {
 		return fmt.Errorf("sign-in failed: %w", err)
 	}
-	if err := token.Save(authResp.Token); err != nil {
+	// Persist ONLY when this is the machine's session for this gateway. When a
+	// different live session is already stored, the sign-in we just did serves
+	// this one command (the key came from its -p flag) and must not evict it:
+	// a single payer-side `payments release -p @payer` used to overwrite the
+	// merchant's JWT with the buyer's account-less token, after which `wallets`,
+	// `webhooks` and analytics answered 403 account_required and `payments list`
+	// silently showed the buyer's payments. The client is authenticated either
+	// way — Auth.Login stashed the JWT on it — so the command still works. (#95)
+	if otherSessionStored {
+		fmt.Fprintf(os.Stderr,
+			"Signed in as %s for this command only (the stored session was left in place)\n", addr)
+		return nil
+	}
+	if err := token.Save(baseURL, authResp.Token); err != nil {
 		return err
 	}
 	fmt.Fprintf(os.Stderr, "Signed in as %s\n", addr)
@@ -131,7 +150,7 @@ func ensureSession(ctx context.Context, client *rail0.Client, keyHex, addr strin
 // they derive it from the session instead of taking it as an argument; with no
 // (or an expired) session this errors, pointing the user at `auth login`.
 func currentAccountID() (string, error) {
-	t := token.Load()
+	t := token.Load(resolveBaseURL())
 	if t == "" {
 		return "", errors.New("not logged in: run 'rail0 auth login -p 0xYourKey…'")
 	}

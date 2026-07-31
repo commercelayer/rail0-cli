@@ -50,6 +50,7 @@ Charge (one-shot) flow:
 * [rail0 payments list](rail0_payments_list.md)	 - List payments for the authenticated wallet (requires login)
 * [rail0 payments refund](rail0_payments_refund.md)	 - Refund a payment (prepare, sign, and broadcast)
 * [rail0 payments release](rail0_payments_release.md)	 - Release a payment after expiry (prepare, sign, and broadcast)
+* [rail0 payments sign](rail0_payments_sign.md)	 - Deposit the payer signature on an already-created payment
 * [rail0 payments transactions](rail0_payments_transactions.md)	 - List on-chain transactions for a payment
 * [rail0 payments void](rail0_payments_void.md)	 - Void a payment (prepare, sign, and broadcast)
 * [rail0 payments wait](rail0_payments_wait.md)	 - Block until a payment settles (or reaches a given status)

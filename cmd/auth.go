@@ -77,7 +77,7 @@ add'), or omit it to fall back to the RAIL0_PRIVATE_KEY environment variable.`,
 			return err
 		}
 
-		tokenPath, saveErr := token.SaveAndReport(authResp.Token)
+		tokenPath, saveErr := token.SaveAndReport(resolveBaseURL(), authResp.Token)
 		if saveErr != nil {
 			// Reports the failure and how to recover, but NEVER the token itself —
 			// see tokenSaveFailureNotice for why that matters. (#64)
@@ -136,7 +136,7 @@ var authStatusCmd = &cobra.Command{
 	Use:   "status",
 	Short: "Show the current authentication status",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		t := token.Load()
+		t := token.Load(resolveBaseURL())
 		if t == "" {
 			fmt.Fprintln(os.Stderr, "Not logged in. "+loginHint)
 			return nil
@@ -164,7 +164,7 @@ var authLogoutCmd = &cobra.Command{
 	Use:   "logout",
 	Short: "Remove the stored authentication token",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := token.Delete(); err != nil {
+		if err := token.Delete(resolveBaseURL()); err != nil {
 			return err
 		}
 		fmt.Println("Logged out.")

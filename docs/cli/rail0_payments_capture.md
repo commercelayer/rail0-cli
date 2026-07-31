@@ -9,7 +9,9 @@ Prepare the transaction that calls capture() on the RAIL0 contract.
 The payment must be in 'authorized' or 'partially_captured' status.
 Partial captures are supported: pass --amount less than capturableAmount
 to capture a portion; the remaining balance stays available until
-authorizationExpiry.
+authorizationExpiry. Note that capturableAmount is the LAST CONFIRMED balance,
+so it is stale while another capture of yours is still in flight — 'payments
+wait' settles it before you choose an amount.
 The API returns 202 immediately. The payment stays at "authorized" until
 rail0-indexer confirms and the API transitions it to "captured" or
 "partially_captured". Poll 'payments get <rail0Id>' until the payment
@@ -34,7 +36,7 @@ rail0 payments capture <rail0Id> [flags]
 ### Options
 
 ```
-  -a, --amount string        Amount to capture as a decimal in token units (e.g. 1.00); > 0 and ≤ capturable
+  -a, --amount string        Amount to capture as a decimal in token units (e.g. 1.00); > 0 and ≤ the last confirmed capturable
   -h, --help                 help for capture
   -p, --private-key string   Caller's secp256k1 private key (0x-prefixed hex); signs and broadcasts in one step
       --timeout duration     Max time to wait when --wait is set (default 2m0s)

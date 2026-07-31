@@ -31,7 +31,11 @@ func humanizeError(err error) error {
 		case apiErr.Status == 403:
 			return fmt.Errorf("forbidden (HTTP 403)%s", detail(apiHint(apiErr)))
 		case apiErr.Status == 404:
-			return fmt.Errorf("not found (HTTP 404)%s", detail(apiHint(apiErr)))
+			// A 404 on a payment route has two causes the gateway deliberately does
+			// not distinguish (see gateway#157): the id doesn't exist, or it exists
+			// and this session is not its payer/payee. Say both — otherwise signing
+			// with the wrong key reads as a typo in the id.
+			return fmt.Errorf("not found (HTTP 404)%s — the id may be wrong, or you are not the payer/payee of this payment (check the key you passed with -p)", detail(apiHint(apiErr)))
 		case apiErr.Status == 409:
 			return fmt.Errorf("already exists / conflict (HTTP 409)%s", detail(apiHint(apiErr)))
 		case apiErr.Status == 422:
@@ -160,9 +164,12 @@ var errorHints = map[string]string{
 	"already_known":           "the node already has this transaction — wait for it with 'rail0 payments wait <id>'",
 	"rpc_unavailable":         "no RPC endpoint answered — the transaction was not submitted, retry in a moment",
 	// authorization: which party the session is missing
-	"not_the_payee":     "only the merchant (payee) can do this — 'rail0 auth login' with the payee's key",
-	"not_the_payer":     "only the buyer (payer) can do this — 'rail0 auth login' with the payer's key",
-	"not_a_participant": "only the payer and the payee can read a payment — sign in as one of them",
+	"not_the_payee": "only the merchant (payee) can do this — 'rail0 auth login' with the payee's key",
+	"not_the_payer": "only the buyer (payer) can do this — 'rail0 auth login' with the payer's key",
+	// `not_a_participant` was retired by gateway#157: a non-party now gets a plain
+	// 404, deliberately, so a payment endpoint can't be used as an existence
+	// oracle. The advice for that case therefore belongs on the 404 branch below,
+	// not on a code the gateway no longer sends.
 	// contract reverts (surfaced as contract_revert, or on a failed transaction)
 	"not_payee":                  "only the merchant (payee) may do this — sign with the payee's key",
 	"not_payer":                  "only the buyer (payer) may do this — sign with the payer's key",

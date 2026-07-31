@@ -7,99 +7,72 @@ import (
 	rail0 "github.com/rail0/go-sdk"
 )
 
-// signEIP712FromCreate signs the EIP-3009 payload using the Payment returned
-// directly by the create endpoint (no extra GET needed). The create response
-// carries the embedded signing_payload and rail0_contract needed to sign.
-func signEIP712FromCreate(p *rail0.Payment, mode string, privateKeyHex string) (string, error) {
-	if p.SigningPayload == nil {
-		// The gateway builds this on create; if it couldn't, create itself returns
-		// a 502 signing_payload_unavailable (surfaced by the API call above), so
-		// this is only a defensive guard.
-		return "", fmt.Errorf("create response did not include a signing_payload")
-	}
-	pc := rail0.PaymentConfig{
-		Amount:              string(p.Amount),
-		AuthorizationExpiry: p.AuthorizationExpiry,
-		Payee:               p.Payee,
-		Payer:               p.Payer,
-		RefundExpiry:        p.RefundExpiry,
-		Token:               p.Token,
-	}
-	return signPayload(
-		pc,
-		*p.SigningPayload,
-		p.Rail0Contract,
-		string(p.Amount),
-		mode,
-		privateKeyHex,
-	)
-}
-
-// signPayload is the shared signing core.
-func signPayload(pc rail0.PaymentConfig, sp rail0.SigningPayload, contractAddress rail0.Address, amountStr string, mode string, privateKeyHex string) (string, error) {
-	privKey, err := rail0.HexToPrivateKey(privateKeyHex)
-	if err != nil {
-		return "", fmt.Errorf("invalid private key: %w", err)
-	}
-
-	amount := new(big.Int)
-	if _, ok := amount.SetString(amountStr, 10); !ok {
-		return "", fmt.Errorf("invalid payment amount: %s", amountStr)
-	}
-
-	tokenDomain := rail0.TokenDomain{
-		Name:              sp.Domain.Name,
-		Version:           sp.Domain.Version,
-		ChainID:           uint64(sp.Domain.ChainId),
-		VerifyingContract: sp.Domain.VerifyingContract,
-	}
-
-	signFn := rail0.SignAuthorize
-	if mode == "charge" {
-		signFn = rail0.SignCharge
-	}
-
-	sig, err := signFn(rail0.SignPaymentParams{
-		PrivateKey:      privKey,
-		Payment:         pc,
-		Amount:          amount,
-		Nonce:           sp.Message.Nonce,
-		ContractAddress: contractAddress,
-		TokenDomain:     tokenDomain,
-	})
-	if err != nil {
-		return "", fmt.Errorf("EIP-712 signing failed: %w", err)
-	}
-
-	return "0x" + sig.R[2:] + sig.S[2:] + fmt.Sprintf("%02x", sig.V), nil
-}
-
-// signRefundPayload signs the EIP-3009 ReceiveWithAuthorization payload returned
-// by phase 1 of POST /payments/:id/refund/payload and returns V, R, S ready for
-// phase 2. The signing key must be the payee's private key.
+// EIP-3009 signing, for every payment operation that needs a payer/payee
+// signature (authorize, charge, refund).
 //
-// Uses sp.Message fields directly (from/to/value/validBefore/nonce) so the
-// digest matches exactly what the API computed — no risk of field confusion
-// (e.g. message.from is the payee, not the payer).
-func signRefundPayload(sp *rail0.SigningPayload, privateKeyHex string) (int, string, string, error) {
+// ONE rule governs this file: the gateway builds the signing payload, and we
+// sign it VERBATIM — typehash from its primaryType, fields from its message,
+// domain from its domain. Nothing here re-derives from/to/value/validBefore
+// from a payment record, and nothing picks the typehash from a local `mode`.
+//
+// Why it matters: only the gateway knows which contract VERSION a given payment
+// lives on, and the version selects the typehash, the EIP-712 domain and the
+// field layout (it builds its client per-payment with contract_version:). A
+// client that rebuilds the digest re-imports the contract versioning the
+// gateway exists to absorb — so a contract change produces a well-formed
+// signature over the WRONG digest, which fails only on-chain, after gas. The
+// authorize/charge path used to do exactly that: it chose the typehash from the
+// local mode string and discarded sp.Message entirely, so rail0#58 (moving
+// authorize/charge to ReceiveWithAuthorization) would have broken it silently.
+// See rail0-cli#93.
+
+// Primary types the gateway can ask us to sign. Anything else is a hard error:
+// signing the wrong digest looks like success until the token rejects it.
+const (
+	primaryTypeTransfer = "TransferWithAuthorization"
+	primaryTypeReceive  = "ReceiveWithAuthorization"
+)
+
+// signSigningPayload signs the gateway's signing_payload and returns the packed
+// 65-byte signature (0x + r + s + v) that PUT /payments/:id/sign expects.
+//
+// Works for authorize, charge and refund alike: which typehash to use is the
+// payload's own business, not ours.
+func signSigningPayload(sp *rail0.SigningPayload, privateKeyHex string) (string, error) {
+	sig, err := signSigningPayloadVRS(sp, privateKeyHex)
+	if err != nil {
+		return "", err
+	}
+	return packSignature(sig), nil
+}
+
+// signSigningPayloadVRS is signSigningPayload without the packing, for the
+// refund phase-2 call that submits v, r and s separately.
+func signSigningPayloadVRS(sp *rail0.SigningPayload, privateKeyHex string) (rail0.Eip3009Signature, error) {
+	var zero rail0.Eip3009Signature
+
+	if sp == nil {
+		// The gateway builds the payload on create; when it cannot, create itself
+		// answers 502 signing_payload_unavailable. So this is a defensive guard.
+		return zero, fmt.Errorf("the gateway response did not include a signing_payload")
+	}
+
 	privKey, err := rail0.HexToPrivateKey(privateKeyHex)
 	if err != nil {
-		return 0, "", "", fmt.Errorf("invalid private key: %w", err)
+		return zero, fmt.Errorf("invalid private key: %w", err)
 	}
 
-	value := new(big.Int)
-	if _, ok := value.SetString(string(sp.Message.Value), 10); !ok {
-		return 0, "", "", fmt.Errorf("invalid value in signing payload: %s", sp.Message.Value)
+	value, err := parsePayloadInt("value", string(sp.Message.Value))
+	if err != nil {
+		return zero, err
 	}
-
-	validAfter := new(big.Int)
-	if _, ok := validAfter.SetString(string(sp.Message.ValidAfter), 10); !ok {
-		return 0, "", "", fmt.Errorf("invalid validAfter in signing payload: %s", sp.Message.ValidAfter)
+	validAfter, err := parsePayloadInt("validAfter", string(sp.Message.ValidAfter))
+	if err != nil {
+		return zero, err
 	}
-
-	validBefore := new(big.Int)
-	if _, ok := validBefore.SetString(string(sp.Message.ValidBefore), 10); !ok {
-		return 0, "", "", fmt.Errorf("invalid validBefore in signing payload: %s", sp.Message.ValidBefore)
+	validBefore, err := parsePayloadInt("validBefore", string(sp.Message.ValidBefore))
+	if err != nil {
+		return zero, err
 	}
 
 	tokenDomain := rail0.TokenDomain{
@@ -109,19 +82,59 @@ func signRefundPayload(sp *rail0.SigningPayload, privateKeyHex string) (int, str
 		VerifyingContract: sp.Domain.VerifyingContract,
 	}
 
-	sig, err := rail0.SignReceiveWithAuthorizationRaw(rail0.SignReceiveParams{
-		PrivateKey:  privKey,
-		TokenDomain: tokenDomain,
-		From:        sp.Message.From,
-		To:          sp.Message.To,
-		Value:       value,
-		ValidAfter:  validAfter,
-		ValidBefore: validBefore,
-		Nonce:       sp.Message.Nonce,
-	})
-	if err != nil {
-		return 0, "", "", fmt.Errorf("EIP-712 ReceiveWithAuthorization signing failed: %w", err)
+	switch sp.PrimaryType {
+	case primaryTypeReceive:
+		return rail0.SignReceiveWithAuthorizationRaw(rail0.SignReceiveParams{
+			PrivateKey:  privKey,
+			TokenDomain: tokenDomain,
+			From:        sp.Message.From,
+			To:          sp.Message.To,
+			Value:       value,
+			ValidAfter:  validAfter,
+			ValidBefore: validBefore,
+			Nonce:       sp.Message.Nonce,
+		})
+	case primaryTypeTransfer:
+		return rail0.SignTransferWithAuthorization(privKey, tokenDomain, rail0.SignTransferParams{
+			From:        sp.Message.From,
+			To:          sp.Message.To,
+			Value:       value,
+			ValidAfter:  validAfter,
+			ValidBefore: validBefore,
+			Nonce:       sp.Message.Nonce,
+		})
+	default:
+		// Never guess. A silent fallback to one of the two typehashes is how you
+		// get a valid signature over a digest the token will refuse.
+		return zero, fmt.Errorf(
+			"unsupported signing payload primaryType %q (expected %s or %s) — this CLI is older than the gateway it is talking to",
+			sp.PrimaryType, primaryTypeTransfer, primaryTypeReceive,
+		)
 	}
+}
 
+// packSignature renders {v, r, s} as the 0x + r || s || v hex the gateway takes.
+func packSignature(sig rail0.Eip3009Signature) string {
+	return "0x" + sig.R[2:] + sig.S[2:] + fmt.Sprintf("%02x", sig.V)
+}
+
+// parsePayloadInt reads a decimal string field of the signing payload, naming
+// the field in the error so a malformed payload is diagnosable.
+func parsePayloadInt(field, raw string) (*big.Int, error) {
+	n := new(big.Int)
+	if _, ok := n.SetString(raw, 10); !ok {
+		return nil, fmt.Errorf("invalid %s in signing payload: %q", field, raw)
+	}
+	return n, nil
+}
+
+// signRefundPayload signs the phase-1 ReceiveWithAuthorization payload of
+// POST /payments/:id/refund/payload and returns v, r, s for phase 2. The key
+// must be the payee's.
+func signRefundPayload(sp *rail0.SigningPayload, privateKeyHex string) (int, string, string, error) {
+	sig, err := signSigningPayloadVRS(sp, privateKeyHex)
+	if err != nil {
+		return 0, "", "", err
+	}
 	return sig.V, sig.R, sig.S, nil
 }

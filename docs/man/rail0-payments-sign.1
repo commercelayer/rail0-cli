@@ -1,0 +1,65 @@
+.nh
+.TH "RAIL0" "1" "Jul 2026" "rail0 CLI" ""
+
+.SH NAME
+rail0-payments-sign - Deposit the payer signature on an already-created payment
+
+
+.SH SYNOPSIS
+\fBrail0 payments sign  [flags]\fP
+
+
+.SH DESCRIPTION
+Sign an existing unsigned payment with the payer's key.
+
+.PP
+\&'payments create' creates AND signs in one step. This command is the recovery
+path for when that second half didn't happen: the payment exists at status
+\&'unsigned' but carries no signature, because the local signing or the submit
+failed (a lost connection, a rate limit, the wrong key). Without it the payment
+would be stranded — the only way forward would be creating a duplicate.
+
+.PP
+The payer signs locally: the key never leaves this machine, only the signature
+is sent. Requires the payer's own key, since the gateway checks that the
+recovered signer is the payment's payer.
+
+
+.SH OPTIONS
+\fB-h\fP, \fB--help\fP[=false]
+	help for sign
+
+.PP
+\fB-p\fP, \fB--private-key\fP=""
+	Payer's secp256k1 private key (0x-prefixed hex); signs locally, the key never leaves this machine
+
+
+.SH OPTIONS INHERITED FROM PARENT COMMANDS
+\fB--base-url\fP=""
+	RAIL0 gateway base URL (env: RAIL0_BASE_URL)
+
+.PP
+\fB--debug\fP[=false]
+	Print HTTP request/response details to stderr
+
+.PP
+\fB--json\fP[=false]
+	Force plain (uncolored) JSON output (useful in scripts)
+
+.PP
+\fB--pretty\fP[=false]
+	Use the key-value/table view instead of JSON (terminal only)
+
+.PP
+\fB-q\fP, \fB--quiet\fP[=false]
+	Print only the result's id/hash, one per line (useful in scripts)
+
+
+.SH EXAMPLE
+.EX
+  rail0 payments sign 0xabc123… -p 0xPayerKey…
+.EE
+
+
+.SH SEE ALSO
+\fBrail0-payments(1)\fP

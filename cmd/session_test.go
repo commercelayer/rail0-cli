@@ -170,4 +170,4 @@ func addressForTestKey(t *testing.T) string {
 
 // saveTokenForTest seeds the isolated token cache. Wraps token.Save so the import
 // stays in one place.
-func saveTokenForTest(jwt string) error { return token.Save(jwt) }
+func saveTokenForTest(jwt string) error { return token.Save(resolveBaseURL(), jwt) }

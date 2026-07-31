@@ -4,9 +4,16 @@ Fetch the current state of a payment
 
 ### Synopsis
 
-Fetch a payment's current status from the RAIL0 gateway together with live
-on-chain balances (capturableAmount, refundableAmount) when the payment
-is in an active on-chain state.
+Fetch a payment's current status from the RAIL0 gateway together with its
+last confirmed on-chain balances (capturableAmount, refundableAmount).
+
+Those two are MIRRORS, not live reads: the gateway writes them from the balance
+the indexer reports on each confirmation, and never recomputes them. So while a
+capture or refund is broadcast but not yet confirmed, they still show the
+pre-operation values — and the gateway's own residual guards read the same
+mirror, so a second operation against a stale balance is accepted here and
+refused on-chain. Use 'rail0 payments wait' to get a settled value before
+deciding an amount.
 
 Requires login — a payment is readable only by its payer or payee. Run
 'rail0 auth login -p 0xKey…' first (any wallet can log in, no account needed).

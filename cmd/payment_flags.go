@@ -195,6 +195,13 @@ func (f *createPaymentFlags) buildResolved() (rail0.CreatePaymentRequest, error)
 		if err := json.Unmarshal(b, &req); err != nil {
 			return rail0.CreatePaymentRequest{}, fmt.Errorf("parse payment file: %w", err)
 		}
+		// A file-supplied body used to skip every local check the flag path runs,
+		// so a file written by analogy with the flags ("token": "USDC" instead of
+		// an address, or an over-precise amount) reached the gateway as a bare
+		// unknown_token / invalid_amount with none of the local hints. (#97)
+		if err := validateFileRequest(req); err != nil {
+			return rail0.CreatePaymentRequest{}, err
+		}
 		return req, nil
 	}
 
@@ -220,6 +227,41 @@ func (f *createPaymentFlags) buildResolved() (rail0.CreatePaymentRequest, error)
 			"--from, --to, --token, --amount, and --chain-id are required (or use --payment-file)")
 	}
 	return f.resolve()
+}
+
+// validateFileRequest applies to a --payment-file body the same local checks the
+// flag path gets. The file speaks the WIRE shape (token as an address, not a
+// symbol), so this is not simply validateSupplied: the token check is the
+// interesting one, because writing the symbol there is the natural mistake.
+func validateFileRequest(req rail0.CreatePaymentRequest) error {
+	if req.Payer == "" || req.Payee == "" || req.Token == "" || req.Amount == "" || req.ChainID == 0 {
+		return fmt.Errorf("payment file must set payer, payee, token, amount and chain_id")
+	}
+	if err := validateAddress(string(req.Payer)); err != nil {
+		return fmt.Errorf("payment file payer: %w", err)
+	}
+	if err := validateAddress(string(req.Payee)); err != nil {
+		return fmt.Errorf("payment file payee: %w", err)
+	}
+	if err := validateAddress(string(req.Token)); err != nil {
+		return fmt.Errorf("payment file token: %w (in a payment file the token is its contract ADDRESS, not a symbol like USDC — the symbol form is only for --token)", err)
+	}
+	if err := validateAmount(string(req.Amount)); err != nil {
+		return fmt.Errorf("payment file amount: %w", err)
+	}
+	// Precision needs the token's decimals, which needs the chain — resolve the
+	// token by address among the chain's active ones. A token the chain doesn't
+	// have is left to the gateway (it owns the catalogue, and a retired token
+	// still resolves there for an existing payment).
+	ctx := context.Background()
+	if tokens, err := activeTokens(ctx, req.ChainID); err == nil {
+		for _, t := range tokens {
+			if strings.EqualFold(string(t.Address), string(req.Token)) {
+				return assertAmountPrecision(string(req.Amount), t.Decimals)
+			}
+		}
+	}
+	return nil
 }
 
 // validateSupplied rejects a malformed value among the flags the user actually

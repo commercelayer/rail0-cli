@@ -232,7 +232,7 @@ Backends: macOS Keychain, Windows Credential Manager, Linux Secret Service
 
 ## Signing modes
 
-### Payer — `payments create`
+### Payer — `payments create` / `payments sign`
 
 The payer creates the payment and signs the EIP-712 payload with their key
 (`--private-key` / `-p`), submitting the signature in one step:
@@ -246,7 +246,21 @@ rail0 payments create -F 0xBuyer… -T 0xMerchant… -t USDC -a 10.50 -c 5042002
 > address). `payments create` handles this: it signs in with the payer's key (the
 > same `-p` key it signs the payload with) when there's no valid session for that
 > address — so no separate `rail0 auth login` is needed, and the session's address
-> matches `--from`.
+> matches `--from`. If a session for a *different* address is already stored, that
+> one is left alone: the sign-in serves this command only, and the CLI says so.
+
+> **Replay safety.** Each `payments create` sends a fresh `Idempotency-Key`, so a
+> command retried after a lost response (a timeout, a 429) cannot mint a second
+> payment — the gateway returns the first one. Pass `--idempotency-key` to reuse a
+> key of your own across processes.
+
+**If the signature step fails** (a dropped connection, a rate limit, the wrong
+key), the payment exists at `unsigned` with no signature. Don't create it again —
+deposit the signature on the existing one:
+
+```sh
+rail0 payments sign 0xRail0Id… -p 0xPayerKey…
+```
 
 **Token/chain discovery from the payee.** On a terminal, if you give `--to` but
 omit `--token` and/or `--chain-id`, the CLI looks up what that merchant accepts

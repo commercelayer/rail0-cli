@@ -2,6 +2,8 @@ package cmd
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -37,9 +39,16 @@ Charge (one-shot) flow:
 var paymentsGetCmd = &cobra.Command{
 	Use:   "get <rail0Id>",
 	Short: "Fetch the current state of a payment",
-	Long: `Fetch a payment's current status from the RAIL0 gateway together with live
-on-chain balances (capturableAmount, refundableAmount) when the payment
-is in an active on-chain state.
+	Long: `Fetch a payment's current status from the RAIL0 gateway together with its
+last confirmed on-chain balances (capturableAmount, refundableAmount).
+
+Those two are MIRRORS, not live reads: the gateway writes them from the balance
+the indexer reports on each confirmation, and never recomputes them. So while a
+capture or refund is broadcast but not yet confirmed, they still show the
+pre-operation values — and the gateway's own residual guards read the same
+mirror, so a second operation against a stale balance is accepted here and
+refused on-chain. Use 'rail0 payments wait' to get a settled value before
+deciding an amount.
 
 Requires login — a payment is readable only by its payer or payee. Run
 'rail0 auth login -p 0xKey…' first (any wallet can log in, no account needed).
@@ -188,12 +197,13 @@ var paymentsTransactionsCmd = &cobra.Command{
 	},
 }
 
-// ── payments sign ─────────────────────────────────────────────────────────────
+// ── payments create ───────────────────────────────────────────────────────────
 
 var signPrivateKey string
 var signCreateFlags createPaymentFlags
+var signCreateIdempotencyKey string
 
-var paymentsSignCmd = &cobra.Command{
+var paymentsCreateCmd = &cobra.Command{
 	Use:   "create",
 	Short: "Create a payment and sign it with the payer's key",
 	Long: `Create a RAIL0 payment and sign the EIP-3009 payload with the payer's key in
@@ -241,12 +251,25 @@ sent from an address to itself.`,
 		if err := ensureSession(ctx, client, signingKey, string(req.Payer)); err != nil {
 			return err
 		}
+		// Replay safety (#91). rail0_id is server-minted and random, so nothing
+		// else deduplicates a create: without a key, re-running this command after
+		// a lost response (timeout, 429) mints a SECOND payment the merchant can
+		// also authorize. One key per invocation — a caller that wants to retry
+		// the exact same create across processes passes --idempotency-key.
+		idemKey := signCreateIdempotencyKey
+		if idemKey == "" {
+			if idemKey, err = newIdempotencyKey(); err != nil {
+				return err
+			}
+		}
 		return ui.RunAPIWithMessage("Creating payment…", func() (any, error) {
-			created, err := client.Payments.Create(ctx, req)
+			created, err := client.Payments.Create(ctx, req, idemKey)
 			if err != nil {
 				return nil, err
 			}
-			sig, err := signEIP712FromCreate(created, req.Mode, signingKey)
+			// Sign the gateway's payload verbatim — see cmd/signing.go for why the
+			// CLI must not rebuild the digest (#93).
+			sig, err := signSigningPayload(created.SigningPayload, signingKey)
 			if err != nil {
 				return nil, fmt.Errorf("sign: %w", err)
 			}
@@ -254,6 +277,86 @@ sent from an address to itself.`,
 				rail0.PayerSignatureRequest{Signature: sig})
 		})
 	},
+}
+
+// ── payments sign ─────────────────────────────────────────────────────────────
+
+var paymentsSignCmd = &cobra.Command{
+	Use:   "sign <rail0Id>",
+	Short: "Deposit the payer signature on an already-created payment",
+	Long: `Sign an existing unsigned payment with the payer's key.
+
+'payments create' creates AND signs in one step. This command is the recovery
+path for when that second half didn't happen: the payment exists at status
+'unsigned' but carries no signature, because the local signing or the submit
+failed (a lost connection, a rate limit, the wrong key). Without it the payment
+would be stranded — the only way forward would be creating a duplicate.
+
+The payer signs locally: the key never leaves this machine, only the signature
+is sent. Requires the payer's own key, since the gateway checks that the
+recovered signer is the payment's payer.`,
+	Example: `  rail0 payments sign 0xabc123… -p 0xPayerKey…`,
+	Args:    cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		ctx := context.Background()
+
+		signingKey, err := signingKeyOrPrompt(signPrivateKey)
+		if err != nil {
+			return err
+		}
+		signer, err := addressFromKey(signingKey)
+		if err != nil {
+			return err
+		}
+
+		client := newClient()
+		// The whole of /payments is SIWE-gated, and a single payment is readable
+		// only by its participants — so authenticate before the GET, as the payer
+		// whose key we are about to sign with.
+		if err := ensureSession(ctx, client, signingKey, signer); err != nil {
+			return err
+		}
+
+		return ui.RunAPIWithMessage("Signing payment…", func() (any, error) {
+			payment, err := client.Payments.Get(ctx, rail0.Bytes32(args[0]))
+			if err != nil {
+				return nil, err
+			}
+			// Fail on the wrong key BEFORE signing: the gateway would answer
+			// signer_mismatch, but the local message names both addresses.
+			if !strings.EqualFold(signer, string(payment.Payer)) {
+				return nil, fmt.Errorf(
+					"signing key address %s is not the payer of this payment (%s) — you're signing with the wrong key",
+					signer, payment.Payer)
+			}
+			// The gateway only embeds signing_payload while the payment is unsigned,
+			// so an already-signed one is reported as such instead of as a missing
+			// payload.
+			if payment.SigningPayload == nil {
+				return nil, fmt.Errorf(
+					"payment %s is %s, not unsigned — there is no signature to deposit",
+					args[0], payment.Status)
+			}
+			sig, err := signSigningPayload(payment.SigningPayload, signingKey)
+			if err != nil {
+				return nil, fmt.Errorf("sign: %w", err)
+			}
+			return client.Payments.Sign(ctx, payment.ID,
+				rail0.PayerSignatureRequest{Signature: sig})
+		})
+	},
+}
+
+// newIdempotencyKey mints a random key for a single create invocation. Random
+// rather than derived from the request: two DELIBERATE creates with identical
+// terms (a customer buying the same thing twice) must both go through, so the
+// key identifies the attempt, not the payload.
+func newIdempotencyKey() (string, error) {
+	buf := make([]byte, 16)
+	if _, err := rand.Read(buf); err != nil {
+		return "", fmt.Errorf("could not generate an idempotency key: %w", err)
+	}
+	return "cli-" + hex.EncodeToString(buf), nil
 }
 
 // ── action command helpers ────────────────────────────────────────────────────
@@ -516,7 +619,9 @@ var paymentsCaptureCmd = &cobra.Command{
 The payment must be in 'authorized' or 'partially_captured' status.
 Partial captures are supported: pass --amount less than capturableAmount
 to capture a portion; the remaining balance stays available until
-authorizationExpiry.
+authorizationExpiry. Note that capturableAmount is the LAST CONFIRMED balance,
+so it is stale while another capture of yours is still in flight — 'payments
+wait' settles it before you choose an amount.
 The API returns 202 immediately. The payment stays at "authorized" until
 rail0-indexer confirms and the API transitions it to "captured" or
 "partially_captured". Poll 'payments get <rail0Id>' until the payment
@@ -952,9 +1057,18 @@ var paymentsDisputesCmd = &cobra.Command{
 
 func init() {
 	// payments create — creates the payment and signs it with the payer's key
-	signCreateFlags.addTo(paymentsSignCmd)
-	paymentsSignCmd.Flags().StringVarP(&signPrivateKey, "private-key", "p", "",
+	signCreateFlags.addTo(paymentsCreateCmd)
+	paymentsCreateCmd.Flags().StringVarP(&signPrivateKey, "private-key", "p", "",
 		"Payer's secp256k1 private key (0x-prefixed hex); creates the payment and signs locally")
+	paymentsCreateCmd.Flags().StringVar(&signPrivateKey, "pk", "", "Alias for --private-key")
+	_ = paymentsCreateCmd.Flags().MarkHidden("pk")
+	paymentsCreateCmd.Flags().StringVar(&signCreateIdempotencyKey, "idempotency-key", "",
+		"Replay-safety key (default: a fresh one per invocation). Reuse it to retry the SAME create without minting a second payment")
+	paymentsCmd.AddCommand(paymentsCreateCmd)
+
+	// payments sign — deposits the payer signature on an already-created payment
+	paymentsSignCmd.Flags().StringVarP(&signPrivateKey, "private-key", "p", "",
+		"Payer's secp256k1 private key (0x-prefixed hex); signs locally, the key never leaves this machine")
 	paymentsSignCmd.Flags().StringVar(&signPrivateKey, "pk", "", "Alias for --private-key")
 	_ = paymentsSignCmd.Flags().MarkHidden("pk")
 	paymentsCmd.AddCommand(paymentsSignCmd)
@@ -998,7 +1112,7 @@ func init() {
 
 	// payments capture
 	paymentsCaptureCmd.Flags().StringVarP(&captureAmount, "amount", "a", "",
-		"Amount to capture as a decimal in token units (e.g. 1.00); > 0 and ≤ capturable")
+		"Amount to capture as a decimal in token units (e.g. 1.00); > 0 and ≤ the last confirmed capturable")
 	addSigningFlags(paymentsCaptureCmd, &capturePrivateKey)
 	addWaitFlags(paymentsCaptureCmd)
 	paymentsCmd.AddCommand(paymentsCaptureCmd)

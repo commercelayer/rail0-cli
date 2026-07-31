@@ -45,6 +45,10 @@ sent from an address to itself.
 	help for create
 
 .PP
+\fB--idempotency-key\fP=""
+	Replay-safety key (default: a fresh one per invocation). Reuse it to retry the SAME create without minting a second payment
+
+.PP
 \fB-f\fP, \fB--payment-file\fP=""
 	Path to a JSON file with the full request body (overrides individual flags)
 

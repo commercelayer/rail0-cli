@@ -35,7 +35,7 @@ which lists the gateway's accepted payment tokens.`,
 	Example: `  rail0 token`,
 	Args:    cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		info, hint := tokenSession(token.Load())
+		info, hint := tokenSession(token.Load(resolveBaseURL()))
 		if hint != "" {
 			fmt.Fprintln(os.Stderr, hint)
 			return nil

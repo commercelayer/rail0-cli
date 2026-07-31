@@ -42,11 +42,11 @@ func payload(primaryType string) *rail0.SigningPayload {
 // signatures: the typehash is part of the digest, so if the two ever matched it
 // would mean the primaryType was being ignored.
 func TestSignSigningPayloadHonoursPrimaryType(t *testing.T) {
-	transfer, err := signSigningPayload(payload(primaryTypeTransfer), testKey)
+	transfer, err := signSigningPayload(payload(rail0.PrimaryTypeTransfer), testKey)
 	if err != nil {
 		t.Fatalf("transfer: %v", err)
 	}
-	receive, err := signSigningPayload(payload(primaryTypeReceive), testKey)
+	receive, err := signSigningPayload(payload(rail0.PrimaryTypeReceive), testKey)
 	if err != nil {
 		t.Fatalf("receive: %v", err)
 	}
@@ -88,7 +88,7 @@ func TestSignSigningPayloadRefusesAnUnknownPrimaryType(t *testing.T) {
 // The whole point of the rule: what gets signed comes from the payload, not from
 // a payment record. Changing one payload field must change the signature.
 func TestSignSigningPayloadReadsTheMessageFields(t *testing.T) {
-	base, err := signSigningPayload(payload(primaryTypeTransfer), testKey)
+	base, err := signSigningPayload(payload(rail0.PrimaryTypeTransfer), testKey)
 	if err != nil {
 		t.Fatalf("base: %v", err)
 	}
@@ -114,7 +114,7 @@ func TestSignSigningPayloadReadsTheMessageFields(t *testing.T) {
 		}},
 		{"domain.chainId", func(p *rail0.SigningPayload) { p.Domain.ChainId = 1 }},
 	} {
-		p := payload(primaryTypeTransfer)
+		p := payload(rail0.PrimaryTypeTransfer)
 		tc.mutate(p)
 		got, err := signSigningPayload(p, testKey)
 		if err != nil {
@@ -137,7 +137,7 @@ func TestSignSigningPayloadNamesAMalformedField(t *testing.T) {
 		{"validAfter", func(p *rail0.SigningPayload) { p.Message.ValidAfter = "" }},
 		{"validBefore", func(p *rail0.SigningPayload) { p.Message.ValidBefore = "0x10" }},
 	} {
-		p := payload(primaryTypeTransfer)
+		p := payload(rail0.PrimaryTypeTransfer)
 		tc.mutate(p)
 		_, err := signSigningPayload(p, testKey)
 		if err == nil {
@@ -154,7 +154,7 @@ func TestSignSigningPayloadRejectsAMissingPayload(t *testing.T) {
 	if _, err := signSigningPayload(nil, testKey); err == nil {
 		t.Error("a nil signing payload must be rejected")
 	}
-	if _, err := signSigningPayload(payload(primaryTypeTransfer), "not-a-key"); err == nil {
+	if _, err := signSigningPayload(payload(rail0.PrimaryTypeTransfer), "not-a-key"); err == nil {
 		t.Error("an invalid private key must be rejected")
 	}
 }
@@ -162,7 +162,7 @@ func TestSignSigningPayloadRejectsAMissingPayload(t *testing.T) {
 // signRefundPayload is now the same core, returning v/r/s for the phase-2 call.
 // It must agree with the packed form, or the two submit paths would disagree.
 func TestSignRefundPayloadAgreesWithThePackedForm(t *testing.T) {
-	p := payload(primaryTypeReceive)
+	p := payload(rail0.PrimaryTypeReceive)
 
 	packed, err := signSigningPayload(p, testKey)
 	if err != nil {
@@ -173,7 +173,7 @@ func TestSignRefundPayloadAgreesWithThePackedForm(t *testing.T) {
 		t.Fatalf("vrs: %v", err)
 	}
 
-	if got := packSignature(rail0.Eip3009Signature{V: v, R: r, S: s}); got != packed {
+	if got := rail0.PackSignature(rail0.Eip3009Signature{V: v, R: r, S: s}); got != packed {
 		t.Errorf("packed %q != re-packed v/r/s %q", packed, got)
 	}
 }

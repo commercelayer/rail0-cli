@@ -77,6 +77,20 @@ func RunAPIWithMessage(msg string, fn func() (any, error)) error {
 	return printStyled(data)
 }
 
+// Progressf writes a progress line to stderr — but ONLY when no spinner is
+// running, i.e. exactly the modes that have no other sign of life: --quiet,
+// --json, or a piped stdout (CI). On a TTY the spinner already says the command
+// is working, so duplicating it there would fight with the redraw.
+//
+// stderr, never stdout: a caller parsing the result must not have to filter
+// progress out of it.
+func Progressf(format string, args ...any) {
+	if !quietMode && !jsonMode && isTerminal(os.Stdout) {
+		return
+	}
+	fmt.Fprintf(os.Stderr, format+"\n", args...)
+}
+
 // startSpinner draws an animated spinner on stderr and returns a stop function
 // that halts it and clears the line. The first frame is written synchronously,
 // so the spinner is on screen the instant the command starts working; a

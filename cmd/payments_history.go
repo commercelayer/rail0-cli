@@ -35,7 +35,7 @@ timeline is readable only by the payment's payer or payee.`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := context.Background()
-		client := newClient()
+		client := newReadClient()
 		id := args[0]
 		return ui.RunAPI(func() (any, error) {
 			payment, err := client.Payments.Get(ctx, id)

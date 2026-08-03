@@ -13,7 +13,7 @@ var healthCmd = &cobra.Command{
 	Example: `  rail0 health`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return ui.RunAPI(func() (any, error) {
-			return newClient().Health.Get(context.Background())
+			return newReadClient().Health.Get(context.Background())
 		})
 	},
 }

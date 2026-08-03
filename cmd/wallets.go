@@ -72,7 +72,7 @@ address) of the session account.`,
 			}
 		}
 		return ui.RunAPI(func() (any, error) {
-			resp, err := newClient().Wallets.List(context.Background(), account, p)
+			resp, err := newReadClient().Wallets.List(context.Background(), account, p)
 			if err != nil {
 				return nil, err
 			}
@@ -96,7 +96,7 @@ var walletsGetCmd = &cobra.Command{
 			return err
 		}
 		return ui.RunAPI(func() (any, error) {
-			return newClient().Wallets.Get(context.Background(), account, args[0])
+			return newReadClient().Wallets.Get(context.Background(), account, args[0])
 		})
 	},
 }
@@ -259,7 +259,7 @@ RPC never hides the others). Use --chain-id / --symbol to narrow the result.`,
 		}
 		p := rail0.WalletBalancesParams{ChainID: balancesChainID, TokenSymbol: balancesSymbol}
 		return ui.RunAPI(func() (any, error) {
-			return newClient().Wallets.Balances(context.Background(), account, args[0], p)
+			return newReadClient().Wallets.Balances(context.Background(), account, args[0], p)
 		})
 	},
 }

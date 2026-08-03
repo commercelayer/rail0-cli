@@ -70,7 +70,7 @@ Status values:
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return ui.RunAPI(func() (any, error) {
 			ctx := context.Background()
-			client := newClient()
+			client := newReadClient()
 			id := args[0]
 			return client.Payments.Get(ctx, id)
 		})
@@ -132,7 +132,7 @@ Filter with --status, --mode, --payer, --payee, --token, --chain-id, --disputed,
 			p.Disputed = &paymentsListDisputed
 		}
 		return ui.RunAPI(func() (any, error) {
-			client := newClient()
+			client := newReadClient()
 			ctx := context.Background()
 			if paymentsListAll {
 				return fetchAllPayments(ctx, client, p)
@@ -185,7 +185,7 @@ var paymentsTransactionsCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return ui.RunAPI(func() (any, error) {
 			ctx := context.Background()
-			client := newClient()
+			client := newReadClient()
 			id := args[0]
 			p := rail0.ListTransactionsParams{Sort: paymentsTransactionsSort, Page: paymentsTransactionsPage, PerPage: paymentsTransactionsPerPage}
 			resp, err := client.Payments.Transactions(ctx, id, p)
@@ -1041,7 +1041,7 @@ var paymentsDisputesCmd = &cobra.Command{
 	RunE: func(_ *cobra.Command, args []string) error {
 		return ui.RunAPI(func() (any, error) {
 			ctx := context.Background()
-			client := newClient()
+			client := newReadClient()
 			id := args[0]
 			resp, err := client.Payments.Disputes(ctx, id,
 				rail0.ListDisputesParams{Status: disputesStatus, Sort: disputesSort, Page: disputesPage, PerPage: disputesPerPage})

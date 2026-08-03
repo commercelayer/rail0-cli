@@ -162,7 +162,7 @@ With --until it instead waits for a specific payment status.`,
   rail0 payments wait 0xrail0Id… --until captured`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		client := newClient()
+		client := newReadClient()
 		ctx := context.Background()
 		rail0Id := args[0]
 		return ui.RunAPIWithMessage("Waiting…", func() (any, error) {

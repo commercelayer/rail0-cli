@@ -582,6 +582,11 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 			return err
 		}
 		rail0Id := idInput
+		// Charge is an immediate payer→payee transfer — the most irreversible
+		// operation the CLI can broadcast. (#104)
+		if err := confirmDestructive(fmt.Sprintf("Charge payment %s? This immediately transfers the full amount from the payer to the payee.", shortID(rail0Id))); err != nil {
+			return err
+		}
 		return ui.RunAPIWithMessage(actionLabel("Charging…"), func() (any, error) {
 			sc, err := ensureSignerFor(ctx, client, rail0Id, signingKey, "charge")
 			if err != nil {
@@ -659,6 +664,11 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 			}
 		}
 		if err := validateAmount(captureAmount); err != nil {
+			return err
+		}
+		// Capture settles escrow to the merchant, irreversibly — the same gate
+		// void/release/refund already have, naming the amount at stake. (#104)
+		if err := confirmDestructive(fmt.Sprintf("Capture %s from payment %s? This settles the funds to the merchant.", captureAmount, shortID(rail0Id))); err != nil {
 			return err
 		}
 		return ui.RunAPIWithMessage(actionLabel("Capturing…"), func() (any, error) {
@@ -954,6 +964,11 @@ Pass --private-key (-p): the CLI signs locally with the payer key and broadcasts
 				return err
 			}
 		}
+		// An on-chain, gas-burning action the counterparty sees — not undoable
+		// except by explicitly closing the dispute. (#104)
+		if err := confirmDestructive(fmt.Sprintf("Open a dispute on payment %s? This is an on-chain action the merchant will see.", shortID(rail0Id))); err != nil {
+			return err
+		}
 		return ui.RunAPIWithMessage(actionLabel("Opening dispute…"), func() (any, error) {
 			sc, err := ensureSignerFor(ctx, client, rail0Id, signingKey, "dispute")
 			if err != nil {
@@ -1000,6 +1015,10 @@ var paymentsDisputeCloseCmd = &cobra.Command{
 			if err != nil {
 				return err
 			}
+		}
+		// Closing is on-chain too, and reopening requires a fresh dispute. (#104)
+		if err := confirmDestructive(fmt.Sprintf("Close the dispute on payment %s?", shortID(rail0Id))); err != nil {
+			return err
 		}
 		return ui.RunAPIWithMessage(actionLabel("Closing dispute…"), func() (any, error) {
 			sc, err := ensureSignerFor(ctx, client, rail0Id, signingKey, "close dispute")
@@ -1108,6 +1127,7 @@ func init() {
 	// payments charge
 	addSigningFlags(paymentsChargeCmd, &chargePrivateKey)
 	addWaitFlags(paymentsChargeCmd)
+	addYesFlag(paymentsChargeCmd)
 	paymentsCmd.AddCommand(paymentsChargeCmd)
 
 	// payments capture
@@ -1115,6 +1135,7 @@ func init() {
 		"Amount to capture as a decimal in token units (e.g. 1.00); > 0 and ≤ the last confirmed capturable")
 	addSigningFlags(paymentsCaptureCmd, &capturePrivateKey)
 	addWaitFlags(paymentsCaptureCmd)
+	addYesFlag(paymentsCaptureCmd)
 	paymentsCmd.AddCommand(paymentsCaptureCmd)
 
 	// payments void
@@ -1140,9 +1161,11 @@ func init() {
 	// payments dispute / dispute close / disputes
 	addSigningFlags(paymentsDisputeCmd, &disputePrivateKey)
 	addWaitFlags(paymentsDisputeCmd)
+	addYesFlag(paymentsDisputeCmd)
 	paymentsDisputeCmd.Flags().StringVar(&disputeReason, "reason", "", "bytes32 reason code (0x…); defaults to zero")
 	addSigningFlags(paymentsDisputeCloseCmd, &closeDisputePrivateKey)
 	addWaitFlags(paymentsDisputeCloseCmd)
+	addYesFlag(paymentsDisputeCloseCmd)
 	paymentsDisputeCloseCmd.Flags().StringVar(&closeDisputeReason, "reason", "", "bytes32 reason code (0x…); defaults to zero")
 	paymentsDisputeCmd.AddCommand(paymentsDisputeCloseCmd)
 	paymentsCmd.AddCommand(paymentsDisputeCmd)

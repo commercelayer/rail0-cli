@@ -313,9 +313,11 @@ no transaction is still in flight).
 
 **Confirmations.** Every irreversible action prompts for a `y/N` confirmation first;
 pass `--yes` to skip it (and to run it in a non-interactive shell, where it otherwise
-refuses rather than blocking on a hidden prompt). That covers the on-chain ops
-(`void`, `release`, `refund`) and, identically, `keys rm`, `wallets delete`,
-`webhooks delete` and `webhooks rotate-secret`.
+refuses rather than blocking on a hidden prompt). That covers every fund-moving
+on-chain op — `capture`, `charge`, `void`, `release`, `refund`, `dispute`,
+`dispute close` — and, identically, `keys rm`, `wallets delete`,
+`webhooks delete` and `webhooks rotate-secret`. A sweep test asserts the whole
+surface, so a new fund-moving command cannot ship ungated.
 
 `webhooks rotate-secret` is gated for a reason that is easy to miss: it is not
 undoable by rotating back. The previous secret is gone, and from that moment every

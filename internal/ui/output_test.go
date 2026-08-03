@@ -3,8 +3,11 @@ package ui
 import (
 	"encoding/json"
 	"fmt"
+	"io"
+	"os"
 	"reflect"
 	"regexp"
+	"strings"
 	"testing"
 )
 
@@ -100,5 +103,82 @@ func TestPrintStyled(t *testing.T) {
 				t.Errorf("round-trip mismatch:\n got: %#v\nwant: %#v", got, v)
 			}
 		})
+	}
+}
+
+// captureStdout runs fn with os.Stdout redirected to a pipe and returns what
+// it printed. printQuiet's contract IS its stdout (scripts capture it with
+// $(...)), so asserting the bytes is the only honest test.
+func captureStdout(t *testing.T, fn func()) string {
+	t.Helper()
+	old := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stdout = w
+	defer func() { os.Stdout = old }()
+	fn()
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	b, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
+}
+
+// The scripting contract of --quiet: one id per line, on EVERY shape a command
+// returns. The bare-list case is the regression pin for #101 — every list
+// command returns resp.Data (a naked slice), and printQuiet only recognised
+// the paginated envelope, so `payments list -q` dumped the full JSON.
+func TestPrintQuietShapes(t *testing.T) {
+	cases := []struct {
+		name string
+		raw  string
+		want string
+	}{
+		{"bare list (what every list command returns, #101)",
+			`[{"rail0_id":"0xaaa"},{"rail0_id":"0xbbb"}]`, "0xaaa\n0xbbb\n"},
+		{"paginated envelope",
+			`{"data":[{"id":"one"},{"id":"two"}],"meta":{"total":2}}`, "one\ntwo\n"},
+		{"single object",
+			`{"rail0_id":"0xccc","status":"authorized"}`, "0xccc\n"},
+		{"empty list prints nothing",
+			`[]`, ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var v any
+			if err := json.Unmarshal([]byte(tc.raw), &v); err != nil {
+				t.Fatal(err)
+			}
+			got := captureStdout(t, func() {
+				if err := printQuiet(v); err != nil {
+					t.Errorf("printQuiet error: %v", err)
+				}
+			})
+			if got != tc.want {
+				t.Errorf("printQuiet output = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// A non-empty list whose items carry no recognisable id (the chains catalog)
+// must keep the JSON fallback rather than print nothing and hide the payload.
+func TestPrintQuietIdlessListFallsBackToJSON(t *testing.T) {
+	var v any
+	if err := json.Unmarshal([]byte(`[{"chain_id":44787,"name":"Celo Sepolia"}]`), &v); err != nil {
+		t.Fatal(err)
+	}
+	got := captureStdout(t, func() {
+		if err := printQuiet(v); err != nil {
+			t.Errorf("printQuiet error: %v", err)
+		}
+	})
+	if !strings.Contains(got, "chain_id") {
+		t.Errorf("expected the JSON fallback to carry the payload, got %q", got)
 	}
 }

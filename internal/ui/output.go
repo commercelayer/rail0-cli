@@ -126,8 +126,8 @@ func printJSON(v any) error {
 }
 
 // printQuiet emits only the result's primary identifier (--quiet), so a script can
-// capture it with `$(...)` and no JSON parser. For a paginated list it prints one
-// id per line. Falls back to plain JSON for a shape with no recognisable id.
+// capture it with `$(...)` and no JSON parser. For a list it prints one id per
+// line. Falls back to plain JSON for a shape with no recognisable id.
 func printQuiet(v any) error {
 	if v == nil {
 		return nil
@@ -136,9 +136,32 @@ func printQuiet(v any) error {
 	if err != nil {
 		return fmt.Errorf("marshal output: %w", err)
 	}
+	// Bare array FIRST: every list command returns resp.Data (the naked slice),
+	// not the paginated envelope. printQuiet only tried the envelope's "data"
+	// key, so the map unmarshal failed on an array, the whole branch was
+	// skipped, and `payments list -q` fell through to printJSON — the full
+	// payload instead of one id per line, on every list in the CLI. (#101)
+	var arr []any
+	if json.Unmarshal(b, &arr) == nil {
+		ids := make([]string, 0, len(arr))
+		for _, item := range arr {
+			if id := quietID(item); id != "" {
+				ids = append(ids, id)
+			}
+		}
+		// A non-empty list whose items carry no recognisable id (e.g. the
+		// chains catalog) keeps the JSON fallback below — printing nothing
+		// would hide the payload entirely.
+		if len(ids) > 0 || len(arr) == 0 {
+			for _, id := range ids {
+				fmt.Println(id)
+			}
+			return nil
+		}
+	}
 	var m map[string]any
 	if json.Unmarshal(b, &m) == nil {
-		if data, ok := m["data"].([]any); ok { // paginated list → one id per line
+		if data, ok := m["data"].([]any); ok { // paginated envelope → one id per line
 			for _, item := range data {
 				if id := quietID(item); id != "" {
 					fmt.Println(id)

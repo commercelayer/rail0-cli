@@ -49,8 +49,20 @@ func boolPtr(b bool) *bool { return &b }
 // The whole destructive surface, so a command added later without a gate fails here
 // instead of shipping. `rotate-secret` counts: the previous secret is gone and every
 // consumer still verifying with it starts rejecting deliveries.
+//
+// The fund-moving payment ops are ALL here — capture, charge and the dispute
+// pair used to broadcast without any confirmation while void/release/refund
+// were gated, and this sweep only listed the commands already marked, which is
+// exactly how the gap survived (#104).
 func TestEveryDestructiveCommandHasTheYesFlag(t *testing.T) {
 	destructive := map[*cobra.Command][]string{
+		paymentsChargeCmd:       {"payments", "charge"},
+		paymentsCaptureCmd:      {"payments", "capture"},
+		paymentsVoidCmd:         {"payments", "void"},
+		paymentsReleaseCmd:      {"payments", "release"},
+		paymentsRefundCmd:       {"payments", "refund"},
+		paymentsDisputeCmd:      {"payments", "dispute"},
+		paymentsDisputeCloseCmd: {"payments", "dispute", "close"},
 		webhooksDeleteCmd:       {"webhooks", "delete"},
 		webhooksRotateSecretCmd: {"webhooks", "rotate-secret"},
 		walletsDeleteCmd:        {"wallets", "delete"},

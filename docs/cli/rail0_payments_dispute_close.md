@@ -20,6 +20,7 @@ rail0 payments dispute close <rail0Id> [flags]
       --reason string        bytes32 reason code (0x…); defaults to zero
       --timeout duration     Max time to wait when --wait is set (default 2m0s)
   -w, --wait                 Block until the operation confirms on-chain (or fails)
+  -y, --yes                  Skip the confirmation prompt (required to run non-interactively)
 ```
 
 ### Options inherited from parent commands

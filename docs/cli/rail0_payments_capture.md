@@ -41,6 +41,7 @@ rail0 payments capture <rail0Id> [flags]
   -p, --private-key string   Caller's secp256k1 private key (0x-prefixed hex); signs and broadcasts in one step
       --timeout duration     Max time to wait when --wait is set (default 2m0s)
   -w, --wait                 Block until the operation confirms on-chain (or fails)
+  -y, --yes                  Skip the confirmation prompt (required to run non-interactively)
 ```
 
 ### Options inherited from parent commands

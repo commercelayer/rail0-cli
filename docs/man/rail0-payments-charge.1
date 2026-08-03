@@ -1,5 +1,5 @@
 .nh
-.TH "RAIL0" "1" "Jul 2026" "rail0 CLI" ""
+.TH "RAIL0" "1" "Aug 2026" "rail0 CLI" ""
 
 .SH NAME
 rail0-payments-charge - Charge a payment — authorize + capture in one call (no escrow)
@@ -41,6 +41,10 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.
 .PP
 \fB-w\fP, \fB--wait\fP[=false]
 	Block until the operation confirms on-chain (or fails)
+
+.PP
+\fB-y\fP, \fB--yes\fP[=false]
+	Skip the confirmation prompt (required to run non-interactively)
 
 
 .SH OPTIONS INHERITED FROM PARENT COMMANDS

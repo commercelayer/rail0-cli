@@ -45,7 +45,7 @@ Public — no login required. Identify the merchant with exactly one of --accoun
 			return err
 		}
 		return ui.RunAPI(func() (any, error) {
-			return newClient().PaymentMethods.List(context.Background(), rail0.PaymentMethodsQuery{
+			return newReadClient().PaymentMethods.List(context.Background(), rail0.PaymentMethodsQuery{
 				AccountID: paymentMethodsAccount,
 				Address:   addr,
 			})

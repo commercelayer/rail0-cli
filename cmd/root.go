@@ -6,7 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
+	"time"
 
 	charmlog "github.com/charmbracelet/log"
 	"github.com/rail0/cli/internal/token"
@@ -77,11 +79,58 @@ func init() {
 // token was worse than seeding nothing — it kept being sent. (#59)
 func newClient() *rail0.Client {
 	baseURL := resolveBaseURL()
-	opts := rail0.ClientOptions{BaseURL: baseURL, Token: token.Load(baseURL)}
+	opts := rail0.ClientOptions{
+		BaseURL: baseURL,
+		Token:   token.Load(baseURL),
+		Timeout: httpTimeout(),
+	}
 	if debug {
 		opts.Logger = makeDebugLogger()
 	}
 	return rail0.NewClient(opts)
+}
+
+// newReadClient is newClient plus transient-failure resilience: 2 retries on a
+// network error and opt-in retry of 429s (sleeping the server's Retry-After —
+// the budget the SDK already implements and nothing enabled, while the CLI's
+// own 429 branch parsed the header just to fail immediately).
+//
+// READ COMMANDS ONLY, on purpose. The SDK re-sends on a network failure
+// whatever the method: for a submit whose first attempt actually LANDED, a
+// retry turns an operation that succeeded into a misleading follow-up error
+// (the gateway answers the replay with a 404/422), which is worse than the
+// plain network error. Fund-moving commands keep newClient. (#102)
+func newReadClient() *rail0.Client {
+	baseURL := resolveBaseURL()
+	opts := rail0.ClientOptions{
+		BaseURL:    baseURL,
+		Token:      token.Load(baseURL),
+		Timeout:    httpTimeout(),
+		MaxRetries: 2,
+		RetryOn429: true,
+	}
+	if debug {
+		opts.Logger = makeDebugLogger()
+	}
+	return rail0.NewClient(opts)
+}
+
+// httpTimeout is the per-request HTTP timeout, overridable via
+// RAIL0_HTTP_TIMEOUT (seconds). Distinct from `--timeout` on the wait
+// commands, which is the POLLING deadline — one bounds a single request, the
+// other bounds how long the CLI keeps asking. 0/garbage falls back to the
+// SDK default (30s).
+func httpTimeout() time.Duration {
+	raw := os.Getenv("RAIL0_HTTP_TIMEOUT")
+	if raw == "" {
+		return 0 // SDK default
+	}
+	secs, err := strconv.Atoi(raw)
+	if err != nil || secs <= 0 {
+		fmt.Fprintf(os.Stderr, "warning: ignoring invalid RAIL0_HTTP_TIMEOUT=%q (want seconds)\n", raw)
+		return 0
+	}
+	return time.Duration(secs) * time.Second
 }
 
 // ensureSession guarantees a valid SIWE session whose address matches `addr`

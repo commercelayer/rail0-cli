@@ -36,7 +36,7 @@ to narrow further.`,
 			return fmt.Errorf("invalid --network-type %q: must be 'testnet' or 'mainnet'", chainsNetworkType)
 		}
 		return ui.RunAPI(func() (any, error) {
-			return newClient().Chains.List(context.Background(),
+			return newReadClient().Chains.List(context.Background(),
 				rail0.ListChainsParams{NetworkType: networkType, Symbol: chainsSymbol})
 		})
 	},
@@ -55,7 +55,7 @@ var (
 // stalling) against an unreachable gateway on every label.
 func chainCatalog() []rail0.Blockchain {
 	chainCatalogOnce.Do(func() {
-		chains, err := newClient().Chains.List(context.Background())
+		chains, err := newReadClient().Chains.List(context.Background())
 		if err != nil {
 			return
 		}

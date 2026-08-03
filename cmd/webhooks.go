@@ -48,7 +48,7 @@ var webhooksListCmd = &cobra.Command{
 		}
 		p.Active = active
 		return ui.RunAPI(func() (any, error) {
-			resp, err := newClient().Webhooks.List(context.Background(), p)
+			resp, err := newReadClient().Webhooks.List(context.Background(), p)
 			if err != nil {
 				return nil, err
 			}
@@ -66,7 +66,7 @@ var webhooksGetCmd = &cobra.Command{
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return ui.RunAPI(func() (any, error) {
-			return newClient().Webhooks.Get(context.Background(), args[0])
+			return newReadClient().Webhooks.Get(context.Background(), args[0])
 		})
 	},
 }
@@ -204,7 +204,7 @@ var webhooksEventCallbacksCmd = &cobra.Command{
 			Sort:      webhooksEventsSort,
 		}
 		return ui.RunAPI(func() (any, error) {
-			resp, err := newClient().Webhooks.EventCallbacks(context.Background(), args[0], p)
+			resp, err := newReadClient().Webhooks.EventCallbacks(context.Background(), args[0], p)
 			if err != nil {
 				return nil, err
 			}

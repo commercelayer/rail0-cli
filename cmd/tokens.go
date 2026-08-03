@@ -36,7 +36,7 @@ those, or --active=false to see only the retired ones.`,
 			params.Active = &tokensActive
 		}
 		return ui.RunAPI(func() (any, error) {
-			return newClient().Tokens.List(context.Background(), params)
+			return newReadClient().Tokens.List(context.Background(), params)
 		})
 	},
 }

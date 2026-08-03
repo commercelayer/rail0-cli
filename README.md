@@ -85,6 +85,7 @@ config file. Precedence is: **flag  >  env var  >  config file  >  built-in defa
 | `--json`     | —                    | Force plain (uncolored) JSON output (useful in scripts) |
 | `--pretty`   | —                    | Key-value/table view instead of JSON (terminal only) |
 | `--quiet` / `-q` | —                | Print only the result's id/hash, one per line — no JSON parser needed |
+| — | `RAIL0_HTTP_TIMEOUT` | Per-request HTTP timeout in seconds (default 30). Distinct from the wait commands' `--timeout`, which is the polling deadline |
 
 ### Scripting
 

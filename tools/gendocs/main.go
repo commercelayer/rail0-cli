@@ -10,11 +10,27 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/rail0/cli/cmd"
 	"github.com/spf13/cobra"
 	"github.com/spf13/cobra/doc"
 )
+
+// docsDate stamps the man pages' .TH header. PINNED, and it must stay pinned:
+// with a nil header Date, Cobra fills it with time.Now() formatted "Jan 2006",
+// so the committed man pages went stale BY THEMSELVES at every month boundary —
+// and since CI regenerates and fails on any diff, the first pull request of a
+// new month went red with 60 files changed and not a line of code touched. The
+// docs check is meant to catch a stale reference, not the calendar.
+//
+// Pinning also overrides Cobra's SOURCE_DATE_EPOCH path (it only applies when
+// Date is nil), so the output is identical whoever runs it, wherever.
+//
+// Bump it deliberately when the reference is meaningfully revised — a man page
+// date means "when this page was last revised", which is a human judgement, not
+// the wall clock at generation time.
+var docsDate = time.Date(2026, time.August, 1, 0, 0, 0, 0, time.UTC)
 
 func main() {
 	out := "docs"
@@ -38,7 +54,7 @@ func main() {
 	if err := doc.GenMarkdownTree(root, mdDir); err != nil {
 		log.Fatalf("markdown: %v", err)
 	}
-	hdr := &doc.GenManHeader{Title: "RAIL0", Section: "1", Source: "rail0 CLI"}
+	hdr := &doc.GenManHeader{Title: "RAIL0", Section: "1", Source: "rail0 CLI", Date: &docsDate}
 	if err := doc.GenManTree(root, hdr, manDir); err != nil {
 		log.Fatalf("man: %v", err)
 	}

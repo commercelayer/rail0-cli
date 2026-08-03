@@ -88,3 +88,20 @@ jobs:
             git diff -- docs/
             exit 1
           fi
+
+      # …and the generated docs must not depend on WHEN they are generated. The man
+      # header's date used to come from time.Now() (Cobra's default for a nil Date),
+      # so the committed pages went stale by themselves at every month boundary: the
+      # first pull request of a new month went red with 60 files changed, not one
+      # line of code touched, and the "fix" was to commit the new month. Cobra reads
+      # SOURCE_DATE_EPOCH only when the header carries no date, so shifting it here
+      # reproduces that regression NOW instead of next month.
+      - name: Reference docs do not depend on the clock
+        working-directory: rail0-cli
+        run: |
+          SOURCE_DATE_EPOCH=1893456000 go run ./tools/gendocs   # 2030-01-01
+          if ! git diff --quiet -- docs/; then
+            echo "::error::docs generation depends on the clock — pin the man header Date in tools/gendocs (see docsDate)"
+            git diff --stat -- docs/
+            exit 1
+          fi

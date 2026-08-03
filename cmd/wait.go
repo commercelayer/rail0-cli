@@ -2,8 +2,14 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/http"
+	"os"
+	"os/signal"
+	"slices"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/rail0/cli/internal/ui"
@@ -17,7 +23,52 @@ var (
 	waitUntil   string
 )
 
-const waitPollInterval = 2 * time.Second
+// A var, not a const, so the tests can drive the polling loop without sleeping
+// for real seconds.
+var waitPollInterval = 2 * time.Second
+
+// How many polls between progress lines on stderr. Off a TTY (--json, -q, CI)
+// there is no spinner, so a wait used to be COMPLETELY silent for up to two
+// minutes with no way to tell it apart from a hang. Every 5th poll is one line
+// per ~10s — enough to show life, quiet enough not to bury the result. (#107)
+const waitProgressEvery = 5
+
+// Every status GET /payments can report, and the subset that is terminal (no
+// transition leaves it). `partially_refunded` is deliberately absent: the
+// gateway no longer produces it, so accepting it in --until would be accepting
+// a wait that can never finish.
+var paymentStatuses = []string{
+	"unsigned", "signed", "authorized", "partially_captured",
+	"captured", "charged", "voided", "released", "refunded", "failed",
+}
+
+var terminalStatuses = map[string]bool{
+	"voided": true, "released": true, "refunded": true, "failed": true,
+}
+
+// stopPolling marks an error as a DECISION rather than a failed read: the poll
+// saw a definitive outcome (a reverted transaction, a terminal status that is
+// not the one asked for) and the loop must surface it now. Without this marker
+// the loop could not tell such an error from a transport blip, whose whole
+// point is to be retried. (#107)
+type stopPolling struct{ err error }
+
+func (s stopPolling) Error() string { return s.err.Error() }
+func (s stopPolling) Unwrap() error { return s.err }
+
+// transientPollError reports whether a failed poll is worth retrying. A 4xx
+// other than 429 is the gateway's verdict — the payment does not exist, or the
+// session is gone — and retrying it for two minutes only delays the message.
+// Anything else (no HTTP answer at all, a 5xx, a 429) is a blip: the operation
+// is ALREADY broadcast, so the honest response is to keep asking until the
+// deadline rather than to report a failure that never happened.
+func transientPollError(err error) bool {
+	var apiErr *rail0.APIError
+	if errors.As(err, &apiErr) {
+		return apiErr.Status >= 500 || apiErr.Status == http.StatusTooManyRequests
+	}
+	return true
+}
 
 // addWaitFlags registers --wait/-w and --timeout on an async on-chain action, so
 // the command can block until the operation confirms (or fails) instead of
@@ -66,43 +117,145 @@ func submittedTransactionID(res any) string {
 	return ""
 }
 
+// pollUntil is the one polling loop behind both --wait and `payments wait`. It
+// calls `check` every waitPollInterval until it reports done, a decision stops
+// it, the deadline passes, or the user interrupts.
+//
+// It exists because the two loops used to be separate copies that got three
+// things wrong in the same way — and all three matter only AFTER the operation
+// has been broadcast, which is exactly when a wrong answer is expensive:
+//
+//   - ANY read error aborted the wait, so one 429 or one 502 while polling made
+//     a command exit non-zero for an operation that was in flight and probably
+//     fine. Scripts read that as "the capture failed".
+//   - Ctrl-C killed the process with no word on the operation still running.
+//     The ctx.Done() branches existed but were dead code: every caller passed
+//     context.Background(), which is never cancelled.
+//   - Giving up said "timed out" without saying that the operation may well
+//     have settled, nor how to find out.
+//
+// `checkCmd` is the runnable command that answers "what happened?", quoted in
+// both the interrupt and the give-up message.
+func pollUntil(ctx context.Context, timeout time.Duration, checkCmd string,
+	check func(context.Context) (any, bool, error),
+) (any, error) {
+	// Derived here rather than threaded from Execute: the wait loops are the only
+	// place where a Ctrl-C has something to say beyond killing the process.
+	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	started := time.Now()
+	deadline := started.Add(timeout)
+	var lastTransient error
+
+	for polls := 0; ; polls++ {
+		res, done, err := check(ctx)
+		switch {
+		case ctx.Err() != nil:
+			// Interrupted mid-request: the request error (if any) is a symptom of
+			// the cancellation, not the story.
+			return nil, interruptedError(checkCmd)
+		case err != nil:
+			var decision stopPolling
+			if errors.As(err, &decision) {
+				return nil, decision.err
+			}
+			if !transientPollError(err) {
+				return nil, err
+			}
+			lastTransient = err
+		case done:
+			return res, nil
+		}
+
+		if !time.Now().Before(deadline) {
+			return nil, gaveUpError(timeout, checkCmd, lastTransient)
+		}
+		if polls%waitProgressEvery == 0 {
+			ui.Progressf("waiting… %s elapsed of %s", time.Since(started).Truncate(time.Second), timeout)
+		}
+		select {
+		case <-ctx.Done():
+			return nil, interruptedError(checkCmd)
+		case <-time.After(waitPollInterval):
+		}
+	}
+}
+
+// interruptedError wraps ErrAborted (exit 130) and says the thing the bare
+// signal death did not: the operation is still running on-chain.
+func interruptedError(checkCmd string) error {
+	return fmt.Errorf("%w while waiting — the operation is still in flight; check it with '%s'", ErrAborted, checkCmd)
+}
+
+// gaveUpError names the deadline, refuses to imply the operation failed, and
+// carries the last transport error when the wait spent itself on blips.
+func gaveUpError(timeout time.Duration, checkCmd string, lastTransient error) error {
+	msg := fmt.Sprintf("stopped waiting after %s — the operation may still be in flight; check it with '%s'", timeout, checkCmd)
+	if lastTransient != nil {
+		msg += fmt.Sprintf(" (last read error: %v)", lastTransient)
+	}
+	return errors.New(msg)
+}
+
+// terminalMismatchError is the answer to `--until captured` on a payment that
+// ended up voided/released/refunded/failed: waiting on is pointless, and the
+// old loop spent the full two minutes before reporting a timeout — hiding a
+// definitive outcome behind a message that suggested slowness. The payment's
+// recorded failure cause is included when it has one. (#107)
+func terminalMismatchError(p *rail0.Payment, want string) error {
+	msg := fmt.Sprintf("payment is %s, which is terminal — it can no longer become %s", p.Status, want)
+	if detail := strings.TrimSpace(p.LastErrorMessage); detail != "" {
+		msg += fmt.Sprintf(": %s", detail)
+	} else if p.LastErrorCode != "" {
+		msg += fmt.Sprintf(": %s", p.LastErrorCode)
+	}
+	if h := hintFor(p.LastErrorCode, ""); h != "" {
+		msg += fmt.Sprintf(" — %s", h)
+	}
+	return errors.New(msg)
+}
+
 // waitForOp polls the payment's transactions until the one this attempt created is
 // confirmed (returns the settled payment) or failed (returns its decoded error), or
 // the timeout elapses. `txID` identifies that attempt; see pickWaitTarget.
 func waitForOp(ctx context.Context, client *rail0.Client, rail0Id, op, txID string, timeout time.Duration) (any, error) {
-	deadline := time.Now().Add(timeout)
-	for {
-		txs, err := client.Payments.Transactions(ctx, rail0Id, rail0.ListTransactionsParams{Operation: op})
-		if err != nil {
-			return nil, err
-		}
-		if tx := pickWaitTarget(txs.Data, txID); tx != nil {
+	return pollUntil(ctx, timeout, fmt.Sprintf("rail0 payments wait %s", rail0Id),
+		func(ctx context.Context) (any, bool, error) {
+			txs, err := client.Payments.Transactions(ctx, rail0Id, rail0.ListTransactionsParams{Operation: op})
+			if err != nil {
+				return nil, false, err
+			}
+			tx := pickWaitTarget(txs.Data, txID)
+			if tx == nil {
+				return nil, false, nil
+			}
 			switch tx.Status {
 			case "confirmed":
-				return client.Payments.Get(ctx, rail0Id)
+				p, err := client.Payments.Get(ctx, rail0Id)
+				return p, err == nil, err
 			case "failed":
-				reason := tx.ErrorMessage
-				if reason == "" {
-					reason = tx.ErrorCode
-				}
-				if reason == "" {
-					reason = "reverted"
-				}
-				if h := hintFor(tx.ErrorCode, ""); h != "" {
-					return nil, fmt.Errorf("%s failed on-chain: %s — %s", op, reason, h)
-				}
-				return nil, fmt.Errorf("%s failed on-chain: %s", op, reason)
+				// A decision, not a read failure: the chain has spoken.
+				return nil, false, stopPolling{opFailedError(op, tx)}
 			}
-		}
-		if time.Now().After(deadline) {
-			return nil, fmt.Errorf("timed out after %s; run 'rail0 payments get %s' to check", timeout, shortID(rail0Id))
-		}
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		case <-time.After(waitPollInterval):
-		}
+			return nil, false, nil
+		})
+}
+
+// opFailedError renders a reverted transaction: the gateway's decoded reason
+// (or its code, or a bare "reverted") plus the local hint for that code.
+func opFailedError(op string, tx *rail0.Transaction) error {
+	reason := tx.ErrorMessage
+	if reason == "" {
+		reason = tx.ErrorCode
 	}
+	if reason == "" {
+		reason = "reverted"
+	}
+	if h := hintFor(tx.ErrorCode, ""); h != "" {
+		return fmt.Errorf("%s failed on-chain: %s — %s", op, reason, h)
+	}
+	return fmt.Errorf("%s failed on-chain: %s", op, reason)
 }
 
 // pickWaitTarget returns the transaction the wait is following, or nil to keep
@@ -162,44 +315,58 @@ With --until it instead waits for a specific payment status.`,
   rail0 payments wait 0xrail0Id… --until captured`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		// Validated before any request: an unknown status can never be reached, so
+		// `--until capture` (the singular typo) used to cost the full two-minute
+		// deadline and then report a timeout, which reads like a slow chain rather
+		// than a mistyped flag. (#107)
+		if waitUntil != "" && !slices.Contains(paymentStatuses, waitUntil) {
+			return fmt.Errorf("unknown --until status %q; expected one of: %s",
+				waitUntil, strings.Join(paymentStatuses, ", "))
+		}
 		client := newReadClient()
 		ctx := context.Background()
 		rail0Id := args[0]
 		return ui.RunAPIWithMessage("Waiting…", func() (any, error) {
-			deadline := time.Now().Add(waitTimeout)
-			for {
-				if waitUntil != "" {
-					p, err := client.Payments.Get(ctx, rail0Id)
-					if err != nil {
-						return nil, err
+			return pollUntil(ctx, waitTimeout, fmt.Sprintf("rail0 payments get %s", rail0Id),
+				func(ctx context.Context) (any, bool, error) {
+					if waitUntil != "" {
+						p, err := client.Payments.Get(ctx, rail0Id)
+						if err != nil {
+							return nil, false, err
+						}
+						if p.Status == waitUntil {
+							return p, true, nil
+						}
+						// Terminal and not what was asked for: stop now instead of
+						// polling out the deadline over an outcome that is settled.
+						if terminalStatuses[p.Status] {
+							return nil, false, stopPolling{terminalMismatchError(p, waitUntil)}
+						}
+						return nil, false, nil
 					}
-					if p.Status == waitUntil {
-						return p, nil
-					}
-				} else {
 					txs, err := client.Payments.Transactions(ctx, rail0Id)
 					if err != nil {
-						return nil, err
+						return nil, false, err
 					}
-					if !anyInFlight(txs.Data) {
-						return client.Payments.Get(ctx, rail0Id)
+					if anyInFlight(txs.Data) {
+						return nil, false, nil
 					}
-				}
-				if time.Now().After(deadline) {
-					return nil, fmt.Errorf("timed out after %s", waitTimeout)
-				}
-				select {
-				case <-ctx.Done():
-					return nil, ctx.Err()
-				case <-time.After(waitPollInterval):
-				}
-			}
+					p, err := client.Payments.Get(ctx, rail0Id)
+					return p, err == nil, err
+				})
 		})
 	},
 }
 
 func init() {
-	paymentsWaitCmd.Flags().StringVar(&waitUntil, "until", "", "Wait until the payment reaches this status (e.g. captured, refunded)")
+	paymentsWaitCmd.Flags().StringVar(&waitUntil, "until", "",
+		"Wait until the payment reaches this status ("+strings.Join(paymentStatuses, ", ")+")")
+	// The set is finite and known locally, so completing it costs nothing and
+	// removes the typo class the validation above now rejects.
+	_ = paymentsWaitCmd.RegisterFlagCompletionFunc("until",
+		func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
+			return paymentStatuses, cobra.ShellCompDirectiveNoFileComp
+		})
 	paymentsWaitCmd.Flags().DurationVar(&waitTimeout, "timeout", 2*time.Minute, "Max time to wait")
 	paymentsCmd.AddCommand(paymentsWaitCmd)
 }

@@ -162,12 +162,33 @@ var authStatusCmd = &cobra.Command{
 
 var authLogoutCmd = &cobra.Command{
 	Use:   "logout",
-	Short: "Remove the stored authentication token",
+	Short: "End the session: revoke the token on the gateway and remove it locally",
+	Long: `End the current session.
+
+The token is revoked on the gateway — its jti goes into the denylist, so the JWT
+stops being accepted BEFORE it expires — and then removed from this machine.
+
+Removing the local copy alone is not a logout: the JWT stays valid for the rest
+of its lifetime, so anyone holding another copy keeps the session. The local file
+is removed even when the revocation cannot be performed (an unreachable gateway
+is a normal reason to log out), and the outcome says which of the two happened.`,
+	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := token.Delete(resolveBaseURL()); err != nil {
-			return err
+		baseURL := resolveBaseURL()
+		if token.Load(baseURL) == "" {
+			fmt.Println("No stored session for", baseURL)
+			return nil
 		}
-		fmt.Println("Logged out.")
+		revoked := revokeCurrentSession()
+		switch {
+		case revoked.Revoked:
+			fmt.Println("Logged out — the token was revoked on the gateway.")
+		default:
+			// Exit 0 on purpose: the local credential IS gone, which is what the
+			// command was asked to do. The warning is what the operator acts on.
+			fmt.Println("Logged out locally.")
+			fmt.Fprintf(os.Stderr, "warning: the token was NOT revoked — %s\n", revoked.Why)
+		}
 		return nil
 	},
 }

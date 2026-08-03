@@ -2,7 +2,7 @@
 .TH "RAIL0" "1" "Aug 2026" "rail0 CLI" ""
 
 .SH NAME
-rail0-auth-logout - Remove the stored authentication token
+rail0-auth-logout - End the session: revoke the token on the gateway and remove it locally
 
 
 .SH SYNOPSIS
@@ -10,7 +10,17 @@ rail0-auth-logout - Remove the stored authentication token
 
 
 .SH DESCRIPTION
-Remove the stored authentication token
+End the current session.
+
+.PP
+The token is revoked on the gateway — its jti goes into the denylist, so the JWT
+stops being accepted BEFORE it expires — and then removed from this machine.
+
+.PP
+Removing the local copy alone is not a logout: the JWT stays valid for the rest
+of its lifetime, so anyone holding another copy keeps the session. The local file
+is removed even when the revocation cannot be performed (an unreachable gateway
+is a normal reason to log out), and the outcome says which of the two happened.
 
 
 .SH OPTIONS

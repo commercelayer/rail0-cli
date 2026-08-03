@@ -127,9 +127,18 @@ export RAIL0_BASE_URL=https://api.rail0.xyz
 rail0 auth login -p @payee     # caches a JWT via SIWE; every command reads it from there
 ```
 
-The session lives only in `~/.cache/rail0/token`. There is no environment variable to
-supply it: the token is a bearer credential, and the environment is the one place it
-would leak into every child process and `env` dump.
+The session lives only in the OS cache dir, keyed **per gateway**
+(`~/.cache/rail0/tokens/<digest of the base URL>`), so each environment keeps its own
+session across switches. There is no environment variable to supply it: the token is a
+bearer credential, and the environment is the one place it would leak into every child
+process and `env` dump.
+
+`rail0 auth logout` **revokes** the token on the gateway (its `jti` goes into the
+denylist, so the JWT stops being accepted before it expires) and then removes the local
+copy. Removing the local copy alone is not a logout — the JWT stays valid for the rest
+of its lifetime, so anyone holding another copy keeps the session. If the gateway cannot
+be reached, the local file is removed anyway (an unreachable gateway is a normal reason
+to log out) and the command warns that the token was NOT revoked.
 
 ### Persisted defaults (`config`)
 
@@ -166,6 +175,14 @@ rail0 env staging -d      # ...and also print the resulting parameters
 rail0 env current         # show the active environment
 rail0 env current -d      # ...with every parameter's effective value + origin
 ```
+
+Switching **ends the session on the gateway you are leaving**: its token is revoked
+(denylist) and the local copy removed, so the file left behind is worthless. Sessions are
+per gateway, so a switch used to simply orphan the old token — a bearer credential on
+disk, valid for up to 24h, for a session nobody is watching. The result says which of the
+three happened: `previous_session: none | revoked | abandoned` (`abandoned` carries a
+detail, e.g. the old gateway was unreachable — the switch still proceeds, because moving
+away from a down environment is a normal reason to switch).
 
 `env <name>` writes the environment's settings through the same config file as
 `config set`, so precedence is unchanged — `--base-url` / `RAIL0_BASE_URL` still

@@ -1,11 +1,13 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"strings"
 
 	"github.com/rail0/cli/internal/config"
+	"github.com/rail0/cli/internal/token"
 	"github.com/rail0/cli/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -156,6 +158,16 @@ func switchEnv(name string, details bool) error {
 	if err != nil {
 		return err
 	}
+	// BEFORE the base URL moves: end the session on the gateway we are leaving.
+	// Tokens are stored per gateway, so a switch used to simply orphan the old
+	// one — a bearer credential left on disk, valid on that gateway until its
+	// `exp` (24h), for a session nobody is watching any more. Revoking puts its
+	// jti in the gateway's denylist, so the file left behind is worthless.
+	//
+	// Deliberately before cfg.Save(): revokeCurrentSession resolves the CURRENT
+	// base URL, and after the save that would be the new environment's.
+	revoked := revokeCurrentSession()
+
 	cfg, err := config.Load()
 	if err != nil {
 		return err
@@ -178,15 +190,81 @@ func switchEnv(name string, details bool) error {
 	if err := cfg.Save(); err != nil {
 		return err
 	}
-	return ui.RunAPI(func() (any, error) { return switchResult(name, details), nil })
+	return ui.RunAPI(func() (any, error) { return switchResult(name, details, revoked), nil })
+}
+
+// sessionRevocation records what happened to the session of the gateway being
+// left, so `env` can report it instead of switching silently.
+type sessionRevocation struct {
+	// Had is false when there was no stored session — the common case, and the
+	// reason the whole block must stay quiet rather than warn.
+	Had bool
+	// Revoked is true only when the gateway confirmed the denylist entry.
+	Revoked bool
+	// Why explains a Had-but-not-Revoked outcome (expired, unreachable, refused).
+	Why string
+}
+
+// revokeCurrentSession ends the session on the CURRENT gateway and removes the
+// local token, best-effort.
+//
+// Best-effort on purpose: switching away from an environment that is DOWN is a
+// normal reason to switch, and refusing to move because its gateway will not
+// answer would be the wrong trade. So the local token is deleted either way —
+// leaving a copy behind after asking to leave is worse than an unrevoked one —
+// and the outcome is reported so the operator knows whether the old JWT is dead
+// or merely abandoned.
+func revokeCurrentSession() sessionRevocation {
+	baseURL := resolveBaseURL()
+	stored := token.Load(baseURL)
+	if stored == "" {
+		return sessionRevocation{}
+	}
+	out := sessionRevocation{Had: true}
+
+	// An already-expired token needs no revocation: parseJWTClaims rejects one,
+	// so a nil error means the session is still live and worth killing.
+	if _, err := parseJWTClaims(stored); err != nil {
+		out.Why = "the stored session had already expired"
+	} else {
+		res, err := newClient().Auth.Logout(context.Background())
+		switch {
+		case err != nil:
+			out.Why = fmt.Sprintf("could not reach %s to revoke it (%s)", baseURL, humanizeError(err))
+		case !res.Revoked:
+			// The gateway answered but could not record the revocation, so the
+			// JWT is still accepted until exp. Reported, never smoothed over.
+			out.Why = "the gateway could not record the revocation, so that token is valid until it expires"
+		default:
+			out.Revoked = true
+		}
+	}
+
+	// Local copy goes regardless of the above.
+	if err := token.Delete(baseURL); err != nil && out.Why == "" {
+		out.Why = fmt.Sprintf("could not remove the local token: %v", err)
+	}
+	return out
 }
 
 // switchResult builds the confirmation payload for a switch: status + env name,
 // plus each parameter's effective value and origin only when details is set
 // (the -d flag). Split out from switchEnv so the gating is unit-testable
 // without persisting or capturing stdout.
-func switchResult(name string, details bool) map[string]any {
+func switchResult(name string, details bool, revoked sessionRevocation) map[string]any {
 	out := map[string]any{"status": "switched", "env": name}
+	// Reported in the RESULT, not as a log line, so `-q`/`--json` callers see it
+	// too: whether the session they were using is now dead is part of what the
+	// switch did.
+	switch {
+	case !revoked.Had:
+		out["previous_session"] = "none"
+	case revoked.Revoked:
+		out["previous_session"] = "revoked"
+	default:
+		out["previous_session"] = "abandoned"
+		out["previous_session_detail"] = revoked.Why
+	}
 	if details {
 		out["settings"] = envParamRows()
 	}

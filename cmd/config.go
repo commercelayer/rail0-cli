@@ -100,12 +100,32 @@ func effectiveSetting(k configKey) (value, origin string) {
 	if v := os.Getenv(k.env); v != "" {
 		return v, "env (" + k.env + ")"
 	}
-	if cfg, err := config.Load(); err == nil {
-		if v := cfg.Settings[k.name]; v != "" {
-			return v, "config file"
-		}
+	// A LOAD FAILURE IS REPORTED, NOT SWALLOWED. `err == nil` alone meant a
+	// malformed config.yaml silently vanished from the resolution: `rail0 config`
+	// showed `origin: default` while the file on disk held a different base-url,
+	// and every command quietly talked to the wrong gateway. The warning goes to
+	// stderr (this returns a value, and callers render it as data) and is printed
+	// once per process, since several keys resolve through here. (#108)
+	cfg, err := config.Load()
+	if err != nil {
+		warnConfigUnreadable(err)
+	} else if v := cfg.Settings[k.name]; v != "" {
+		return v, "config file"
 	}
 	return k.def(), "default"
+}
+
+// warnConfigUnreadable prints the load failure once per process. Deduplicated
+// because effectiveSetting runs per key, and one broken file must not produce
+// one warning per setting.
+var configWarned bool
+
+func warnConfigUnreadable(err error) {
+	if configWarned {
+		return
+	}
+	configWarned = true
+	fmt.Fprintf(os.Stderr, "warning: ignoring the config file — %v\n", err)
 }
 
 // configCmd lists the effective settings when run bare, and holds the

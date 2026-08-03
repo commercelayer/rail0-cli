@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -48,5 +49,79 @@ func TestSaveAndReload(t *testing.T) {
 	}
 	if got.Aliases["payee"] != "0xabc" {
 		t.Errorf("alias roundtrip mismatch: %+v", got.Aliases)
+	}
+}
+
+// ── atomic Save + actionable Load errors (#108) ──────────────────────────────
+
+// Save must not be able to leave a truncated file behind: `Keys` is the only
+// index of what lives in the OS keychain, so a half-written config turns saved
+// signing keys into orphans — still in the keychain, no longer referenceable by
+// name. The observable guarantee is that the write goes through a temp file in
+// the SAME directory (os.Rename is only atomic within one filesystem) and leaves
+// no litter.
+func TestSaveIsAtomicAndLeavesNoTempFiles(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	if _, err := Path(); err != nil {
+		t.Skipf("no config dir on this platform: %v", err)
+	}
+
+	first := &Config{Keys: []string{"payer"}, Settings: map[string]string{"base-url": "http://a"}}
+	if err := first.Save(); err != nil {
+		t.Fatal(err)
+	}
+	// Overwrite, which is the interesting case: the previous file must be
+	// replaced wholesale, never opened for truncation in place.
+	second := &Config{Keys: []string{"payer", "payee"}}
+	if err := second.Save(); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Keys) != 2 {
+		t.Errorf("Keys = %v, want both entries", got.Keys)
+	}
+
+	path, _ := Path()
+	entries, err := os.ReadDir(filepath.Dir(path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		if strings.HasSuffix(e.Name(), ".tmp") {
+			t.Errorf("temp file left behind: %s", e.Name())
+		}
+	}
+}
+
+// A malformed file must say WHICH file and what to do about it: the bare
+// `yaml: line 4: ...` left the reader hunting for a path in an OS-specific
+// directory they never look at.
+func TestLoadNamesThePathAndTheRemedyOnMalformedYAML(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	path, err := Path()
+	if err != nil {
+		t.Skipf("no config dir on this platform: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("settings:\n  base-url: [unclosed\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = Load()
+	if err == nil {
+		t.Fatal("a malformed config must be an error, not silently empty")
+	}
+	for _, want := range []string{path, "rail0 config path"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q is missing %q", err.Error(), want)
+		}
 	}
 }

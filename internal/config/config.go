@@ -7,6 +7,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -59,24 +60,73 @@ func Load() (*Config, error) {
 	}
 	var c Config
 	if err := yaml.Unmarshal(b, &c); err != nil {
-		return nil, err
+		// Named, with the remedy: a bare `yaml: line 4: ...` left the reader
+		// hunting for WHICH file, and this one is in an OS-specific directory
+		// most people never look at. (#108)
+		return nil, fmt.Errorf(
+			"config file is not valid YAML (%s): %w\n"+
+				"       run 'rail0 config path' to locate it, then fix or delete it "+
+				"(the CLI works fine with no config file)",
+			path, err)
 	}
 	return &c, nil
 }
 
 // Save writes the config back to disk (0600, dir 0700), creating the directory
 // if needed.
+//
+// ATOMIC: written to a temp file in the same directory and renamed over the
+// target, so an interrupted write (a crash, a full disk, a Ctrl-C) leaves the
+// previous file intact instead of a truncated one. That matters more here than
+// the size of the file suggests — `Keys` is the ONLY index of what is stored in
+// the OS keychain (the backend cannot enumerate entries), so a truncated config
+// turns saved signing keys into orphans: still in the keychain, no longer
+// referenceable by name. (#108)
+//
+// Same directory on purpose: os.Rename is only atomic within a filesystem, and
+// the OS temp dir can be on another one.
 func (c *Config) Save() error {
 	path, err := Path()
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0700); err != nil {
 		return err
 	}
 	b, err := yaml.Marshal(c)
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, b, 0600)
+
+	tmp, err := os.CreateTemp(dir, ".config-*.yaml.tmp")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	// Best-effort cleanup: a successful rename makes this a no-op, a failed one
+	// leaves no litter behind.
+	defer func() { _ = os.Remove(tmpName) }()
+
+	// 0600 before any content is written: CreateTemp makes it 0600 already, but
+	// being explicit keeps the guarantee visible next to the write.
+	if err := tmp.Chmod(0600); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if _, err := tmp.Write(b); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	// Flushed to the device before the rename: without it a crash right after
+	// can leave the renamed file present but empty, which is the very outcome
+	// the rename is meant to prevent.
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmpName, path)
 }

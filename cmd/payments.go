@@ -72,7 +72,12 @@ Status values:
 			ctx := context.Background()
 			client := newReadClient()
 			id := args[0]
-			return client.Payments.Get(ctx, id)
+			p, err := client.Payments.Get(ctx, id)
+			if err != nil {
+				return nil, err
+			}
+			// Human companions alongside the raw fields — see cmd/humanize.go.
+			return humanize(ctx, p), nil
 		})
 	},
 }
@@ -104,14 +109,26 @@ var paymentsListCmd = &cobra.Command{
 Requires authentication — run 'rail0 auth login -p 0xKey…' first.
 
 Filter with --status, --mode, --payer, --payee, --token, --chain-id, --disputed,
---min-amount / --max-amount (token base units), and --created-from /
---created-to (ISO-8601).`,
+--min-amount / --max-amount, and --created-from / --created-to (ISO-8601).
+
+--min-amount / --max-amount are DECIMALS in token units ('1.00'), like every other
+amount flag. Converting them to the base units the gateway filters on needs the
+token's decimals, so both --chain-id and --token are required with them — and an
+amount range only means something within one token anyway.`,
 	Example: `  rail0 payments list
   rail0 payments list --sort -created_at
   rail0 payments list --status authorized --mode charge
   rail0 payments list --chain-id 5042002 --disputed
   rail0 payments list --token 0x3600… --min-amount 1000000 --created-from 2026-01-01T00:00:00Z`,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		ctx := context.Background()
+		// The gateway filters in base units; these flags now take decimals like every
+		// other --amount in the CLI, so they are converted here.
+		minAmount, maxAmount, err := amountFilters(ctx, paymentsListMinAmount, paymentsListMaxAmount,
+			paymentsListChainID, paymentsListToken)
+		if err != nil {
+			return err
+		}
 		p := rail0.ListPaymentsParams{
 			Sort:        paymentsListSort,
 			Status:      paymentsListStatus,
@@ -120,8 +137,8 @@ Filter with --status, --mode, --payer, --payee, --token, --chain-id, --disputed,
 			Payee:       paymentsListPayee,
 			Token:       paymentsListToken,
 			ChainID:     paymentsListChainID,
-			MinAmount:   paymentsListMinAmount,
-			MaxAmount:   paymentsListMaxAmount,
+			MinAmount:   minAmount,
+			MaxAmount:   maxAmount,
 			CreatedFrom: paymentsListCreatedFrom,
 			CreatedTo:   paymentsListCreatedTo,
 			Page:        paymentsListPage,
@@ -133,7 +150,6 @@ Filter with --status, --mode, --payer, --payee, --token, --chain-id, --disputed,
 		}
 		return ui.RunAPI(func() (any, error) {
 			client := newReadClient()
-			ctx := context.Background()
 			if paymentsListAll {
 				return fetchAllPayments(ctx, client, p)
 			}
@@ -165,7 +181,7 @@ func fetchAllPayments(ctx context.Context, client *rail0.Client, p rail0.ListPay
 			break
 		}
 	}
-	return all, nil
+	return humanizeAll(ctx, all), nil
 }
 
 // ── payments transactions ─────────────────────────────────────────────────────
@@ -1104,8 +1120,10 @@ func init() {
 	paymentsListCmd.Flags().StringVar(&paymentsListToken, "token", "", "Filter by token address")
 	paymentsListCmd.Flags().IntVar(&paymentsListChainID, "chain-id", 0, "Filter by EVM chain ID")
 	paymentsListCmd.Flags().BoolVar(&paymentsListDisputed, "disputed", false, "Filter by whether an open dispute exists")
-	paymentsListCmd.Flags().StringVar(&paymentsListMinAmount, "min-amount", "", "Minimum amount in token base units (inclusive)")
-	paymentsListCmd.Flags().StringVar(&paymentsListMaxAmount, "max-amount", "", "Maximum amount in token base units (inclusive)")
+	paymentsListCmd.Flags().StringVar(&paymentsListMinAmount, "min-amount", "",
+		"Minimum amount as a decimal in token units (inclusive); needs --chain-id and --token")
+	paymentsListCmd.Flags().StringVar(&paymentsListMaxAmount, "max-amount", "",
+		"Maximum amount as a decimal in token units (inclusive); needs --chain-id and --token")
 	paymentsListCmd.Flags().StringVar(&paymentsListCreatedFrom, "created-from", "", "Only payments created at/after this ISO-8601 time")
 	paymentsListCmd.Flags().StringVar(&paymentsListCreatedTo, "created-to", "", "Only payments created at/before this ISO-8601 time")
 	paymentsListCmd.Flags().IntVar(&paymentsListPage, "page", 0, "Page number (1-based)")

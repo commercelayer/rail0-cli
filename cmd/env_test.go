@@ -84,11 +84,47 @@ func TestEnvCommandTree(t *testing.T) {
 func TestEnvSwitchDetailsGating(t *testing.T) {
 	// The switch confirmation lists parameters only with -d; bare it is just
 	// status + env name.
-	if _, ok := switchResult("staging", false)["settings"]; ok {
+	none := sessionRevocation{}
+	if _, ok := switchResult("staging", false, none)["settings"]; ok {
 		t.Error("switch without -d must omit settings")
 	}
-	res := switchResult("staging", true)
+	res := switchResult("staging", true, none)
 	if _, ok := res["settings"]; !ok {
 		t.Error("switch with -d must include settings")
+	}
+}
+
+// A switch reports what became of the session on the gateway it LEFT, in the
+// result rather than in a log line — so -q/--json callers see it too. Whether the
+// old JWT is dead or merely abandoned on disk is part of what the switch did, and
+// the difference matters: an abandoned token stays valid on that gateway until it
+// expires.
+func TestEnvSwitchReportsThePreviousSession(t *testing.T) {
+	cases := []struct {
+		name       string
+		revocation sessionRevocation
+		want       string
+		wantDetail bool
+	}{
+		{"no stored session", sessionRevocation{}, "none", false},
+		{"revoked on the gateway", sessionRevocation{Had: true, Revoked: true}, "revoked", false},
+		{
+			"kept but not revoked",
+			sessionRevocation{Had: true, Why: "could not reach the gateway to revoke it"},
+			"abandoned",
+			true,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			res := switchResult("staging", false, tc.revocation)
+			if got := res["previous_session"]; got != tc.want {
+				t.Errorf("previous_session = %v, want %q", got, tc.want)
+			}
+			_, hasDetail := res["previous_session_detail"]
+			if hasDetail != tc.wantDetail {
+				t.Errorf("previous_session_detail present = %v, want %v", hasDetail, tc.wantDetail)
+			}
+		})
 	}
 }

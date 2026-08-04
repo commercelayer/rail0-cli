@@ -11,6 +11,7 @@ var healthCmd = &cobra.Command{
 	Use:     "health",
 	Short:   "Report gateway health (liveness/readiness)",
 	Example: `  rail0 health`,
+	Args:    cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return ui.RunAPI(func() (any, error) {
 			return newReadClient().Health.Get(context.Background())

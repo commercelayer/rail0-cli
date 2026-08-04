@@ -69,7 +69,11 @@ rail0 completion bash > /etc/bash_completion.d/rail0  # bash
 rail0 completion fish > ~/.config/fish/completions/rail0.fish
 ```
 
-Beyond commands and flags, `keys rm` / `keys address` complete the saved key names.
+Beyond commands and flags: `keys rm` / `keys address` complete the saved key names,
+the address flags (`--from`, `--to`, `--address`, `--payer`, `--payee`) complete the
+address book as `@name`, `rail0 env <TAB>` completes the environment names, and the
+finite enums (`--status`, `--mode`, `--by`, `--interval`, `--until`) complete their
+accepted values.
 
 ---
 
@@ -654,6 +658,59 @@ Report gateway liveness/readiness, including database connectivity and active ch
 ```sh
 rail0 health
 ```
+
+---
+
+### Disputes
+
+#### `disputes`
+
+List **every** dispute on the payments your wallet is party to (payer or payee), each
+with its parent payment embedded. Requires login.
+
+Open **and** closed: a closed dispute stops setting the `disputed` flag on
+`payments list` — which reports current state — but stays listed here, so the history
+remains visible. Filter with `--status open|closed`, sort with `--sort`, page with
+`--page` / `--per-page`.
+
+```sh
+rail0 disputes
+rail0 disputes --status open
+rail0 disputes --sort -opened_at
+```
+
+Distinct from `payments disputes <rail0Id>`, which is the open/close history of **one**
+payment.
+
+---
+
+### Analytics
+
+#### `analytics summary` / `timeseries` / `breakdown`
+
+The account's sales analytics. Requires an **account**: a wallet-only session gets
+`403 account_required`, because these are the merchant's figures rather than an
+address's.
+
+All three take the same filters — `--mode`, `--status`, `--token`, `--chain-id`,
+`--from`, `--to`.
+
+```sh
+rail0 analytics summary                          # orders, disputes, refund/dispute rates, volume
+rail0 analytics summary --from 2026-01-01T00:00:00Z
+rail0 analytics timeseries --interval week       # day (default) | week | month
+rail0 analytics breakdown --by token             # token | chain | mode | status
+```
+
+Volume figures carry a `*_human` companion (`gross_human`, `captured_human`,
+`refunded_human`, `volume_human`) beside the raw base units, using the `decimals` each
+row already carries — so no token lookup is involved, and a row whose token has left
+the catalog simply has no companion rather than a figure at a guessed scale.
+
+Two nulls that are deliberate, not missing data: a **timeseries** row carries a volume
+only when a single token *and* chain are filtered, and a **breakdown** by `mode` or
+`status` carries none at all — a group spanning several tokens has no single unit to
+add up in.
 
 ---
 

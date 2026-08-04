@@ -120,6 +120,7 @@ amount range only means something within one token anyway.`,
   rail0 payments list --status authorized --mode charge
   rail0 payments list --chain-id 5042002 --disputed
   rail0 payments list --token 0x3600… --min-amount 1000000 --created-from 2026-01-01T00:00:00Z`,
+	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := context.Background()
 		// The gateway filters in base units; these flags now take decimals like every
@@ -1129,6 +1130,10 @@ func init() {
 	paymentsListCmd.Flags().IntVar(&paymentsListPage, "page", 0, "Page number (1-based)")
 	paymentsListCmd.Flags().IntVar(&paymentsListPerPage, "per-page", 0, "Results per page")
 	paymentsListCmd.Flags().BoolVar(&paymentsListAll, "all", false, "Fetch every page (ignores --page)")
+	_ = paymentsListCmd.RegisterFlagCompletionFunc("status", fixedCompletions(paymentStatuses...))
+	_ = paymentsListCmd.RegisterFlagCompletionFunc("mode", fixedCompletions("authorize", "charge"))
+	_ = paymentsListCmd.RegisterFlagCompletionFunc("payer", completeAliasNames)
+	_ = paymentsListCmd.RegisterFlagCompletionFunc("payee", completeAliasNames)
 	paymentsCmd.AddCommand(paymentsListCmd)
 
 	// payments transactions

@@ -1,0 +1,83 @@
+.nh
+.TH "RAIL0" "1" "Aug 2026" "rail0 CLI" ""
+
+.SH NAME
+rail0-analytics-timeseries - Order counts bucketed by day, week or month
+
+
+.SH SYNOPSIS
+\fBrail0 analytics timeseries [flags]\fP
+
+
+.SH DESCRIPTION
+Order counts over time, one row per bucket.
+
+.PP
+Each row carries a volume only when a SINGLE token and chain are filtered: summing
+different tokens' base units would be meaningless, so the gateway returns null
+instead of a number that looks addable.
+
+
+.SH OPTIONS
+\fB--chain-id\fP=0
+	Filter by EVM chain ID
+
+.PP
+\fB--from\fP=""
+	Only payments created at/after this ISO-8601 time
+
+.PP
+\fB-h\fP, \fB--help\fP[=false]
+	help for timeseries
+
+.PP
+\fB--interval\fP=""
+	Bucket width: day (default), week or month
+
+.PP
+\fB--mode\fP=""
+	Filter by mode: authorize or charge
+
+.PP
+\fB--status\fP=""
+	Filter by payment status (e.g. captured)
+
+.PP
+\fB--to\fP=""
+	Only payments created at/before this ISO-8601 time
+
+.PP
+\fB--token\fP=""
+	Filter by token address (0x…)
+
+
+.SH OPTIONS INHERITED FROM PARENT COMMANDS
+\fB--base-url\fP=""
+	RAIL0 gateway base URL (env: RAIL0_BASE_URL)
+
+.PP
+\fB--debug\fP[=false]
+	Print HTTP request/response details to stderr
+
+.PP
+\fB--json\fP[=false]
+	Force plain (uncolored) JSON output (useful in scripts)
+
+.PP
+\fB--pretty\fP[=false]
+	Use the key-value/table view instead of JSON (terminal only)
+
+.PP
+\fB-q\fP, \fB--quiet\fP[=false]
+	Print only the result's id/hash, one per line (useful in scripts)
+
+
+.SH EXAMPLE
+.EX
+  rail0 analytics timeseries
+  rail0 analytics timeseries --interval month --chain-id 5042002 --token 0x3600…
+.EE
+
+
+.SH SEE ALSO
+\fBrail0-analytics(1)\fP

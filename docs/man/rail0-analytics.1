@@ -1,0 +1,63 @@
+.nh
+.TH "RAIL0" "1" "Aug 2026" "rail0 CLI" ""
+
+.SH NAME
+rail0-analytics - Account sales analytics: summary, timeseries, breakdown (requires login)
+
+
+.SH SYNOPSIS
+\fBrail0 analytics [flags]\fP
+
+
+.SH DESCRIPTION
+Read the account's sales analytics.
+
+.PP
+summary     — headline figures: order count, disputed count, refund and dispute
+                rates, per-status counts, and per-token volume
+  timeseries  — order counts bucketed by day, week or month
+  breakdown   — the same counts grouped by token, chain, mode or status
+
+.PP
+All three take the same filters (--mode, --status, --token, --chain-id, --from,
+--to). Requires an account: a wallet-only session gets 403 account_required, since
+these are the MERCHANT's figures, not an address's.
+
+
+.SH OPTIONS
+\fB-h\fP, \fB--help\fP[=false]
+	help for analytics
+
+
+.SH OPTIONS INHERITED FROM PARENT COMMANDS
+\fB--base-url\fP=""
+	RAIL0 gateway base URL (env: RAIL0_BASE_URL)
+
+.PP
+\fB--debug\fP[=false]
+	Print HTTP request/response details to stderr
+
+.PP
+\fB--json\fP[=false]
+	Force plain (uncolored) JSON output (useful in scripts)
+
+.PP
+\fB--pretty\fP[=false]
+	Use the key-value/table view instead of JSON (terminal only)
+
+.PP
+\fB-q\fP, \fB--quiet\fP[=false]
+	Print only the result's id/hash, one per line (useful in scripts)
+
+
+.SH EXAMPLE
+.EX
+  rail0 analytics summary
+  rail0 analytics summary --from 2026-01-01T00:00:00Z
+  rail0 analytics timeseries --interval week
+  rail0 analytics breakdown --by token
+.EE
+
+
+.SH SEE ALSO
+\fBrail0(1)\fP, \fBrail0-analytics-breakdown(1)\fP, \fBrail0-analytics-summary(1)\fP, \fBrail0-analytics-timeseries(1)\fP

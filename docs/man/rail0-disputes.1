@@ -1,0 +1,77 @@
+.nh
+.TH "RAIL0" "1" "Aug 2026" "rail0 CLI" ""
+
+.SH NAME
+rail0-disputes - List every dispute on your payments (requires login)
+
+
+.SH SYNOPSIS
+\fBrail0 disputes [flags]\fP
+
+
+.SH DESCRIPTION
+List the disputes across the payments your wallet is party to, as payer or
+payee, each with its parent payment embedded.
+
+.PP
+Open AND closed: a closed dispute stops setting the 'disputed' flag on
+\&'payments list' (which reports current state) but is still listed here, so the
+history stays visible. Filter with --status to see only one of the two.
+
+.PP
+Distinct from 'rail0 payments disputes \&', which is the open/close history
+of ONE payment.
+
+
+.SH OPTIONS
+\fB-h\fP, \fB--help\fP[=false]
+	help for disputes
+
+.PP
+\fB--page\fP=0
+	Page number (1-based)
+
+.PP
+\fB--per-page\fP=0
+	Results per page
+
+.PP
+\fB--sort\fP=""
+	Sort fields (e.g. -opened_at)
+
+.PP
+\fB--status\fP=""
+	Filter by dispute status: open or closed
+
+
+.SH OPTIONS INHERITED FROM PARENT COMMANDS
+\fB--base-url\fP=""
+	RAIL0 gateway base URL (env: RAIL0_BASE_URL)
+
+.PP
+\fB--debug\fP[=false]
+	Print HTTP request/response details to stderr
+
+.PP
+\fB--json\fP[=false]
+	Force plain (uncolored) JSON output (useful in scripts)
+
+.PP
+\fB--pretty\fP[=false]
+	Use the key-value/table view instead of JSON (terminal only)
+
+.PP
+\fB-q\fP, \fB--quiet\fP[=false]
+	Print only the result's id/hash, one per line (useful in scripts)
+
+
+.SH EXAMPLE
+.EX
+  rail0 disputes
+  rail0 disputes --status open
+  rail0 disputes --sort -opened_at --per-page 50
+.EE
+
+
+.SH SEE ALSO
+\fBrail0(1)\fP

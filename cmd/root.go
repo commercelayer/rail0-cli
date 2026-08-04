@@ -80,13 +80,11 @@ func init() {
 		&cobra.Group{ID: groupLocal, Title: "Local configuration:"},
 	)
 	assignGroup(groupPayments, paymentsCmd)
-	// `analytics` and `disputes` (#110, in flight on another branch) belong in this
-	// group too — they are account-scoped reads. Add them here when that lands.
-	assignGroup(groupAccount, authCmd, tokenCmd, walletsCmd, paymentMethodsCmd, webhooksCmd)
+	assignGroup(groupAccount, authCmd, tokenCmd, walletsCmd, paymentMethodsCmd, webhooksCmd, analyticsCmd, disputesCmd)
 	assignGroup(groupCatalog, chainsCmd, tokensCmd, healthCmd)
 	assignGroup(groupLocal, initCmd, configCmd, envCmd, aliasesCmd, keysCmd)
 
-	rootCmd.AddCommand(paymentsCmd, walletsCmd, paymentMethodsCmd, webhooksCmd, chainsCmd, tokensCmd, authCmd, healthCmd, aliasesCmd, keysCmd, configCmd, envCmd)
+	rootCmd.AddCommand(paymentsCmd, walletsCmd, paymentMethodsCmd, webhooksCmd, chainsCmd, tokensCmd, authCmd, healthCmd, aliasesCmd, keysCmd, configCmd, envCmd, disputesCmd, analyticsCmd)
 }
 
 // Help groups. `completion`, `help` and `version` deliberately have none: cobra lists

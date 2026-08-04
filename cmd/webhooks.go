@@ -34,6 +34,7 @@ var webhooksListCmd = &cobra.Command{
 	Use:     "list",
 	Short:   "List webhooks for the authenticated account",
 	Example: `  rail0 webhooks list --topic payments.captured --active true`,
+	Args:    cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		p := rail0.ListWebhooksParams{
 			Topic:        webhooksListTopic,

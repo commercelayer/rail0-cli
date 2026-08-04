@@ -30,6 +30,7 @@ to narrow further.`,
   rail0 chains --symbol USDC
   rail0 chains --network-type testnet
   rail0 chains -s ETH -n mainnet`,
+	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		networkType := strings.ToLower(chainsNetworkType)
 		if networkType != "" && networkType != "testnet" && networkType != "mainnet" {

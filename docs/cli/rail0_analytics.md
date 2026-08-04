@@ -1,0 +1,49 @@
+## rail0 analytics
+
+Account sales analytics: summary, timeseries, breakdown (requires login)
+
+### Synopsis
+
+Read the account's sales analytics.
+
+  summary     — headline figures: order count, disputed count, refund and dispute
+                rates, per-status counts, and per-token volume
+  timeseries  — order counts bucketed by day, week or month
+  breakdown   — the same counts grouped by token, chain, mode or status
+
+All three take the same filters (--mode, --status, --token, --chain-id, --from,
+--to). Requires an account: a wallet-only session gets 403 account_required, since
+these are the MERCHANT's figures, not an address's.
+
+### Examples
+
+```
+  rail0 analytics summary
+  rail0 analytics summary --from 2026-01-01T00:00:00Z
+  rail0 analytics timeseries --interval week
+  rail0 analytics breakdown --by token
+```
+
+### Options
+
+```
+  -h, --help   help for analytics
+```
+
+### Options inherited from parent commands
+
+```
+      --base-url string   RAIL0 gateway base URL (env: RAIL0_BASE_URL)
+      --debug             Print HTTP request/response details to stderr
+      --json              Force plain (uncolored) JSON output (useful in scripts)
+      --pretty            Use the key-value/table view instead of JSON (terminal only)
+  -q, --quiet             Print only the result's id/hash, one per line (useful in scripts)
+```
+
+### SEE ALSO
+
+* [rail0](rail0.md)	 - CLI for the RAIL0 stablecoin payment protocol
+* [rail0 analytics breakdown](rail0_analytics_breakdown.md)	 - Group the counts by token, chain, mode or status (--by is required)
+* [rail0 analytics summary](rail0_analytics_summary.md)	 - Headline figures: orders, disputes, refund/dispute rates, volume
+* [rail0 analytics timeseries](rail0_analytics_timeseries.md)	 - Order counts bucketed by day, week or month
+

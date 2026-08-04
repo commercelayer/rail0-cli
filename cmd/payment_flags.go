@@ -158,6 +158,11 @@ func (f *createPaymentFlags) addTo(cmd *cobra.Command) {
 		"Create with mode=charge (immediate transfer, no escrow); default is authorize (escrow then capture)")
 	cmd.Flags().StringVarP(&f.description, "description", "d", "",
 		"Optional reconciliation note (e.g. order id / invoice); prompted when omitted on a terminal")
+
+	// The address flags accept an @alias, so they complete to the address book —
+	// which is the whole reason to keep one. (#110)
+	_ = cmd.RegisterFlagCompletionFunc("from", completeAliasNames)
+	_ = cmd.RegisterFlagCompletionFunc("to", completeAliasNames)
 }
 
 // applyConfiguredDefaults fills the chain and the token from the stored defaults

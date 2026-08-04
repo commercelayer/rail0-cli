@@ -142,6 +142,18 @@ RAIL0_BASE_URL override it for a single command.`,
   rail0 env current         # show the active environment
   rail0 env current -d      # ...with every parameter's effective value`,
 	Args: cobra.MaximumNArgs(1),
+	// The environment names are a fixed, short set, so `rail0 env st<TAB>` completes
+	// rather than sending the reader to --help. (#110)
+	ValidArgsFunction: func(_ *cobra.Command, args []string, _ string) ([]string, cobra.ShellCompDirective) {
+		if len(args) > 0 {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		}
+		names := make([]string, 0, len(environments)+1)
+		for _, e := range environments {
+			names = append(names, e.name)
+		}
+		return append(names, "current"), cobra.ShellCompDirectiveNoFileComp
+	},
 	RunE: func(_ *cobra.Command, args []string) error {
 		if len(args) == 0 {
 			return listEnvironments()

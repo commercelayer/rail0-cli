@@ -1,0 +1,83 @@
+.nh
+.TH "RAIL0" "1" "Aug 2026" "rail0 CLI" ""
+
+.SH NAME
+rail0-analytics-breakdown - Group the counts by token, chain, mode or status (--by is required)
+
+
+.SH SYNOPSIS
+\fBrail0 analytics breakdown [flags]\fP
+
+
+.SH DESCRIPTION
+Group the account's orders by one dimension.
+
+.PP
+--by is required: token, chain, mode or status. token and chain rows carry volume
+(they identify a scale); mode and status rows are counts only, because a group
+spanning several tokens has no single unit to add up in.
+
+
+.SH OPTIONS
+\fB--by\fP=""
+	Group by: token, chain, mode or status (required)
+
+.PP
+\fB--chain-id\fP=0
+	Filter by EVM chain ID
+
+.PP
+\fB--from\fP=""
+	Only payments created at/after this ISO-8601 time
+
+.PP
+\fB-h\fP, \fB--help\fP[=false]
+	help for breakdown
+
+.PP
+\fB--mode\fP=""
+	Filter by mode: authorize or charge
+
+.PP
+\fB--status\fP=""
+	Filter by payment status (e.g. captured)
+
+.PP
+\fB--to\fP=""
+	Only payments created at/before this ISO-8601 time
+
+.PP
+\fB--token\fP=""
+	Filter by token address (0x…)
+
+
+.SH OPTIONS INHERITED FROM PARENT COMMANDS
+\fB--base-url\fP=""
+	RAIL0 gateway base URL (env: RAIL0_BASE_URL)
+
+.PP
+\fB--debug\fP[=false]
+	Print HTTP request/response details to stderr
+
+.PP
+\fB--json\fP[=false]
+	Force plain (uncolored) JSON output (useful in scripts)
+
+.PP
+\fB--pretty\fP[=false]
+	Use the key-value/table view instead of JSON (terminal only)
+
+.PP
+\fB-q\fP, \fB--quiet\fP[=false]
+	Print only the result's id/hash, one per line (useful in scripts)
+
+
+.SH EXAMPLE
+.EX
+  rail0 analytics breakdown --by token
+  rail0 analytics breakdown --by status --mode charge
+.EE
+
+
+.SH SEE ALSO
+\fBrail0-analytics(1)\fP

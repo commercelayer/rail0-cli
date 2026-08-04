@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/rail0/cli/internal/config"
@@ -41,9 +42,17 @@ raw 0x address.`,
 		if err != nil {
 			return err
 		}
-		rows := make([]map[string]any, 0, len(cfg.Aliases))
-		for name, addr := range cfg.Aliases {
-			rows = append(rows, map[string]any{"alias": name, "address": addr})
+		// Sorted: Go map iteration is randomised, so the same address book printed a
+		// different order on every run — noise in a diff, and no way to eyeball
+		// whether two machines hold the same entries. (#110)
+		names := make([]string, 0, len(cfg.Aliases))
+		for name := range cfg.Aliases {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		rows := make([]map[string]any, 0, len(names))
+		for _, name := range names {
+			rows = append(rows, map[string]any{"alias": name, "address": cfg.Aliases[name]})
 		}
 		return ui.RunAPI(func() (any, error) { return rows, nil })
 	},

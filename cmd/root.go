@@ -64,7 +64,7 @@ func init() {
 		ui.SetQuiet(quietOut)
 	})
 
-	rootCmd.AddCommand(paymentsCmd, walletsCmd, paymentMethodsCmd, webhooksCmd, chainsCmd, tokensCmd, authCmd, healthCmd, aliasesCmd, keysCmd, configCmd, envCmd)
+	rootCmd.AddCommand(paymentsCmd, walletsCmd, paymentMethodsCmd, webhooksCmd, chainsCmd, tokensCmd, authCmd, healthCmd, aliasesCmd, keysCmd, configCmd, envCmd, disputesCmd, analyticsCmd)
 }
 
 // newClient builds a RAIL0 gateway client.

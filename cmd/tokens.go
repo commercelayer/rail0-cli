@@ -28,6 +28,7 @@ those, or --active=false to see only the retired ones.`,
   rail0 tokens --chain-id 5042002
   rail0 tokens --symbol USDC
   rail0 tokens --active           # only what a new payment can use`,
+	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// Tri-state: the filter is applied only when --active was actually
 		// passed, so an untouched flag means "no filter" rather than false.

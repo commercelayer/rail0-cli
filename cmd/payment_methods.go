@@ -56,4 +56,5 @@ Public — no login required. Identify the merchant with exactly one of --accoun
 func init() {
 	paymentMethodsCmd.Flags().StringVar(&paymentMethodsAccount, "account", "", "Merchant account id — list all its active wallets")
 	paymentMethodsCmd.Flags().StringVarP(&paymentMethodsAddress, "address", "A", "", "A merchant wallet address (0x… or @alias) — list just that wallet")
+	_ = paymentMethodsCmd.RegisterFlagCompletionFunc("address", completeAliasNames)
 }

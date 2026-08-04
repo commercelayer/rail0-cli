@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 
@@ -26,11 +27,34 @@ type environment struct {
 // (development -> staging -> production). Adding a new per-environment
 // parameter means adding its key/value to each entry here (and registering the
 // key in configKeys).
+//
+// development and staging carry a chain and a token; production does not. That is
+// not an omission: both non-production environments serve testnets, so Arc Testnet
+// (4 confirmations, the quickest active one) is a safe default there, while the
+// production chain set is a deployment decision and inventing one here would send
+// a real payment to a chain nobody chose.
 var environments = []environment{
-	{name: "development", settings: map[string]string{"base-url": "http://localhost:9292"}},
-	{name: "staging", settings: map[string]string{"base-url": "https://rail0-gateway-staging.fly.dev"}},
+	{name: "development", settings: map[string]string{
+		"base-url": "http://localhost:9292",
+		"chain-id": "5042002",
+		"token":    "USDC",
+	}},
+	{name: "staging", settings: map[string]string{
+		"base-url": "https://rail0-gateway-staging.fly.dev",
+		"chain-id": "5042002",
+		"token":    "USDC",
+	}},
 	{name: "production", settings: map[string]string{"base-url": config.DefaultBaseURL}},
 }
+
+// envIdentityKey is the setting that DEFINES which environment you are in: the
+// gateway. Everything else in `settings` is a convenience the switch also writes.
+//
+// detectEnv compares only this one. Comparing them all would report "custom" for
+// someone who switched chain after `env staging` — a true statement about the chain
+// dressed up as a statement about the environment, and the answer to "which gateway
+// am I talking to?" would change for a reason that has nothing to do with gateways.
+const envIdentityKey = "base-url"
 
 // lookupEnv resolves an environment by name, erroring with the valid set when
 // unknown.
@@ -48,27 +72,20 @@ func lookupEnv(name string) (environment, error) {
 }
 
 // detectEnv reports which environment the *effective* configuration currently
-// matches, or "custom" if it matches none. It compares each environment's
-// declared settings against the values the commands would actually use
-// (flag > env > config file > built-in default), so it stays truthful even when
-// a key was set directly with `config set` rather than via `env`. The
+// matches, or "custom" if it matches none. It compares the identity key (the
+// gateway — see envIdentityKey) against the value the commands would actually use
+// (flag > env > config file > built-in default), so it stays truthful even when the
+// base URL was set directly with `config set` rather than via `env`. The
 // environments have distinct base-urls, so at most one matches; the first match
 // wins.
 func detectEnv() string {
+	k, err := lookupKey(envIdentityKey)
+	if err != nil {
+		return "custom"
+	}
+	got, _ := effectiveSetting(k)
 	for _, e := range environments {
-		match := true
-		for key, want := range e.settings {
-			k, err := lookupKey(key)
-			if err != nil {
-				match = false
-				break
-			}
-			if got, _ := effectiveSetting(k); got != want {
-				match = false
-				break
-			}
-		}
-		if match {
+		if e.settings[envIdentityKey] == got {
 			return e.name
 		}
 	}
@@ -190,7 +207,27 @@ func switchEnv(name string, details bool) error {
 	if err := cfg.Save(); err != nil {
 		return err
 	}
-	return ui.RunAPI(func() (any, error) { return switchResult(name, details, revoked), nil })
+	// AFTER the save, so resolveBaseURL() is the environment we just moved to.
+	// Sessions are per gateway, so arriving somewhere unauthenticated is the norm
+	// after a switch — and it used to be completely silent: the next command failed
+	// with a 401 that looked like the switch had broken something.
+	loggedIn := hasLiveSession()
+	if !loggedIn {
+		fmt.Fprintln(os.Stderr, "No session for this gateway. "+loginHint)
+	}
+	return ui.RunAPI(func() (any, error) { return switchResult(name, details, revoked, loggedIn), nil })
+}
+
+// hasLiveSession reports whether the CURRENT gateway has a usable session: a
+// stored token that still parses (parseJWTClaims rejects an expired one), which is
+// the same test every authenticated command applies.
+func hasLiveSession() bool {
+	stored := token.Load(resolveBaseURL())
+	if stored == "" {
+		return false
+	}
+	_, err := parseJWTClaims(stored)
+	return err == nil
 }
 
 // sessionRevocation records what happened to the session of the gateway being
@@ -247,12 +284,13 @@ func revokeCurrentSession() sessionRevocation {
 	return out
 }
 
-// switchResult builds the confirmation payload for a switch: status + env name,
-// plus each parameter's effective value and origin only when details is set
+// switchResult builds the confirmation payload for a switch: status, env name and
+// whether the new gateway has a live session, plus each parameter's effective value
+// and origin only when details is set
 // (the -d flag). Split out from switchEnv so the gating is unit-testable
 // without persisting or capturing stdout.
-func switchResult(name string, details bool, revoked sessionRevocation) map[string]any {
-	out := map[string]any{"status": "switched", "env": name}
+func switchResult(name string, details bool, revoked sessionRevocation, loggedIn bool) map[string]any {
+	out := map[string]any{"status": "switched", "env": name, "logged_in": loggedIn}
 	// Reported in the RESULT, not as a log line, so `-q`/`--json` callers see it
 	// too: whether the session they were using is now dead is part of what the
 	// switch did.

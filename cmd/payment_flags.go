@@ -160,6 +160,32 @@ func (f *createPaymentFlags) addTo(cmd *cobra.Command) {
 		"Optional reconciliation note (e.g. order id / invoice); prompted when omitted on a terminal")
 }
 
+// applyConfiguredDefaults fills the chain and the token from the stored defaults
+// (`config set …`, or `rail0 env <name>` for both at once) when the caller omitted
+// them.
+//
+// Only those two. --amount is the one field that differs every time, and a default
+// there would silently price a payment; --description is the reconciliation
+// reference, where a constant one is worse than none; and --from/--to have no stored
+// default at all, so the two parties to a payment always come from the command line
+// (an @alias keeps that short without making them implicit).
+//
+// A --payment-file skips this entirely (see buildResolved): a file is a complete
+// request by definition, so mixing stored defaults into it would produce a body the
+// author did not write.
+func (f *createPaymentFlags) applyConfiguredDefaults() {
+	if f.token == "" {
+		f.token = configuredDefault("token")
+	}
+	if f.chainID == 0 {
+		// Validated at `config set`, so a parse failure here means a hand-edited
+		// file: leaving chainID at 0 lets the normal "required" path report it.
+		if n, err := strconv.Atoi(configuredDefault("chain-id")); err == nil {
+			f.chainID = n
+		}
+	}
+}
+
 // build constructs and validates a rail0.CreatePaymentRequest. It resolves the
 // request (buildResolved) and then enforces the cross-field invariant that a
 // payment can't be sent from an address to itself.
@@ -204,6 +230,11 @@ func (f *createPaymentFlags) buildResolved() (rail0.CreatePaymentRequest, error)
 		}
 		return req, nil
 	}
+
+	// Stored defaults count as supplied, so they must land BEFORE the missing-field
+	// check and the interactive form — otherwise a configured chain would still be
+	// prompted for, which defeats the point of configuring it.
+	f.applyConfiguredDefaults()
 
 	// Fail fast on anything the user DID pass that's malformed, before showing any
 	// prompt — it's confusing to ask for the remaining fields and only then reject

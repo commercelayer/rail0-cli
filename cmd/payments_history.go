@@ -42,7 +42,7 @@ timeline is readable only by the payment's payer or payee.`,
 			if err != nil {
 				return nil, err
 			}
-			return paymentHistory(payment), nil
+			return paymentHistory(ctx, payment), nil
 		})
 	},
 }
@@ -51,14 +51,19 @@ timeline is readable only by the payment's payer or payee.`,
 // carrying only its significant fields (empty ones omitted). The transactions
 // already arrive oldest-first; the whole list is re-sorted by time so the
 // created/signed milestones interleave correctly.
-func paymentHistory(p *rail0.Payment) []any {
+func paymentHistory(ctx context.Context, p *rail0.Payment) []any {
+	// Resolved once for the whole timeline; every event's amount is in this
+	// payment's token.
+	human := func(base string) string { return humanAmount(ctx, base, p.ChainID, string(p.Token)) }
 	type event struct {
 		at     string
 		fields map[string]any
 	}
-	events := []event{
-		{p.CreatedAt, map[string]any{"at": p.CreatedAt, "event": "created", "mode": p.Mode, "amount": string(p.Amount)}},
+	created := map[string]any{"at": p.CreatedAt, "event": "created", "mode": p.Mode, "amount": string(p.Amount)}
+	if h := human(string(p.Amount)); h != "" {
+		created["amount_human"] = h
 	}
+	events := []event{{p.CreatedAt, created}}
 	// The payer's offline signing. Use signed_at when known; otherwise (payment
 	// signed before signed_at was tracked) still record it — any status past
 	// "unsigned" means it was signed — placed right after `created` with an
@@ -73,6 +78,9 @@ func paymentHistory(p *rail0.Payment) []any {
 		f := map[string]any{"at": at, "event": t.Operation, "status": t.Status}
 		if amt := string(t.Amount); amt != "" {
 			f["amount"] = amt
+			if h := human(amt); h != "" {
+				f["amount_human"] = h
+			}
 		}
 		if t.TransactionHash != nil && string(*t.TransactionHash) != "" {
 			f["tx_hash"] = string(*t.TransactionHash)

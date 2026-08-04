@@ -131,11 +131,11 @@ func rateLimitHint(e *rail0.APIError) string {
 // contract_revert, the snake_case Solidity error).
 var errorHints = map[string]string{
 	// payment-state guards (HTTP 422)
-	"amount_exceeds_capturable":    "amount is above the capturable balance — see capturableAmount in 'rail0 payments get <id>'",
-	"amount_exceeds_refundable":    "amount is above the refundable balance — see refundableAmount in 'rail0 payments get <id>'",
+	"amount_exceeds_capturable":    "amount is above the capturable balance — see capturable_amount_human in 'rail0 payments get <id>'",
+	"amount_exceeds_refundable":    "amount is above the refundable balance — see refundable_amount_human in 'rail0 payments get <id>'",
 	"not_capturable":               "the payment must be 'authorized' or 'partially_captured' to capture",
 	"not_voidable":                 "void is only allowed while 'authorized' with nothing captured — use 'release' for the remainder after a capture",
-	"not_releasable":               "release opens only after authorizationExpiry — check it with 'rail0 payments get <id>'",
+	"not_releasable":               "release opens only after the authorization expires — see authorization_expiry_at / authorization_expires_in in 'rail0 payments get <id>'",
 	"not_refundable":               "nothing is refundable — the payment must be charged/captured and within the refund window",
 	"not_signable":                 "the payment must be 'unsigned' to sign",
 	"already_signed":               "the payer signature is already stored — the payee can act now",
@@ -174,8 +174,8 @@ var errorHints = map[string]string{
 	"not_payee":                  "only the merchant (payee) may do this — sign with the payee's key",
 	"not_payer":                  "only the buyer (payer) may do this — sign with the payer's key",
 	"not_payer_or_payee":         "only the payer or the payee may do this",
-	"refund_expired":             "the refund window has closed (refundExpiry passed) — refund/dispute is no longer possible",
-	"authorization_not_expired":  "release opens only after authorizationExpiry — wait until it passes",
+	"refund_expired":             "the refund window has closed — see refund_expiry_at in 'rail0 payments get <id>'; refund/dispute is no longer possible",
+	"authorization_not_expired":  "release opens only after the authorization expires — authorization_expires_in in 'rail0 payments get <id>' says how long is left",
 	"already_captured":           "already (partially) captured — use 'release' for the remainder, not 'void'",
 	"unsupported_payment_method": "the payee (merchant) doesn't accept this token/chain — check 'rail0 payment-methods --address <payee>'",
 	"unknown_token":              "the token isn't configured on this chain — see 'rail0 tokens'",

@@ -87,6 +87,22 @@ config file. Precedence is: **flag  >  env var  >  config file  >  built-in defa
 | `--quiet` / `-q` | —                | Print only the result's id/hash, one per line — no JSON parser needed |
 | — | `RAIL0_HTTP_TIMEOUT` | Per-request HTTP timeout in seconds (default 30). Distinct from the wait commands' `--timeout`, which is the polling deadline |
 
+### Amounts and expiries in the output
+
+Every amount the CLI prints carries a **human companion** next to the raw value:
+`amount_human`, `capturable_amount_human`, `refundable_amount_human`. The two expiries
+get `authorization_expiry_at` / `refund_expiry_at` (RFC3339) and
+`authorization_expires_in` / `refund_expires_in` ("2h 5m", or "expired") beside the raw
+epoch integers.
+
+The raw fields are untouched, so a script reading `amount` keeps working — the
+companions are additive. They are **omitted** when the token's decimals are unknown
+(a token missing from `rail0 tokens`), because a base-unit integer in a field named
+`_human` would be worse than no field: `4050000` reads as four million rather than
+4.05, and that is a six-order-of-magnitude error someone can act on. The interactive
+payment picker, which has no script to keep compatible, instead labels it
+`4050000 (base units)`.
+
 ### Scripting
 
 `--quiet` prints just the primary identifier of the result (`rail0_id`, else the
@@ -657,14 +673,21 @@ rail0 payments get 0xabc123…
 #### `payments list`
 
 List payments for the authenticated wallet (requires login). Filter with
-`--chain-id`, `--disputed`, `--min-amount` / `--max-amount` (token base units),
-and `--created-from` / `--created-to` (ISO-8601); sort with `--sort`.
+`--chain-id`, `--disputed`, `--min-amount` / `--max-amount`, and `--created-from` /
+`--created-to` (ISO-8601); sort with `--sort`.
+
+`--min-amount` / `--max-amount` are **decimals in token units** (`1.00`), like every
+other amount flag, and require `--chain-id` and `--token`: converting them to the base
+units the gateway filters on needs the token's decimals, and an amount range across
+tokens with different scales doesn't describe anything. They used to take base units —
+the only flags in the CLI that did — so `--min-amount 1.00` quietly meant one
+millionth of a USDC and matched everything.
 
 ```sh
 rail0 payments list
 rail0 payments list --sort -created_at
 rail0 payments list --chain-id 5042002 --disputed
-rail0 payments list --min-amount 1000000 --created-from 2026-01-01T00:00:00Z
+rail0 payments list --chain-id 5042002 --token 0x3600… --min-amount 1.00
 ```
 
 ---

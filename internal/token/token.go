@@ -61,6 +61,22 @@ func normalizeBaseURL(baseURL string) string {
 	return strings.ToLower(strings.TrimRight(strings.TrimSpace(baseURL), "/"))
 }
 
+// Path returns where this gateway's session is (or would be) stored, or "" if the
+// cache directory cannot be resolved.
+//
+// Reported by `auth status` because the location is per-gateway and digest-named
+// (see tokenFilePath): the operator cannot derive it from the documentation, so
+// without this there is no way to inspect or remove one specific session by hand.
+// It does not check whether the file exists — the caller already knows, and a path
+// for a gateway with no session is still the right answer to "where would it be?".
+func Path(baseURL string) string {
+	path, err := tokenFilePath(baseURL)
+	if err != nil {
+		return ""
+	}
+	return path
+}
+
 // Load returns the stored JWT for this gateway, or "" if none is found.
 //
 // A leftover pre-#94 token file is removed, with a one-line notice, rather than

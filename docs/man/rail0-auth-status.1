@@ -10,7 +10,12 @@ rail0-auth-status - Show the current authentication status
 
 
 .SH DESCRIPTION
-Show the current authentication status
+Report whether this gateway has a usable session, and where it is stored.
+
+.PP
+Sessions are per gateway, in a file named after a digest of the base URL, so
+\&'token_path' is the only way to know which file backs the current session —
+useful when several environments are in play, or to remove one by hand.
 
 
 .SH OPTIONS

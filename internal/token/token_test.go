@@ -120,3 +120,34 @@ func TestLegacyTokenFileIsDiscardedNotUsed(t *testing.T) {
 		t.Errorf("the legacy file should have been removed, stat err = %v", err)
 	}
 }
+
+// `auth status` reports Path so an operator can find or remove one specific
+// session; the value is only useful if it is the file Save actually writes, and
+// if it answers for a gateway with no session at all (the "where would it be?"
+// case, which is exactly when someone goes looking).
+func TestPathIsWhereTheSessionIsWritten(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+	t.Setenv("XDG_CACHE_HOME", dir)
+
+	if got := Path(gwA); got == "" {
+		t.Fatal("Path() = empty for a resolvable cache dir")
+	}
+	if got, want := Path(gwB), Path(gwA); got == want {
+		t.Errorf("Path() returned the same file for two gateways: %q", got)
+	}
+
+	// Before any Save: a path, not an error, and nothing on disk yet.
+	before := Path(gwA)
+	if _, err := os.Stat(before); !os.IsNotExist(err) {
+		t.Errorf("Path() named an existing file before Save, stat err = %v", err)
+	}
+
+	written, err := SaveAndReport(gwA, "jwt")
+	if err != nil {
+		t.Fatalf("SaveAndReport: %v", err)
+	}
+	if written != before {
+		t.Errorf("Save wrote %q but Path reports %q", written, before)
+	}
+}

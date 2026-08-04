@@ -160,24 +160,20 @@ func (f *createPaymentFlags) addTo(cmd *cobra.Command) {
 		"Optional reconciliation note (e.g. order id / invoice); prompted when omitted on a terminal")
 }
 
-// applyConfiguredDefaults fills the per-payment constants the caller omitted from
-// the stored defaults (`config set …`, or `rail0 env <name>` for several at once).
+// applyConfiguredDefaults fills the chain and the token from the stored defaults
+// (`config set …`, or `rail0 env <name>` for both at once) when the caller omitted
+// them.
 //
-// --amount is deliberately NOT among them: it is the one field that differs every
-// time, and a default there would silently price a payment. --description is left
-// out for the same reason in reverse — it is the reconciliation reference, and a
-// constant one is worse than none.
+// Only those two. --amount is the one field that differs every time, and a default
+// there would silently price a payment; --description is the reconciliation
+// reference, where a constant one is worse than none; and --from/--to have no stored
+// default at all, so the two parties to a payment always come from the command line
+// (an @alias keeps that short without making them implicit).
 //
 // A --payment-file skips this entirely (see buildResolved): a file is a complete
 // request by definition, so mixing stored defaults into it would produce a body the
 // author did not write.
 func (f *createPaymentFlags) applyConfiguredDefaults() {
-	if f.from == "" {
-		f.from = configuredDefault("payer")
-	}
-	if f.to == "" {
-		f.to = configuredDefault("payee")
-	}
 	if f.token == "" {
 		f.token = configuredDefault("token")
 	}

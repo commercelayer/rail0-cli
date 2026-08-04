@@ -150,8 +150,7 @@ from. (Secrets like private keys are never stored here.)
 rail0 config                                  # list settings + origin (flag/env/file/default)
 rail0 config set base-url http://localhost:9292
 rail0 config set chain-id 5042002              # fills --chain-id/-c when omitted
-rail0 config set payee @merchant               # fills --to/-T (accepts an @alias)
-rail0 config set key @payer                    # fills --private-key/-p
+rail0 config set token USDC                    # fills --token/-t when omitted
 rail0 config get chain-id                      # effective value + origin
 rail0 config unset chain-id
 rail0 config path                              # config file location
@@ -162,28 +161,27 @@ rail0 config path                              # config file location
 | `base-url` | `--base-url` | `RAIL0_BASE_URL` | `https://api.rail0.xyz` |
 | `chain-id` | `--chain-id` / `-c` | `RAIL0_CHAIN_ID` | — |
 | `token` | `--token` / `-t` | `RAIL0_TOKEN_SYMBOL` | — |
-| `payer` | `--from` / `-F` (`0x…` or `@alias`) | `RAIL0_PAYER` | — |
-| `payee` | `--to` / `-T` (`0x…` or `@alias`) | `RAIL0_PAYEE` | — |
-| `key` | `--private-key` / `-p` (**`@keychain-name` only**) | — | — |
 | `output` | `--json` / `--pretty` / `--quiet` | `RAIL0_OUTPUT` | `auto` |
 | `http-timeout` | — (per-request timeout, seconds) | `RAIL0_HTTP_TIMEOUT` | `30` |
 
 A stored value is the lowest-priority source, so the matching flag or env var still
 overrides it for a single command.
 
-`--amount` has no stored default on purpose: it is the one field that differs every
-time, and a default there would silently price a payment. `--description` is left out
-for the mirror-image reason — it is the reconciliation reference, and a constant one
-is worse than none.
+**Addresses and signing keys are not settable here**, and that is deliberate. Each
+already has a mechanism for not retyping the value — the [address book](#address-book-aliases)
+for payer/payee (`--from @buyer`), the OS keychain for keys (`-p @payer`) — so a
+second home in the config file would duplicate them and, worse, make the two parties
+and the signer of a fund-moving command resolve from a file rather than from the
+command line. `RAIL0_PRIVATE_KEY` stays the only name that carries a raw key.
 
-**`key` stores a reference, never a secret.** It accepts only `@name`, pointing at a
-key saved with `rail0 keys add`; a raw key is refused, because the config file is
-plaintext on disk and ends up pasted into issues, where a private key is a permanent
-compromise rather than a misconfiguration. It has no env var either: `RAIL0_PRIVATE_KEY`
-stays the only name that carries a raw key, so there are not two near-identical names
-to paste the secret into. Note also that `token`'s env var is `RAIL0_TOKEN_SYMBOL`, not
-`RAIL0_TOKEN` — that name was a session-token source until it was removed, and reusing
-it would make a stale exported JWT arrive as a payment token symbol.
+`--amount` has no stored default for a related reason: it is the one field that
+differs every time, and a default there would silently price a payment.
+`--description` is left out as the mirror image — it is the reconciliation reference,
+and a constant one is worse than none.
+
+Note that `token`'s env var is `RAIL0_TOKEN_SYMBOL`, not `RAIL0_TOKEN` — that name was
+a session-token source until it was removed, and reusing it would make a stale
+exported JWT arrive as a payment token symbol.
 
 ### Environments (`env`)
 

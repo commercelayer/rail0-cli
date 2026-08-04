@@ -388,17 +388,7 @@ func resolveSigningKey(explicitKey string) (string, error) {
 	if env := os.Getenv("RAIL0_PRIVATE_KEY"); env != "" {
 		return env, nil
 	}
-	// Stored default, last: it is a keychain REFERENCE, never a key. `config set
-	// key` refuses anything but @name, but a hand-edited config file can hold
-	// anything — and reading a raw value from disk as a key would break the promise
-	// that the file never carries secrets, so it is ignored out loud instead.
-	if ref := configuredDefault("key"); ref != "" {
-		if strings.HasPrefix(ref, "@") {
-			return loadKey(strings.TrimPrefix(ref, "@"))
-		}
-		fmt.Fprintln(os.Stderr, "warning: ignoring the stored 'key' setting — it must be an @keychain-name")
-	}
-	return "", errors.New("no signing key: pass --private-key (-p / --pk), set RAIL0_PRIVATE_KEY, save a default with 'rail0 config set key @name', or save one with 'rail0 keys add' and pass it as @name")
+	return "", errors.New("no signing key: pass --private-key (-p / --pk), set RAIL0_PRIVATE_KEY, or save one with 'rail0 keys add' and pass it as @name")
 }
 
 // signingKeyOrPrompt resolves the signing key like resolveSigningKey, but when

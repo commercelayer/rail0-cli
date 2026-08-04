@@ -1,7 +1,8 @@
 package cmd
 
 import (
-	"strings"
+	"slices"
+	"sort"
 	"testing"
 
 	"github.com/rail0/cli/internal/config"
@@ -66,32 +67,28 @@ func TestConfigCommandTree(t *testing.T) {
 	}
 }
 
-// The whole point of #106: an environment switch has to be able to carry the
-// per-payment constants, which means they have to BE settable keys. Asserted as a
-// set so a key cannot be dropped from the whitelist without a failure here.
-func TestConfigKeysCoverThePerPaymentConstants(t *testing.T) {
-	for _, name := range []string{"base-url", "chain-id", "token", "payer", "payee", "key", "output", "http-timeout"} {
-		if _, err := lookupKey(name); err != nil {
-			t.Errorf("%q must be a settable key: %v", name, err)
+// The whole point of #106: an environment switch has to be able to carry the chain
+// and the token, which means they have to BE settable keys. Asserted as an exact set
+// in BOTH directions — a key cannot be dropped, and none can be added silently.
+//
+// The negative half is the substantive one. Addresses and signing keys are
+// deliberately absent: the alias book and the OS keychain already spare the retyping,
+// and a stored payer/payee/key would make the two parties and the signer of a
+// fund-moving command resolve from a file instead of from the command line.
+func TestConfigKeysAreExactlyTheNonSensitiveDefaults(t *testing.T) {
+	want := []string{"base-url", "chain-id", "http-timeout", "output", "token"}
+	got := make([]string, 0, len(configKeys))
+	for name := range configKeys {
+		got = append(got, name)
+	}
+	sort.Strings(got)
+	if !slices.Equal(got, want) {
+		t.Errorf("configKeys = %v, want %v", got, want)
+	}
+	for _, name := range []string{"payer", "payee", "key", "private-key"} {
+		if _, err := lookupKey(name); err == nil {
+			t.Errorf("%q must NOT be settable in the config file", name)
 		}
-	}
-}
-
-// The config file is plaintext on disk and gets pasted into issues, so a private
-// key in it is a permanent compromise rather than a misconfiguration. `key` holds a
-// keychain reference and nothing else — and the rejection must not echo the value
-// it just refused to store.
-func TestConfigKeyRefusesARawPrivateKey(t *testing.T) {
-	raw := "0x58cfb681b2a04e9dc0083d8258da8c19ac7cc1750f94bb1ab7651f606df5a4d6"
-	err := validateKeyReference(raw)
-	if err == nil {
-		t.Fatal("a raw private key must be refused as a stored 'key'")
-	}
-	if strings.Contains(err.Error(), raw) {
-		t.Error("the error echoed the rejected key back — it must be redacted")
-	}
-	if !strings.Contains(err.Error(), "keys add") {
-		t.Error("the error should name the command that stores a key properly")
 	}
 }
 
@@ -131,7 +128,7 @@ func TestConfiguredDefaultIsEmptyWhenNothingWasSet(t *testing.T) {
 	t.Setenv("RAIL0_OUTPUT", "")
 	t.Setenv("RAIL0_HTTP_TIMEOUT", "")
 
-	for _, name := range []string{"output", "http-timeout", "chain-id", "payee"} {
+	for _, name := range []string{"output", "http-timeout", "chain-id", "token"} {
 		if got := configuredDefault(name); got != "" {
 			t.Errorf("configuredDefault(%q) = %q, want empty when unset", name, got)
 		}

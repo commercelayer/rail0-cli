@@ -30,5 +30,5 @@ rail0 config path [flags]
 
 ### SEE ALSO
 
-* [rail0 config](rail0_config.md)	 - Manage persisted CLI defaults (base-url, chain-id, token, payer, payee, key…)
+* [rail0 config](rail0_config.md)	 - Manage persisted CLI defaults (base-url, chain-id, token, output, http-timeout)
 

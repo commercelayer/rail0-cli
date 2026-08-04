@@ -28,12 +28,17 @@ type configKey struct {
 
 // configKeys is the whitelist of settable keys. Only non-sensitive endpoint /
 // default values belong here — never private keys or tokens (CLAUDE.md rule 8).
-// The `key` entry is the near-miss: it stores a keychain REFERENCE (@name), and
-// its validator exists to guarantee a raw secret can never be written here.
 //
 // base-url used to be the only entry, which made `env <name>` a switch of one
-// setting: every `payments create` still needed -c, -t, -F, -T and -p spelled out
-// again, even though those are per-environment constants in practice. (#106)
+// setting: every `payments create` still needed -c and -t spelled out again, even
+// though the chain and the token are per-environment constants in practice. (#106)
+//
+// Payer, payee and the signing key are deliberately NOT here. Each already has its
+// own mechanism for not retyping a value — the alias book for addresses ('rail0
+// aliases add'), the OS keychain for keys ('rail0 keys add', used as @name) — and a
+// second home for them in the config file would both duplicate that and make the
+// two parties and the signer of a fund-moving command implicit, resolved from a file
+// instead of from the command line.
 var configKeys = map[string]configKey{
 	"base-url": {
 		name:     "base-url",
@@ -59,30 +64,6 @@ var configKeys = map[string]configKey{
 		desc:     "Default token symbol for --token/-t (e.g. USDC)",
 		def:      func() string { return "" },
 		validate: validateTokenSymbol,
-	},
-	"payer": {
-		name:     "payer",
-		env:      "RAIL0_PAYER",
-		desc:     "Default payer for --from/-F (0x… or @alias)",
-		def:      func() string { return "" },
-		validate: validateAddress,
-	},
-	"payee": {
-		name:     "payee",
-		env:      "RAIL0_PAYEE",
-		desc:     "Default payee for --to/-T (0x… or @alias)",
-		def:      func() string { return "" },
-		validate: validateAddress,
-	},
-	"key": {
-		name: "key",
-		// Deliberately no env var. RAIL0_PRIVATE_KEY already carries a raw key for
-		// one process; a second, near-identical name for a keychain reference would
-		// invite pasting the secret into the wrong one.
-		env:      "",
-		desc:     "Default signing key for --private-key/-p, as an @keychain-name",
-		def:      func() string { return "" },
-		validate: validateKeyReference,
 	},
 	"output": {
 		name:     "output",
@@ -143,37 +124,6 @@ func validateTokenSymbol(v string) error {
 }
 
 var tokenSymbolPattern = regexp.MustCompile(`^[A-Z0-9]{2,12}$`)
-
-// validateKeyReference enforces that the stored signing key is a KEYCHAIN
-// REFERENCE, never the key itself.
-//
-// The config file is plaintext on disk, world-readable in plenty of setups, and
-// gets pasted into issues; a private key there is a permanent compromise, not a
-// misconfiguration. `keys add` exists precisely so the secret lives in the OS
-// keychain, so this rejects anything that isn't @name — and says which command to
-// run instead, because someone typing their key here has the right intent.
-func validateKeyReference(v string) error {
-	if !strings.HasPrefix(v, "@") {
-		return fmt.Errorf(
-			"key must be an @keychain-name, not a key itself — the config file is plaintext. "+
-				"Save the key with 'rail0 keys add <name>' and set it as '@<name>' (got %q)",
-			redactKeyish(v))
-	}
-	if _, err := loadKey(strings.TrimPrefix(v, "@")); err != nil {
-		return err
-	}
-	return nil
-}
-
-// redactKeyish keeps a rejected value out of the error message when it looks like
-// a secret: the whole point of the rejection is that this value must not be
-// written down, and an error string ends up in scrollback and CI logs too.
-func redactKeyish(v string) string {
-	if len(v) > 8 {
-		return v[:4] + "…(redacted)"
-	}
-	return v
-}
 
 func validateOutputMode(v string) error {
 	switch v {
@@ -241,9 +191,9 @@ func lookupKey(name string) (configKey, error) {
 // flag > env > config file > built-in default — and reports the origin.
 func effectiveSetting(k configKey) (value, origin string) {
 	// Only the two keys with a GLOBAL flag can be overridden per command this way.
-	// The others (chain-id, token, payer, payee, key) are overridden by per-command
-	// flags, which are not bound while `config`/`env` render — so their origin here
-	// describes the stored default, which is what those listings are about.
+	// chain-id and token are overridden by per-command flags, which are not bound
+	// while `config`/`env` render — so their origin here describes the stored
+	// default, which is what those listings are about.
 	if k.name == "base-url" && baseURL != "" {
 		return baseURL, "flag (--base-url)"
 	}
@@ -287,23 +237,23 @@ func warnConfigUnreadable(err error) {
 // set/get/unset/path verbs.
 var configCmd = &cobra.Command{
 	Use:   "config",
-	Short: "Manage persisted CLI defaults (base-url, chain-id, token, payer, payee, key…)",
+	Short: "Manage persisted CLI defaults (base-url, chain-id, token, output, http-timeout)",
 	Long: `Manage persisted CLI defaults stored in the config file.
 
 Run bare to list every setting with its effective value and where it comes from.
 Resolution precedence is: flag  >  env var  >  config file  >  built-in default.
 
-A stored default fills in the matching flag when you omit it, so the per-payment
-constants (chain-id, token, payer, payee, key) can be set once instead of on every
-command. 'rail0 env <name>' sets several of them in one shot.
+A stored default fills in the matching flag when you omit it, so the chain and the
+token can be set once instead of on every command. 'rail0 env <name>' sets both in
+one shot along with the gateway.
 
-Only non-sensitive values are stored — never private keys or tokens. 'key' holds an
-@keychain-name reference ('rail0 keys add'), and a raw key is refused.`,
+Addresses and signing keys are NOT settable here: use the alias book ('rail0 aliases
+add') and the OS keychain ('rail0 keys add', passed as @name), which already spare
+you the retyping without making the parties or the signer implicit.`,
 	Example: `  rail0 config
   rail0 config set base-url http://localhost:9292
   rail0 config set chain-id 5042002
-  rail0 config set payee @merchant
-  rail0 config set key @payer
+  rail0 config set token USDC
   rail0 config get chain-id
   rail0 config unset chain-id`,
 	Args: cobra.NoArgs,

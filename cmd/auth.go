@@ -39,11 +39,13 @@ control of the address, which is enough to read your own address-scoped
 resources (e.g. 'payments list' shows every payment where you are payer or
 payee). A gateway account only unlocks merchant-scoped features.
 
-The token is saved to ~/.cache/rail0/token and used automatically by all
-commands that require authentication (e.g. 'payments list') — that file is the
-only place the session is read from. On success the command prints the session
-(address, expiry) but NOT the raw token — pass --token (-t) to also print the
-token itself, or run 'rail0 token' later.
+The token is saved under ~/.cache/rail0/tokens/, one file per gateway (its name
+is a digest of the base URL), and used automatically by all commands that
+require authentication (e.g. 'payments list') — that file is the only place the
+session is read from. The exact path is printed on success and by 'rail0 auth
+status'. On success the command prints the session (address, expiry) but NOT the
+raw token — pass --token (-t) to also print the token itself, or run 'rail0
+token' later.
 
 The signing key is resolved like every other signing command: pass -p as a raw
 0x-prefixed hex key, as @name for a key saved in the OS keychain ('rail0 keys
@@ -135,6 +137,12 @@ func siweHost(baseURL string) string {
 var authStatusCmd = &cobra.Command{
 	Use:   "status",
 	Short: "Show the current authentication status",
+	Long: `Report whether this gateway has a usable session, and where it is stored.
+
+Sessions are per gateway, in a file named after a digest of the base URL, so
+'token_path' is the only way to know which file backs the current session —
+useful when several environments are in play, or to remove one by hand.`,
+	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		t := token.Load(resolveBaseURL())
 		if t == "" {
@@ -153,6 +161,7 @@ var authStatusCmd = &cobra.Command{
 				"account_id": claims["account_id"],
 				"expires_at": expiresAt,
 				"expires_in": expiresIn,
+				"token_path": token.Path(resolveBaseURL()),
 			}, nil
 		})
 	},

@@ -68,8 +68,8 @@ func init() {
 }
 
 // newClient builds a RAIL0 gateway client.
-// If a JWT is stored (~/.cache/rail0/token), it is sent
-// as Authorization: Bearer on every request.
+// If a JWT is stored for this gateway (~/.cache/rail0/tokens/<digest>), it is
+// sent as Authorization: Bearer on every request.
 //
 // The token goes in ClientOptions.Token, not a hand-built Authorization header.
 // Both end up as the same header, but Token is the SDK's mutable slot: Auth.Login

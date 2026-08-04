@@ -10,9 +10,9 @@ rail0-token - Print the stored session token, or suggest logging in
 
 
 .SH DESCRIPTION
-Print the JWT session token saved by the last 'rail0 auth login' (or taken
-from ~/.cache/rail0/token), together with its expiry. If no valid token is
-stored, it suggests logging in instead.
+Print the JWT session token saved by the last 'rail0 auth login' for the
+current gateway (~/.cache/rail0/tokens/), together with
+its expiry. If no valid token is stored, it suggests logging in instead.
 
 .PP
 This is the singular session token — not to be confused with 'rail0 tokens',

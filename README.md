@@ -95,7 +95,11 @@ directly: `id=$(rail0 payments create … -q)`.
 
 Exit codes distinguish the failure class: `0` success, `3` unauthorized, `4`
 forbidden, `5` not found, `6` conflict, `7` rejected (422), `8` gateway error
-(5xx), `9` network, `130` cancelled by the user, `1` otherwise.
+(5xx), `9` network, `10` rate-limited (429), `130` cancelled by the user, `1`
+otherwise.
+
+`10` is the one class where re-running the identical command later is the correct
+response, which is why it is not folded into the generic failure.
 
 `130` is what you get by pressing Ctrl-C (or ESC) at any prompt, and by answering `N`
 to a destructive confirmation — the POSIX convention for SIGINT, so `&&` chains stop
@@ -363,7 +367,7 @@ Every `/payments` operation requires a SIWE session (the gateway rejects anonymo
 
 #### `auth login`
 
-Obtain a JWT via SIWE (Sign-In With Ethereum) and cache it in `~/.cache/rail0/token`. **Any wallet can sign in — no gateway account is required** (a buyer signs in with just its key); an account only unlocks merchant features.
+Obtain a JWT via SIWE (Sign-In With Ethereum) and cache it under `~/.cache/rail0/tokens/<digest of the base URL>` — one file per gateway; the exact path is printed on success and by `auth status`. **Any wallet can sign in — no gateway account is required** (a buyer signs in with just its key); an account only unlocks merchant features.
 
 ```sh
 rail0 auth login -p 0xYourPrivateKey…
@@ -679,7 +683,7 @@ rail0 payments transactions 0xabc123…
 
 Print a payment's chronological timeline: the `created` and `signed` milestones plus one entry per on-chain transaction (`authorize`, `capture`, `void`, `release`, `refund`, `dispute`, `close_dispute`), oldest first. Only the significant fields are shown per entry (time, event, status, amount, tx hash, block). It is assembled client-side from a single `payments get` — there is no dedicated gateway endpoint.
 
-Works with or without a session — `payments history` is a public read; the `rail0_id` (or UUID) argument is resolved by the gateway in-path.
+Requires login: the timeline is assembled from `payments get`, which the gateway serves only to the payment's payer or payee. The `rail0_id` (or UUID) argument is resolved by the gateway in-path.
 
 ```sh
 rail0 payments history 0xabc123…
@@ -691,9 +695,10 @@ rail0 payments history 0xabc123…
 > (`authorize`/`charge`/`capture`/`void`/`release`/`refund`/`dispute`/`dispute close`)
 > prompt for anything you didn't pass: omit `<rail0Id>` to pick from a list of your
 > payments the operation can act on; omit `-a`/`--amount` (capture/refund) or
-> `--reason` (dispute) to be asked for it. The signing key (`-p`) is never
-> prompted — pass it, set `RAIL0_PRIVATE_KEY`, or use an `@keychain-name`. In a
-> non-interactive shell a missing required value is a clear error instead.
+> `--reason` (dispute) to be asked for it. The signing key (`-p`) is prompted
+> **hidden** if you pass neither `-p` nor `RAIL0_PRIVATE_KEY`, so it never reaches
+> the shell history or the process arguments. In a non-interactive shell a missing
+> required value is a clear error instead.
 
 #### `payments authorize <rail0Id>`
 

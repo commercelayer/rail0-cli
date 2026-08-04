@@ -2,6 +2,14 @@
 
 Show the current authentication status
 
+### Synopsis
+
+Report whether this gateway has a usable session, and where it is stored.
+
+Sessions are per gateway, in a file named after a digest of the base URL, so
+'token_path' is the only way to know which file backs the current session —
+useful when several environments are in play, or to remove one by hand.
+
 ```
 rail0 auth status [flags]
 ```

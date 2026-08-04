@@ -12,6 +12,14 @@ project_name: rail0
 before:
   hooks:
     - go mod download
+    # Completions and man pages are GENERATED, so they are built here rather than
+    # read from the tree: an archive shipping a stale completion script is worse
+    # than one shipping none, since nothing would reveal the drift.
+    - mkdir -p dist/completions dist/man
+    - sh -c 'go run . completion bash > dist/completions/rail0.bash'
+    - sh -c 'go run . completion zsh  > dist/completions/_rail0'
+    - sh -c 'go run . completion fish > dist/completions/rail0.fish'
+    - go run ./tools/gendocs
 
 builds:
   - id: rail0
@@ -46,6 +54,16 @@ archives:
       - goos: windows
         formats:
           - zip
+    # An external user cannot build from source (the SDK sibling is private), so the
+    # archive has to be self-sufficient: shell completions and man pages travel with
+    # the binary instead of living only in the repo. (#105)
+    files:
+      - src: dist/completions/*
+        dst: completions
+      - src: docs/man/*
+        dst: man/man1
+      - src: docs/cli/*
+        dst: docs
 
 checksum:
   name_template: "checksums.txt"

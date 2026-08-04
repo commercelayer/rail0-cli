@@ -35,7 +35,16 @@ var rootCmd = &cobra.Command{
 	PersistentPreRunE: func(cmd *cobra.Command, _ []string) error { return checkBaseURL(cmd) },
 	Long: `rail0 is a command-line interface for the RAIL0 stablecoin payment gateway.
 
+QUICKSTART
+  rail0 init                       guided setup: gateway, key, sign-in
+  rail0 payment-methods -A 0x…     what a merchant accepts (public, no login)
+  rail0 payments create …          create + sign a payment as the payer
+  rail0 payments capture <id> -a … capture it as the payee
+
 Defaults to https://api.rail0.xyz. Override with --base-url or RAIL0_BASE_URL.
+
+Note the singular/plural pair: 'rail0 token' prints your SESSION JWT, while
+'rail0 tokens' lists the gateway's accepted PAYMENT tokens.
 
 Use 'rail0 <command> --help' for detailed usage of any command.`,
 }
@@ -60,7 +69,43 @@ func init() {
 
 	cobra.OnInitialize(applyOutputMode)
 
+	// Grouped help. Sixteen top-level commands listed alphabetically gave
+	// `completion` the same weight as `payments`, and put the confusable `token`
+	// (session JWT) next to `tokens` (payment-token catalog) with nothing to
+	// distinguish them — the difference was explained only inside cmd/token.go. (#105)
+	rootCmd.AddGroup(
+		&cobra.Group{ID: groupPayments, Title: "Payments:"},
+		&cobra.Group{ID: groupAccount, Title: "Account & merchant setup:"},
+		&cobra.Group{ID: groupCatalog, Title: "Network catalog:"},
+		&cobra.Group{ID: groupLocal, Title: "Local configuration:"},
+	)
+	assignGroup(groupPayments, paymentsCmd)
+	// `analytics` and `disputes` (#110, in flight on another branch) belong in this
+	// group too — they are account-scoped reads. Add them here when that lands.
+	assignGroup(groupAccount, authCmd, tokenCmd, walletsCmd, paymentMethodsCmd, webhooksCmd)
+	assignGroup(groupCatalog, chainsCmd, tokensCmd, healthCmd)
+	assignGroup(groupLocal, initCmd, configCmd, envCmd, aliasesCmd, keysCmd)
+
 	rootCmd.AddCommand(paymentsCmd, walletsCmd, paymentMethodsCmd, webhooksCmd, chainsCmd, tokensCmd, authCmd, healthCmd, aliasesCmd, keysCmd, configCmd, envCmd)
+}
+
+// Help groups. `completion`, `help` and `version` deliberately have none: cobra lists
+// an ungrouped command under "Additional Commands", which is exactly the weight the
+// three meta commands should carry next to `payments`.
+const (
+	groupPayments = "payments"
+	groupAccount  = "account"
+	groupCatalog  = "catalog"
+	groupLocal    = "local"
+)
+
+// assignGroup tags commands with a help group. A helper because the alternative is
+// setting GroupID at each command's own definition, which spreads one decision — the
+// shape of `rail0 --help` — across a dozen files.
+func assignGroup(id string, cmds ...*cobra.Command) {
+	for _, c := range cmds {
+		c.GroupID = id
+	}
 }
 
 // newClient builds a RAIL0 gateway client.

@@ -13,7 +13,18 @@ rail0 - CLI for the RAIL0 stablecoin payment protocol
 rail0 is a command-line interface for the RAIL0 stablecoin payment gateway.
 
 .PP
+QUICKSTART
+  rail0 init                       guided setup: gateway, key, sign-in
+  rail0 payment-methods -A 0x…     what a merchant accepts (public, no login)
+  rail0 payments create …          create + sign a payment as the payer
+  rail0 payments capture  -a … capture it as the payee
+
+.PP
 Defaults to https://api.rail0.xyz. Override with --base-url or RAIL0_BASE_URL.
+
+.PP
+Note the singular/plural pair: 'rail0 token' prints your SESSION JWT, while
+\&'rail0 tokens' lists the gateway's accepted PAYMENT tokens.
 
 .PP
 Use 'rail0  --help' for detailed usage of any command.
@@ -45,4 +56,4 @@ Use 'rail0  --help' for detailed usage of any command.
 
 
 .SH SEE ALSO
-\fBrail0-aliases(1)\fP, \fBrail0-auth(1)\fP, \fBrail0-chains(1)\fP, \fBrail0-config(1)\fP, \fBrail0-env(1)\fP, \fBrail0-health(1)\fP, \fBrail0-keys(1)\fP, \fBrail0-payment-methods(1)\fP, \fBrail0-payments(1)\fP, \fBrail0-token(1)\fP, \fBrail0-tokens(1)\fP, \fBrail0-version(1)\fP, \fBrail0-wallets(1)\fP, \fBrail0-webhooks(1)\fP
+\fBrail0-aliases(1)\fP, \fBrail0-auth(1)\fP, \fBrail0-chains(1)\fP, \fBrail0-config(1)\fP, \fBrail0-env(1)\fP, \fBrail0-health(1)\fP, \fBrail0-init(1)\fP, \fBrail0-keys(1)\fP, \fBrail0-payment-methods(1)\fP, \fBrail0-payments(1)\fP, \fBrail0-token(1)\fP, \fBrail0-tokens(1)\fP, \fBrail0-version(1)\fP, \fBrail0-wallets(1)\fP, \fBrail0-webhooks(1)\fP

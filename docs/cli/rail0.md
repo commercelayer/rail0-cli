@@ -26,7 +26,7 @@ Use 'rail0 <command> --help' for detailed usage of any command.
 * [rail0 aliases](rail0_aliases.md)	 - Address book — list saved addresses, or manage them with add/rm
 * [rail0 auth](rail0_auth.md)	 - Authenticate with the RAIL0 gateway using SIWE
 * [rail0 chains](rail0_chains.md)	 - List supported blockchains (chain IDs used in --chain-id)
-* [rail0 config](rail0_config.md)	 - Manage persisted CLI defaults (e.g. base-url)
+* [rail0 config](rail0_config.md)	 - Manage persisted CLI defaults (base-url, chain-id, token, payer, payee, key…)
 * [rail0 env](rail0_env.md)	 - Switch the active environment (development/staging/production) in one shot
 * [rail0 health](rail0_health.md)	 - Report gateway health (liveness/readiness)
 * [rail0 keys](rail0_keys.md)	 - Manage signing keys in the OS keychain (lists names when run bare)

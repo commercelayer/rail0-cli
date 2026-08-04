@@ -5,7 +5,9 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/rail0/cli/internal/config"
@@ -26,6 +28,12 @@ type configKey struct {
 
 // configKeys is the whitelist of settable keys. Only non-sensitive endpoint /
 // default values belong here — never private keys or tokens (CLAUDE.md rule 8).
+// The `key` entry is the near-miss: it stores a keychain REFERENCE (@name), and
+// its validator exists to guarantee a raw secret can never be written here.
+//
+// base-url used to be the only entry, which made `env <name>` a switch of one
+// setting: every `payments create` still needed -c, -t, -F, -T and -p spelled out
+// again, even though those are per-environment constants in practice. (#106)
 var configKeys = map[string]configKey{
 	"base-url": {
 		name:     "base-url",
@@ -34,6 +42,145 @@ var configKeys = map[string]configKey{
 		def:      func() string { return config.DefaultBaseURL },
 		validate: validateBaseURL,
 	},
+	"chain-id": {
+		name:     "chain-id",
+		env:      "RAIL0_CHAIN_ID",
+		desc:     "Default EVM chain ID for --chain-id/-c",
+		def:      func() string { return "" },
+		validate: validatePositiveInt("chain-id"),
+	},
+	"token": {
+		name: "token",
+		// NOT RAIL0_TOKEN: that name was a JWT source until #60, and reusing it
+		// would make a stale exported session token arrive here as a payment token
+		// symbol — a confusing failure in the one place a leftover RAIL0_TOKEN is
+		// still likely to exist in someone's shell.
+		env:      "RAIL0_TOKEN_SYMBOL",
+		desc:     "Default token symbol for --token/-t (e.g. USDC)",
+		def:      func() string { return "" },
+		validate: validateTokenSymbol,
+	},
+	"payer": {
+		name:     "payer",
+		env:      "RAIL0_PAYER",
+		desc:     "Default payer for --from/-F (0x… or @alias)",
+		def:      func() string { return "" },
+		validate: validateAddress,
+	},
+	"payee": {
+		name:     "payee",
+		env:      "RAIL0_PAYEE",
+		desc:     "Default payee for --to/-T (0x… or @alias)",
+		def:      func() string { return "" },
+		validate: validateAddress,
+	},
+	"key": {
+		name: "key",
+		// Deliberately no env var. RAIL0_PRIVATE_KEY already carries a raw key for
+		// one process; a second, near-identical name for a keychain reference would
+		// invite pasting the secret into the wrong one.
+		env:      "",
+		desc:     "Default signing key for --private-key/-p, as an @keychain-name",
+		def:      func() string { return "" },
+		validate: validateKeyReference,
+	},
+	"output": {
+		name:     "output",
+		env:      "RAIL0_OUTPUT",
+		desc:     "Default output mode: auto, json, pretty or quiet",
+		def:      func() string { return "auto" },
+		validate: validateOutputMode,
+	},
+	"http-timeout": {
+		name:     "http-timeout",
+		env:      "RAIL0_HTTP_TIMEOUT",
+		desc:     "Per-request HTTP timeout in seconds",
+		def:      func() string { return "30" },
+		validate: validatePositiveInt("http-timeout"),
+	},
+}
+
+// configuredDefault returns a key's effective value, or "" when it resolves to
+// the built-in default. Consumers use it to fill a flag the user did not pass, so
+// "" has to mean "nothing configured" — returning the built-in default would make
+// `output`'s "auto" or `http-timeout`'s "30" look like a user choice and override
+// the caller's own fallback.
+func configuredDefault(name string) string {
+	k, err := lookupKey(name)
+	if err != nil {
+		return ""
+	}
+	value, origin := effectiveSetting(k)
+	if origin == "default" {
+		return ""
+	}
+	return value
+}
+
+// validatePositiveInt builds a validator for a key whose value counts something
+// (a chain id, a number of seconds): a non-number or a non-positive number is
+// always a mistake, and catching it at `config set` keeps it from surfacing later
+// as an unrelated-looking gateway error.
+func validatePositiveInt(key string) func(string) error {
+	return func(v string) error {
+		n, err := strconv.Atoi(v)
+		if err != nil || n <= 0 {
+			return fmt.Errorf("%s must be a positive integer (got %q)", key, v)
+		}
+		return nil
+	}
+}
+
+// validateTokenSymbol checks the shape of a token symbol as the gateway lists it
+// in GET /tokens (USDC, EURC): upper-case letters and digits. Purely syntactic —
+// whether the symbol exists on a given chain is the gateway's call, and depends on
+// a chain that may not be configured yet.
+func validateTokenSymbol(v string) error {
+	if !tokenSymbolPattern.MatchString(v) {
+		return fmt.Errorf("token must be a symbol as listed in GET /tokens, e.g. USDC (got %q)", v)
+	}
+	return nil
+}
+
+var tokenSymbolPattern = regexp.MustCompile(`^[A-Z0-9]{2,12}$`)
+
+// validateKeyReference enforces that the stored signing key is a KEYCHAIN
+// REFERENCE, never the key itself.
+//
+// The config file is plaintext on disk, world-readable in plenty of setups, and
+// gets pasted into issues; a private key there is a permanent compromise, not a
+// misconfiguration. `keys add` exists precisely so the secret lives in the OS
+// keychain, so this rejects anything that isn't @name — and says which command to
+// run instead, because someone typing their key here has the right intent.
+func validateKeyReference(v string) error {
+	if !strings.HasPrefix(v, "@") {
+		return fmt.Errorf(
+			"key must be an @keychain-name, not a key itself — the config file is plaintext. "+
+				"Save the key with 'rail0 keys add <name>' and set it as '@<name>' (got %q)",
+			redactKeyish(v))
+	}
+	if _, err := loadKey(strings.TrimPrefix(v, "@")); err != nil {
+		return err
+	}
+	return nil
+}
+
+// redactKeyish keeps a rejected value out of the error message when it looks like
+// a secret: the whole point of the rejection is that this value must not be
+// written down, and an error string ends up in scrollback and CI logs too.
+func redactKeyish(v string) string {
+	if len(v) > 8 {
+		return v[:4] + "…(redacted)"
+	}
+	return v
+}
+
+func validateOutputMode(v string) error {
+	switch v {
+	case "auto", "json", "pretty", "quiet":
+		return nil
+	}
+	return fmt.Errorf("output must be one of auto, json, pretty, quiet (got %q)", v)
 }
 
 // validateBaseURL rejects a base URL the CLI must not talk to. Two rules:
@@ -93,9 +240,17 @@ func lookupKey(name string) (configKey, error) {
 // effectiveSetting resolves a key exactly as the commands do —
 // flag > env > config file > built-in default — and reports the origin.
 func effectiveSetting(k configKey) (value, origin string) {
-	// Only base-url has a global flag today; extend here if more keys gain one.
+	// Only the two keys with a GLOBAL flag can be overridden per command this way.
+	// The others (chain-id, token, payer, payee, key) are overridden by per-command
+	// flags, which are not bound while `config`/`env` render — so their origin here
+	// describes the stored default, which is what those listings are about.
 	if k.name == "base-url" && baseURL != "" {
 		return baseURL, "flag (--base-url)"
+	}
+	if k.name == "output" {
+		if mode := outputFlagMode(); mode != "" {
+			return mode, "flag (--" + mode + ")"
+		}
 	}
 	if v := os.Getenv(k.env); v != "" {
 		return v, "env (" + k.env + ")"
@@ -132,17 +287,25 @@ func warnConfigUnreadable(err error) {
 // set/get/unset/path verbs.
 var configCmd = &cobra.Command{
 	Use:   "config",
-	Short: "Manage persisted CLI defaults (e.g. base-url)",
+	Short: "Manage persisted CLI defaults (base-url, chain-id, token, payer, payee, key…)",
 	Long: `Manage persisted CLI defaults stored in the config file.
 
 Run bare to list every setting with its effective value and where it comes from.
 Resolution precedence is: flag  >  env var  >  config file  >  built-in default.
 
-Only non-sensitive values are stored — never private keys or tokens.`,
+A stored default fills in the matching flag when you omit it, so the per-payment
+constants (chain-id, token, payer, payee, key) can be set once instead of on every
+command. 'rail0 env <name>' sets several of them in one shot.
+
+Only non-sensitive values are stored — never private keys or tokens. 'key' holds an
+@keychain-name reference ('rail0 keys add'), and a raw key is refused.`,
 	Example: `  rail0 config
   rail0 config set base-url http://localhost:9292
-  rail0 config get base-url
-  rail0 config unset base-url`,
+  rail0 config set chain-id 5042002
+  rail0 config set payee @merchant
+  rail0 config set key @payer
+  rail0 config get chain-id
+  rail0 config unset chain-id`,
 	Args: cobra.NoArgs,
 	RunE: func(_ *cobra.Command, _ []string) error {
 		names := make([]string, 0, len(configKeys))

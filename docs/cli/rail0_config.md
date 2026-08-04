@@ -1,6 +1,6 @@
 ## rail0 config
 
-Manage persisted CLI defaults (e.g. base-url)
+Manage persisted CLI defaults (base-url, chain-id, token, payer, payee, key…)
 
 ### Synopsis
 
@@ -9,7 +9,12 @@ Manage persisted CLI defaults stored in the config file.
 Run bare to list every setting with its effective value and where it comes from.
 Resolution precedence is: flag  >  env var  >  config file  >  built-in default.
 
-Only non-sensitive values are stored — never private keys or tokens.
+A stored default fills in the matching flag when you omit it, so the per-payment
+constants (chain-id, token, payer, payee, key) can be set once instead of on every
+command. 'rail0 env <name>' sets several of them in one shot.
+
+Only non-sensitive values are stored — never private keys or tokens. 'key' holds an
+@keychain-name reference ('rail0 keys add'), and a raw key is refused.
 
 ```
 rail0 config [flags]
@@ -20,8 +25,11 @@ rail0 config [flags]
 ```
   rail0 config
   rail0 config set base-url http://localhost:9292
-  rail0 config get base-url
-  rail0 config unset base-url
+  rail0 config set chain-id 5042002
+  rail0 config set payee @merchant
+  rail0 config set key @payer
+  rail0 config get chain-id
+  rail0 config unset chain-id
 ```
 
 ### Options

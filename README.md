@@ -149,24 +149,56 @@ from. (Secrets like private keys are never stored here.)
 ```sh
 rail0 config                                  # list settings + origin (flag/env/file/default)
 rail0 config set base-url http://localhost:9292
-rail0 config get base-url                      # effective value + origin
-rail0 config unset base-url
+rail0 config set chain-id 5042002              # fills --chain-id/-c when omitted
+rail0 config set payee @merchant               # fills --to/-T (accepts an @alias)
+rail0 config set key @payer                    # fills --private-key/-p
+rail0 config get chain-id                      # effective value + origin
+rail0 config unset chain-id
 rail0 config path                              # config file location
 ```
 
-A stored value is the lowest-priority source, so `--base-url` or `RAIL0_BASE_URL`
-still override it for a single command.
+| Key | Fills | Env var | Built-in default |
+| --- | --- | --- | --- |
+| `base-url` | `--base-url` | `RAIL0_BASE_URL` | `https://api.rail0.xyz` |
+| `chain-id` | `--chain-id` / `-c` | `RAIL0_CHAIN_ID` | — |
+| `token` | `--token` / `-t` | `RAIL0_TOKEN_SYMBOL` | — |
+| `payer` | `--from` / `-F` (`0x…` or `@alias`) | `RAIL0_PAYER` | — |
+| `payee` | `--to` / `-T` (`0x…` or `@alias`) | `RAIL0_PAYEE` | — |
+| `key` | `--private-key` / `-p` (**`@keychain-name` only**) | — | — |
+| `output` | `--json` / `--pretty` / `--quiet` | `RAIL0_OUTPUT` | `auto` |
+| `http-timeout` | — (per-request timeout, seconds) | `RAIL0_HTTP_TIMEOUT` | `30` |
+
+A stored value is the lowest-priority source, so the matching flag or env var still
+overrides it for a single command.
+
+`--amount` has no stored default on purpose: it is the one field that differs every
+time, and a default there would silently price a payment. `--description` is left out
+for the mirror-image reason — it is the reconciliation reference, and a constant one
+is worse than none.
+
+**`key` stores a reference, never a secret.** It accepts only `@name`, pointing at a
+key saved with `rail0 keys add`; a raw key is refused, because the config file is
+plaintext on disk and ends up pasted into issues, where a private key is a permanent
+compromise rather than a misconfiguration. It has no env var either: `RAIL0_PRIVATE_KEY`
+stays the only name that carries a raw key, so there are not two near-identical names
+to paste the secret into. Note also that `token`'s env var is `RAIL0_TOKEN_SYMBOL`, not
+`RAIL0_TOKEN` — that name was a session-token source until it was removed, and reusing
+it would make a stale exported JWT arrive as a payment token symbol.
 
 ### Environments (`env`)
 
-Switch a whole bundle of settings at once instead of setting each key by hand.
-Today the only per-environment parameter is `base-url`:
+Switch a whole bundle of settings at once instead of setting each key by hand:
 
-| Environment | base-url |
-| --- | --- |
-| `development` | `http://localhost:9292` |
-| `staging` | `https://rail0-gateway-staging.fly.dev` |
-| `production` | `https://api.rail0.xyz` |
+| Environment | base-url | chain-id | token |
+| --- | --- | --- | --- |
+| `development` | `http://localhost:9292` | `5042002` | `USDC` |
+| `staging` | `https://rail0-gateway-staging.fly.dev` | `5042002` | `USDC` |
+| `production` | `https://api.rail0.xyz` | — | — |
+
+Production carries no chain or token, and that is not an omission: the two other
+environments serve testnets, so Arc Testnet (4 confirmations, the quickest active one)
+is a safe default there, while the production chain set is a deployment decision —
+inventing one here would send a real payment to a chain nobody chose.
 
 ```sh
 rail0 env                 # list environments + parameters, marking the current one
@@ -184,11 +216,19 @@ three happened: `previous_session: none | revoked | abandoned` (`abandoned` carr
 detail, e.g. the old gateway was unreachable — the switch still proceeds, because moving
 away from a down environment is a normal reason to switch).
 
+The result also reports **`logged_in`**, and prints the login hint when it is false.
+Sessions are per gateway, so arriving unauthenticated is the normal outcome of a
+switch — it used to be silent, and surfaced later as a `401` that looked like the
+switch had broken something.
+
 `env <name>` writes the environment's settings through the same config file as
 `config set`, so precedence is unchanged — `--base-url` / `RAIL0_BASE_URL` still
 override for a single command. `env current` reports the environment the
 *effective* configuration matches (so it's accurate even if you set a value with
-`config set`), or `custom` if it matches none.
+`config set`), or `custom` if it matches none. The match is on `base-url` alone: the
+gateway is what identifies an environment, and the other parameters are conveniences
+the switch also writes — comparing those too would report `custom` for someone who
+merely changed chain after `env staging`.
 
 ### Address book (aliases)
 

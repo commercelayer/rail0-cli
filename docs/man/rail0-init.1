@@ -1,0 +1,67 @@
+.nh
+.TH "RAIL0" "1" "Aug 2026" "rail0 CLI" ""
+
+.SH NAME
+rail0-init - Guided first-run setup: environment, key, sign-in
+
+
+.SH SYNOPSIS
+\fBrail0 init [flags]\fP
+
+
+.SH DESCRIPTION
+Walk through the setup a first payment needs, in one command:
+.IP "  1." 5
+choose an environment (writes base-url, so every later command uses it)
+.IP "  2." 5
+check the gateway answers
+.IP "  3." 5
+optionally save a signing key in the OS keychain (referenced later as @name)
+.IP "  4." 5
+optionally sign in with it (SIWE), caching a session for that gateway
+
+.PP
+Each step can be skipped, so it is safe to re-run on a machine that is already
+half-configured. Nothing here is irreversible: the same steps are 'rail0 env',
+\&'rail0 health', 'rail0 keys add' and 'rail0 auth login', and the setup can be
+undone with 'rail0 keys rm' / 'rail0 auth logout'.
+
+.PP
+Interactive by design — it asks questions. In a script, run those four commands
+directly instead.
+
+
+.SH OPTIONS
+\fB-h\fP, \fB--help\fP[=false]
+	help for init
+
+
+.SH OPTIONS INHERITED FROM PARENT COMMANDS
+\fB--base-url\fP=""
+	RAIL0 gateway base URL (env: RAIL0_BASE_URL)
+
+.PP
+\fB--debug\fP[=false]
+	Print HTTP request/response details to stderr
+
+.PP
+\fB--json\fP[=false]
+	Force plain (uncolored) JSON output (useful in scripts)
+
+.PP
+\fB--pretty\fP[=false]
+	Use the key-value/table view instead of JSON (terminal only)
+
+.PP
+\fB-q\fP, \fB--quiet\fP[=false]
+	Print only the result's id/hash, one per line (useful in scripts)
+
+
+.SH EXAMPLE
+.EX
+  rail0 init
+.EE
+
+
+.SH SEE ALSO
+\fBrail0(1)\fP

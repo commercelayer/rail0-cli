@@ -14,8 +14,38 @@ Command-line interface for the [RAIL0](https://rail0.xyz) stablecoin payment pro
 
 ## Installation
 
-Build from source: clone this repo and the `rail0-go` SDK **as siblings**, then
-build. rail0-cli imports the SDK through `replace github.com/rail0/go-sdk =>
+### Download a release binary (recommended)
+
+Every `v*` tag publishes static, cross-platform binaries — no Go toolchain, no
+sibling checkout, nothing to compile. Grab the archive for your platform from
+[Releases](https://github.com/commercelayer/rail0-cli/releases), or in one line:
+
+```sh
+# macOS arm64 — swap darwin/arm64 for your platform (darwin|linux|windows, amd64|arm64)
+VERSION=$(curl -fsSL https://api.github.com/repos/commercelayer/rail0-cli/releases/latest | sed -n 's/.*"tag_name": *"v\([^"]*\)".*/\1/p')
+curl -fsSL "https://github.com/commercelayer/rail0-cli/releases/download/v${VERSION}/rail0_${VERSION}_darwin_arm64.tar.gz" | tar xz
+sudo mv rail0 /usr/local/bin/
+rail0 init          # guided setup
+```
+
+Each archive also carries the **shell completions** (`completions/`), the **man
+pages** (`man/man1/`) and the command reference (`docs/`), so an installed binary is
+self-documenting:
+
+```sh
+sudo cp man/man1/*.1 /usr/local/share/man/man1/   # then: man rail0
+cp completions/_rail0 "${fpath[1]}/"              # zsh; see `rail0 completion --help`
+```
+
+Verify the download against `checksums.txt` from the same release.
+
+> **Building from source is not an option for external users**, and that is why the
+> release binaries matter: the build needs the `rail0-go` SDK as a sibling checkout
+> (`replace` directive in `go.mod`) and that repository is private.
+
+### Build from source (contributors)
+
+Clone this repo and the `rail0-go` SDK **as siblings**, then build. rail0-cli imports the SDK through `replace github.com/rail0/go-sdk =>
 ../rail0-go` (see `go.mod`), so `rail0-go` must sit next to `rail0-cli`.
 
 Both repositories must be present as siblings:
@@ -48,6 +78,27 @@ Manual build (no alias) is still just `go build -o rail0 . && mv rail0 /usr/loca
 
 Check the installed version with `rail0 version` (or `rail0 --version`); `bin/build`
 stamps it from `git describe`.
+
+### Guided setup (`rail0 init`)
+
+```sh
+rail0 init
+```
+
+Walks the four steps a first payment needs, each skippable: pick a gateway (writes
+`base-url`), check it answers, optionally save a signing key in the OS keychain
+(referenced later as `@name`), optionally sign in with it. Safe to re-run on a
+half-configured machine.
+
+It composes the existing commands rather than reimplementing them, so `rail0 env`,
+`rail0 health`, `rail0 keys add` and `rail0 auth login` are exactly what it runs — and
+`keys add`'s refusal to overwrite an orphaned keychain entry still applies. In a
+script, run those four directly; `init` is interactive and says so instead of hanging
+on a prompt.
+
+The gateway is checked **before** the key and the sign-in on purpose: both are wasted
+effort against a gateway that is not there, and a connection error right after pasting
+a private key reads as if the key were the problem.
 
 ### Reference docs
 

@@ -6,7 +6,16 @@ CLI for the RAIL0 stablecoin payment protocol
 
 rail0 is a command-line interface for the RAIL0 stablecoin payment gateway.
 
+QUICKSTART
+  rail0 init                       guided setup: gateway, key, sign-in
+  rail0 payment-methods -A 0x…     what a merchant accepts (public, no login)
+  rail0 payments create …          create + sign a payment as the payer
+  rail0 payments capture <id> -a … capture it as the payee
+
 Defaults to https://api.rail0.xyz. Override with --base-url or RAIL0_BASE_URL.
+
+Note the singular/plural pair: 'rail0 token' prints your SESSION JWT, while
+'rail0 tokens' lists the gateway's accepted PAYMENT tokens.
 
 Use 'rail0 <command> --help' for detailed usage of any command.
 
@@ -31,6 +40,7 @@ Use 'rail0 <command> --help' for detailed usage of any command.
 * [rail0 disputes](rail0_disputes.md)	 - List every dispute on your payments (requires login)
 * [rail0 env](rail0_env.md)	 - Switch the active environment (development/staging/production) in one shot
 * [rail0 health](rail0_health.md)	 - Report gateway health (liveness/readiness)
+* [rail0 init](rail0_init.md)	 - Guided first-run setup: environment, key, sign-in
 * [rail0 keys](rail0_keys.md)	 - Manage signing keys in the OS keychain (lists names when run bare)
 * [rail0 payment-methods](rail0_payment-methods.md)	 - Discover a merchant's accepted wallets/tokens (public, no login)
 * [rail0 payments](rail0_payments.md)	 - Payment lifecycle operations

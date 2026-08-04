@@ -1,6 +1,6 @@
 ## rail0 config
 
-Manage persisted CLI defaults (e.g. base-url)
+Manage persisted CLI defaults (base-url, chain-id, token, output, http-timeout)
 
 ### Synopsis
 
@@ -9,7 +9,13 @@ Manage persisted CLI defaults stored in the config file.
 Run bare to list every setting with its effective value and where it comes from.
 Resolution precedence is: flag  >  env var  >  config file  >  built-in default.
 
-Only non-sensitive values are stored — never private keys or tokens.
+A stored default fills in the matching flag when you omit it, so the chain and the
+token can be set once instead of on every command. 'rail0 env <name>' sets both in
+one shot along with the gateway.
+
+Addresses and signing keys are NOT settable here: use the alias book ('rail0 aliases
+add') and the OS keychain ('rail0 keys add', passed as @name), which already spare
+you the retyping without making the parties or the signer implicit.
 
 ```
 rail0 config [flags]
@@ -20,8 +26,10 @@ rail0 config [flags]
 ```
   rail0 config
   rail0 config set base-url http://localhost:9292
-  rail0 config get base-url
-  rail0 config unset base-url
+  rail0 config set chain-id 5042002
+  rail0 config set token USDC
+  rail0 config get chain-id
+  rail0 config unset chain-id
 ```
 
 ### Options

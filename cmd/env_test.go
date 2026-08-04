@@ -85,10 +85,10 @@ func TestEnvSwitchDetailsGating(t *testing.T) {
 	// The switch confirmation lists parameters only with -d; bare it is just
 	// status + env name.
 	none := sessionRevocation{}
-	if _, ok := switchResult("staging", false, none)["settings"]; ok {
+	if _, ok := switchResult("staging", false, none, false)["settings"]; ok {
 		t.Error("switch without -d must omit settings")
 	}
-	res := switchResult("staging", true, none)
+	res := switchResult("staging", true, none, false)
 	if _, ok := res["settings"]; !ok {
 		t.Error("switch with -d must include settings")
 	}
@@ -117,7 +117,7 @@ func TestEnvSwitchReportsThePreviousSession(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			res := switchResult("staging", false, tc.revocation)
+			res := switchResult("staging", false, tc.revocation, false)
 			if got := res["previous_session"]; got != tc.want {
 				t.Errorf("previous_session = %v, want %q", got, tc.want)
 			}

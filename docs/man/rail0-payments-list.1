@@ -15,8 +15,13 @@ Requires authentication — run 'rail0 auth login -p 0xKey…' first.
 
 .PP
 Filter with --status, --mode, --payer, --payee, --token, --chain-id, --disputed,
---min-amount / --max-amount (token base units), and --created-from /
---created-to (ISO-8601).
+--min-amount / --max-amount, and --created-from / --created-to (ISO-8601).
+
+.PP
+--min-amount / --max-amount are DECIMALS in token units ('1.00'), like every other
+amount flag. Converting them to the base units the gateway filters on needs the
+token's decimals, so both --chain-id and --token are required with them — and an
+amount range only means something within one token anyway.
 
 
 .SH OPTIONS
@@ -45,11 +50,11 @@ Filter with --status, --mode, --payer, --payee, --token, --chain-id, --disputed,
 
 .PP
 \fB--max-amount\fP=""
-	Maximum amount in token base units (inclusive)
+	Maximum amount as a decimal in token units (inclusive); needs --chain-id and --token
 
 .PP
 \fB--min-amount\fP=""
-	Minimum amount in token base units (inclusive)
+	Minimum amount as a decimal in token units (inclusive); needs --chain-id and --token
 
 .PP
 \fB--mode\fP=""

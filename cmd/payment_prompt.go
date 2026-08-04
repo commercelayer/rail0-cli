@@ -94,7 +94,11 @@ func pickFromList(ctx context.Context, client *rail0.Client, op string) (string,
 		if len(allowed) > 0 && !allowed[p.Status] {
 			continue
 		}
-		label := fmt.Sprintf("%s… · %s · amount %s", shortID(string(p.Rail0Id)), p.Status, p.Amount)
+		// Human decimal, not base units: this is the line where the operator chooses
+		// WHICH payment to act on, so a figure at an unstated scale is worse here
+		// than anywhere else in the CLI.
+		label := fmt.Sprintf("%s… · %s · %s", shortID(string(p.Rail0Id)), p.Status,
+			amountLabel(ctx, string(p.Amount), p.ChainID, string(p.Token)))
 		opts = append(opts, huh.NewOption(label, string(p.Rail0Id)))
 	}
 	if len(opts) == 0 {

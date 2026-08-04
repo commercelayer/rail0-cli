@@ -8,8 +8,12 @@ Returns all payments where your wallet is payer or payee.
 Requires authentication — run 'rail0 auth login -p 0xKey…' first.
 
 Filter with --status, --mode, --payer, --payee, --token, --chain-id, --disputed,
---min-amount / --max-amount (token base units), and --created-from /
---created-to (ISO-8601).
+--min-amount / --max-amount, and --created-from / --created-to (ISO-8601).
+
+--min-amount / --max-amount are DECIMALS in token units ('1.00'), like every other
+amount flag. Converting them to the base units the gateway filters on needs the
+token's decimals, so both --chain-id and --token are required with them — and an
+amount range only means something within one token anyway.
 
 ```
 rail0 payments list [flags]
@@ -34,8 +38,8 @@ rail0 payments list [flags]
       --created-to string     Only payments created at/before this ISO-8601 time
       --disputed              Filter by whether an open dispute exists
   -h, --help                  help for list
-      --max-amount string     Maximum amount in token base units (inclusive)
-      --min-amount string     Minimum amount in token base units (inclusive)
+      --max-amount string     Maximum amount as a decimal in token units (inclusive); needs --chain-id and --token
+      --min-amount string     Minimum amount as a decimal in token units (inclusive); needs --chain-id and --token
       --mode string           Filter by mode (authorize or charge)
       --page int              Page number (1-based)
       --payee string          Filter by payee address

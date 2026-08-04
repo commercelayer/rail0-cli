@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"testing"
 
 	rail0 "github.com/rail0/go-sdk"
@@ -22,7 +23,7 @@ func TestPaymentHistory(t *testing.T) {
 		},
 	}
 
-	h := paymentHistory(p)
+	h := paymentHistory(context.Background(), p)
 
 	// created, signed, authorize, capture — in chronological order.
 	want := []string{"created", "signed", "authorize", "capture"}
@@ -67,7 +68,7 @@ func TestPaymentHistoryInfersSignedWithoutTimestamp(t *testing.T) {
 		Transactions: []rail0.Transaction{{Operation: "authorize", Status: "confirmed", ConfirmedAt: "2026-06-30T08:02:00Z"}},
 	}
 
-	h := paymentHistory(p)
+	h := paymentHistory(context.Background(), p)
 
 	want := []string{"created", "signed", "authorize"}
 	if len(h) != len(want) {
@@ -84,7 +85,7 @@ func TestPaymentHistoryInfersSignedWithoutTimestamp(t *testing.T) {
 	}
 
 	// An unsigned payment shows no signed event.
-	un := paymentHistory(&rail0.Payment{CreatedAt: "2026-06-30T08:00:00Z", Status: "unsigned", Mode: "authorize"})
+	un := paymentHistory(context.Background(), &rail0.Payment{CreatedAt: "2026-06-30T08:00:00Z", Status: "unsigned", Mode: "authorize"})
 	if len(un) != 1 || un[0].(map[string]any)["event"] != "created" {
 		t.Errorf("unsigned payment should have only a created event, got %v", un)
 	}

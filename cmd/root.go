@@ -58,11 +58,7 @@ func init() {
 	rootCmd.PersistentFlags().BoolVar(&prettyOut, "pretty", false, "Use the key-value/table view instead of JSON (terminal only)")
 	rootCmd.PersistentFlags().BoolVarP(&quietOut, "quiet", "q", false, "Print only the result's id/hash, one per line (useful in scripts)")
 
-	cobra.OnInitialize(func() {
-		ui.SetJSON(jsonOut)
-		ui.SetPretty(prettyOut)
-		ui.SetQuiet(quietOut)
-	})
+	cobra.OnInitialize(applyOutputMode)
 
 	rootCmd.AddCommand(paymentsCmd, walletsCmd, paymentMethodsCmd, webhooksCmd, chainsCmd, tokensCmd, authCmd, healthCmd, aliasesCmd, keysCmd, configCmd, envCmd, disputesCmd, analyticsCmd)
 }
@@ -115,22 +111,66 @@ func newReadClient() *rail0.Client {
 	return rail0.NewClient(opts)
 }
 
-// httpTimeout is the per-request HTTP timeout, overridable via
-// RAIL0_HTTP_TIMEOUT (seconds). Distinct from `--timeout` on the wait
-// commands, which is the POLLING deadline — one bounds a single request, the
-// other bounds how long the CLI keeps asking. 0/garbage falls back to the
-// SDK default (30s).
+// httpTimeout is the per-request HTTP timeout, resolved through the config layer
+// (RAIL0_HTTP_TIMEOUT > `config set http-timeout` > SDK default). Distinct from
+// `--timeout` on the wait commands, which is the POLLING deadline — one bounds a
+// single request, the other bounds how long the CLI keeps asking. 0/garbage falls
+// back to the SDK default (30s).
+//
+// The warning still names RAIL0_HTTP_TIMEOUT only when that is where the bad value
+// came from: `config set` validates, so a stored value cannot be garbage, and
+// blaming the env var for a file value would send the user to the wrong place.
 func httpTimeout() time.Duration {
 	raw := os.Getenv("RAIL0_HTTP_TIMEOUT")
+	fromEnv := raw != ""
+	if !fromEnv {
+		raw = configuredDefault("http-timeout")
+	}
 	if raw == "" {
 		return 0 // SDK default
 	}
 	secs, err := strconv.Atoi(raw)
 	if err != nil || secs <= 0 {
-		fmt.Fprintf(os.Stderr, "warning: ignoring invalid RAIL0_HTTP_TIMEOUT=%q (want seconds)\n", raw)
+		if fromEnv {
+			fmt.Fprintf(os.Stderr, "warning: ignoring invalid RAIL0_HTTP_TIMEOUT=%q (want seconds)\n", raw)
+		} else {
+			fmt.Fprintf(os.Stderr, "warning: ignoring invalid stored http-timeout=%q (want seconds)\n", raw)
+		}
 		return 0
 	}
 	return time.Duration(secs) * time.Second
+}
+
+// outputFlagMode reports which output mode was selected BY FLAG, or "" when none
+// was. Kept separate from the resolution below so `config` can name the flag as
+// the origin, instead of reporting a stored default that is being overridden.
+func outputFlagMode() string {
+	switch {
+	case quietOut:
+		return "quiet"
+	case prettyOut:
+		return "pretty"
+	case jsonOut:
+		return "json"
+	}
+	return ""
+}
+
+// applyOutputMode sets the renderer from the flags, falling back to the stored
+// `output` default when none was passed.
+//
+// The flags stay authoritative and are never re-derived from config: a stored
+// `output: quiet` must not survive an explicit --pretty on the command line. Only
+// "auto" is a no-op, since that IS the built-in behaviour (colorized JSON on a
+// terminal, plain JSON when piped).
+func applyOutputMode() {
+	mode := outputFlagMode()
+	if mode == "" {
+		mode = configuredDefault("output")
+	}
+	ui.SetJSON(mode == "json")
+	ui.SetPretty(mode == "pretty")
+	ui.SetQuiet(mode == "quiet")
 }
 
 // ensureSession guarantees a valid SIWE session whose address matches `addr`

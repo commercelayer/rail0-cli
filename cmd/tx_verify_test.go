@@ -185,3 +185,156 @@ func TestVerifyErrorNamesTheActualValue(t *testing.T) {
 		t.Errorf("error = %v, want it to name the offending value", err)
 	}
 }
+
+// ── verifySigningPayload ─────────────────────────────────────────────────────
+//
+// The EIP-1559 guard above had no counterpart for the EIP-712 authorization, which
+// is the more dangerous artifact of the two: the token honours it directly, with no
+// RAIL0 involvement, for up to message.value. So an endpoint reachable via
+// --base-url could answer a refund prepare with the payee's whole balance as `value`
+// and have it signed verbatim.
+
+const (
+	testPayloadToken = "0x3333333333333333333333333333333333333333"
+	// The attacker's address in the hostile cases below.
+	testAttacker = "0x4444444444444444444444444444444444444444"
+)
+
+func testPayload(overrides func(*rail0.SigningPayload)) *rail0.SigningPayload {
+	sp := &rail0.SigningPayload{
+		PrimaryType: "ReceiveWithAuthorization",
+		Domain: rail0.EIP712Domain{
+			Name:              "USD Coin",
+			Version:           "2",
+			ChainId:           testChainID,
+			VerifyingContract: rail0.Address(testPayloadToken),
+		},
+		Message: rail0.EIP3009Message{
+			From:        rail0.Address(testSigner),
+			To:          "0x2222222222222222222222222222222222222222",
+			Value:       "1000000",
+			ValidAfter:  "0",
+			ValidBefore: "2000000000",
+			Nonce:       rail0.Bytes32("0x" + strings.Repeat("ab", 32)),
+		},
+	}
+	if overrides != nil {
+		overrides(sp)
+	}
+	return sp
+}
+
+func testExpectation() payloadExpectation {
+	return payloadExpectation{
+		signer:         testSigner,
+		chainID:        testChainID,
+		token:          testPayloadToken,
+		valueBaseUnits: "1000000",
+	}
+}
+
+// The happy path must sail through, or every signing command breaks.
+func TestVerifySigningPayloadAcceptsAWellFormedPayload(t *testing.T) {
+	if err := verifySigningPayload(testPayload(nil), testExpectation()); err != nil {
+		t.Fatalf("rejected a well-formed payload: %v", err)
+	}
+
+	// Addresses are compared case-insensitively — the gateway may return checksummed.
+	upper := testPayload(func(sp *rail0.SigningPayload) {
+		sp.Message.From = rail0.Address(strings.ToUpper(testSigner))
+		sp.Domain.VerifyingContract = rail0.Address(strings.ToUpper(testPayloadToken))
+	})
+	if err := verifySigningPayload(upper, testExpectation()); err != nil {
+		t.Errorf("rejected checksum-cased addresses: %v", err)
+	}
+}
+
+func TestVerifySigningPayloadRejectsHostilePayloads(t *testing.T) {
+	cases := []struct {
+		name    string
+		mutate  func(*rail0.SigningPayload)
+		wantErr string
+	}{
+		{
+			// THE case this exists for: a drain of the signer's whole balance, which
+			// the token would honour on its own.
+			name: "value inflated far past the amount asked for",
+			mutate: func(sp *rail0.SigningPayload) {
+				sp.Message.Value = "999999999999"
+			},
+			wantErr: "999999999999",
+		},
+		{
+			// An authorization from someone else is useless to sign, and is the shape a
+			// swapped payload takes.
+			name: "from is not the signing key",
+			mutate: func(sp *rail0.SigningPayload) {
+				sp.Message.From = rail0.Address(testAttacker)
+			},
+			wantErr: "the signing key is",
+		},
+		{
+			// Minted against a different token the signer happens to hold.
+			name: "domain names another token",
+			mutate: func(sp *rail0.SigningPayload) {
+				sp.Domain.VerifyingContract = rail0.Address(testAttacker)
+			},
+			wantErr: "token",
+		},
+		{
+			name: "domain names another chain",
+			mutate: func(sp *rail0.SigningPayload) {
+				sp.Domain.ChainId = testChainID + 1
+			},
+			wantErr: "chain",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := verifySigningPayload(testPayload(tc.mutate), testExpectation())
+			if err == nil {
+				t.Fatal("expected a refusal, got nil")
+			}
+			if !strings.Contains(err.Error(), "refusing to sign") {
+				t.Errorf("error should say it is refusing to sign, got: %v", err)
+			}
+			if !strings.Contains(err.Error(), tc.wantErr) {
+				t.Errorf("error should mention %q, got: %v", tc.wantErr, err)
+			}
+		})
+	}
+}
+
+// Every field is optional: an expectation the caller could not resolve must skip its
+// check rather than compare against a zero value and refuse a legitimate payload.
+func TestVerifySigningPayloadSkipsUnknownExpectations(t *testing.T) {
+	// Only the signer is known — e.g. the token's decimals could not be resolved, so
+	// the amount cannot be scaled locally.
+	if err := verifySigningPayload(testPayload(nil), payloadExpectation{signer: testSigner}); err != nil {
+		t.Errorf("an expectation with only a signer must not refuse: %v", err)
+	}
+	// A payload the gateway did not include is reported by the caller, not here.
+	if err := verifySigningPayload(nil, testExpectation()); err != nil {
+		t.Errorf("a nil payload must be left to the caller: %v", err)
+	}
+}
+
+// The signingContext form takes chain and token off the payment it already fetched.
+func TestSigningContextVerifySigningPayloadUsesThePayment(t *testing.T) {
+	sc := &signingContext{
+		payment: &rail0.Payment{
+			Rail0Id: rail0.Bytes32(testRail0ID),
+			ChainID: testChainID,
+			Token:   rail0.Address(testPayloadToken),
+		},
+		signer: testSigner,
+	}
+	if err := sc.verifySigningPayload(testPayload(nil), "1000000"); err != nil {
+		t.Fatalf("rejected a well-formed payload: %v", err)
+	}
+	hostile := testPayload(func(sp *rail0.SigningPayload) { sp.Message.Value = "50000000000" })
+	if err := sc.verifySigningPayload(hostile, "1000000"); err == nil {
+		t.Error("expected a refusal for an inflated value")
+	}
+}

@@ -187,7 +187,7 @@ func switchEnv(name string, details bool) error {
 	if err != nil {
 		return err
 	}
-	// BEFORE the base URL moves: end the session on the gateway we are leaving.
+	// BEFORE the base URL moves: end the session on the gateway we are LEAVING.
 	// Tokens are stored per gateway, so a switch used to simply orphan the old
 	// one — a bearer credential left on disk, valid on that gateway until its
 	// `exp` (24h), for a session nobody is watching any more. Revoking puts its
@@ -195,7 +195,23 @@ func switchEnv(name string, details bool) error {
 	//
 	// Deliberately before cfg.Save(): revokeCurrentSession resolves the CURRENT
 	// base URL, and after the save that would be the new environment's.
-	revoked := revokeCurrentSession()
+	//
+	// Only when there IS somewhere to leave. This ran unconditionally, so switching
+	// to the environment you were already on logged you out of it: nothing was
+	// orphaned (the base URL does not move, so the token still belongs to the
+	// gateway in use), but its jti went on the denylist and the file was deleted.
+	// `rail0 init` made that the default path rather than an edge case — it
+	// pre-selects the current environment via detectEnv() and always calls through
+	// here, so accepting the default and declining to save a key ended the "guided
+	// setup" logged out, from a command whose help says nothing here is
+	// irreversible.
+	// The zero value reads as "there was no session to end", which is exactly the
+	// state a same-environment switch is in: the session it would have revoked is
+	// the one still in use.
+	var revoked sessionRevocation
+	if detectEnv() != name {
+		revoked = revokeCurrentSession()
+	}
 
 	cfg, err := config.Load()
 	if err != nil {

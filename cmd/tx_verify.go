@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -125,4 +126,133 @@ func checkCalldataPaymentID(data, rail0ID string) error {
 		return fmt.Errorf("refusing to sign: the call acts on payment 0x%s but you asked for 0x%s", got, want)
 	}
 	return nil
+}
+
+// ── EIP-712 / EIP-3009 authorization ─────────────────────────────────────────
+
+// payloadExpectation is what the caller independently knows about the
+// authorization it asked for. Every field is optional: a zero value means "not
+// known here", and that check is skipped rather than guessed at.
+type payloadExpectation struct {
+	// Address derived from the private key about to sign. Always known.
+	signer string
+	// Chain the authorization must be scoped to. 0 = unknown.
+	chainID int
+	// Token contract the authorization must be against — the EIP-712 domain's
+	// verifyingContract for EIP-3009. "" = unknown.
+	token string
+	// Exact amount in TOKEN BASE UNITS. "" = unknown (e.g. the token's decimals
+	// could not be resolved, so the human amount cannot be scaled locally).
+	valueBaseUnits string
+}
+
+// verifySigningPayload is signingContext.verify's counterpart for the EIP-712
+// authorization, and exists for the same threat model: a hostile or merely
+// misconfigured endpoint — reachable via --base-url or RAIL0_BASE_URL — could have
+// the user's own key sign something they never asked for.
+//
+// It guarded only the EIP-1559 transaction, which is the LESS dangerous of the two
+// artifacts. A malicious transaction costs gas and goes through RAIL0; an EIP-3009
+// authorization is a bearer instrument the TOKEN honours directly, with no RAIL0
+// involvement, for up to message.value — so an endpoint that answered a refund
+// prepare with {from: <payee>, to: <attacker>, value: <the payee's whole balance>}
+// got that signed verbatim and could replay it against USDC. Phase 2 and verify()
+// never entered into it: the signature was already handed over.
+//
+// Asserting here does NOT break the sign-the-payload-verbatim rule (#93). The
+// typehash still comes from the payload's own primaryType and the digest is still
+// built from its message; this only refuses to sign a message whose fields
+// contradict what the caller asked for. Every value compared is already in hand, so
+// there is no extra round-trip — same property as verify().
+//
+// What it does NOT check, and why: message.to, which for both RAIL0 flows is the
+// RAIL0 contract. The CLI cannot know that address — it is exposed only on
+// /sync/blockchains, which is HMAC-protected for the indexer, and the catalog the
+// CLI caches holds tokens, not contracts (the same limitation verify() documents).
+// So the residual exposure is an authorization for the RIGHT token, on the RIGHT
+// chain, from the RIGHT signer, for EXACTLY the amount the user typed, payable to an
+// address of the endpoint's choosing. That is a bounded loss of the intended amount
+// instead of an unbounded drain of the balance.
+//
+// One caveat worth stating: valueBaseUnits is derived by scaling the user's decimal
+// amount with the token's decimals, and those decimals come from the catalog — i.e.
+// from the same endpoint. A hostile one could overstate them to inflate the value it
+// gets signed. The check still holds the amount to what the user typed under the
+// endpoint's own declared scale, and every other field above is compared against
+// something the user supplied or the CLI derived locally.
+func verifySigningPayload(sp *rail0.SigningPayload, want payloadExpectation) error {
+	if sp == nil {
+		// Callers that require a payload already say so more precisely (create
+		// answers 502 signing_payload_unavailable; sign reports the status).
+		return nil
+	}
+
+	// The authorization must be FROM the key about to sign it. This is the one
+	// comparison whose right-hand side is derived locally from the private key, so
+	// it holds no matter what the endpoint claims.
+	if want.signer != "" && !strings.EqualFold(string(sp.Message.From), want.signer) {
+		return fmt.Errorf(
+			"refusing to sign: the authorization is from %s but the signing key is %s",
+			sp.Message.From, want.signer)
+	}
+
+	if want.chainID != 0 && sp.Domain.ChainId != want.chainID {
+		return fmt.Errorf(
+			"refusing to sign: the authorization is scoped to chain %d but this payment is on chain %d",
+			sp.Domain.ChainId, want.chainID)
+	}
+
+	// For EIP-3009 the domain's verifyingContract IS the token: this is what stops an
+	// authorization being minted against a different token the signer happens to hold.
+	if want.token != "" && !strings.EqualFold(string(sp.Domain.VerifyingContract), want.token) {
+		return fmt.Errorf(
+			"refusing to sign: the authorization is against token %s but this payment's token is %s",
+			sp.Domain.VerifyingContract, want.token)
+	}
+
+	// Exact, not a ceiling: the gateway signs for the full amount of the operation,
+	// so anything else is a mismatch rather than a partial authorization.
+	if want.valueBaseUnits != "" && string(sp.Message.Value) != want.valueBaseUnits {
+		return fmt.Errorf(
+			"refusing to sign: the authorization is for %s base units but you asked for %s",
+			sp.Message.Value, want.valueBaseUnits)
+	}
+
+	return nil
+}
+
+// verifySigningPayload for a payment already fetched from the gateway: chain and
+// token come from the payment record, the amount from its stored base-unit value.
+func (sc *signingContext) verifySigningPayload(sp *rail0.SigningPayload, valueBaseUnits string) error {
+	want := payloadExpectation{signer: sc.signer, valueBaseUnits: valueBaseUnits}
+	if sc.payment != nil {
+		want.chainID = sc.payment.ChainID
+		want.token = string(sc.payment.Token)
+	}
+	return verifySigningPayload(sp, want)
+}
+
+// expectedBaseUnits scales the human amount the USER typed by the token's decimals,
+// for comparison against the authorization's value.
+//
+// The user's own input is the trustworthy side here, which is why this scales that
+// rather than reading the amount back off the gateway's response — comparing a
+// gateway value against another gateway value would assert nothing.
+//
+// Returns "" when the decimals cannot be resolved (an unknown or retired token, or a
+// catalog read that failed), so the caller skips the value check instead of comparing
+// against a guessed scale.
+func expectedBaseUnits(ctx context.Context, chainID int, token, humanAmount string) string {
+	if humanAmount == "" || token == "" || chainID == 0 {
+		return ""
+	}
+	decimals, ok := tokenDecimals(ctx, chainID, token)
+	if !ok {
+		return ""
+	}
+	units, err := rail0.ToBaseUnits(humanAmount, decimals)
+	if err != nil {
+		return ""
+	}
+	return units
 }

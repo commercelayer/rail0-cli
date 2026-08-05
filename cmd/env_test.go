@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/rail0/cli/internal/config"
+	"github.com/rail0/cli/internal/token"
 )
 
 // isolate points the config dir at a temp dir and clears the base-url env
@@ -127,4 +128,69 @@ func TestEnvSwitchReportsThePreviousSession(t *testing.T) {
 			}
 		})
 	}
+}
+
+// Switching to the environment you are ALREADY on used to revoke the session it
+// would have been leaving — which is the one still in use. Nothing is orphaned in
+// that case (the base URL does not move), so there is nothing to revoke.
+//
+// `rail0 init` made this the default path rather than an edge case: it pre-selects
+// the current environment and always calls through switchEnv, so accepting the
+// default ended the guided setup logged out.
+func TestEnvSwitchToTheSameEnvironmentKeepsTheSession(t *testing.T) {
+	isolate(t)
+
+	// Land on staging, then store a session for it.
+	if err := switchEnv("staging", false); err != nil {
+		t.Fatalf("switch staging: %v", err)
+	}
+	baseURL, _ := effectiveSetting(mustKey(t, envIdentityKey))
+	if baseURL == "" {
+		t.Fatal("no base-url after switching to staging")
+	}
+	if err := token.Save(baseURL, "header.payload.signature"); err != nil {
+		t.Fatalf("save token: %v", err)
+	}
+
+	// Switching to staging again must leave it alone.
+	if err := switchEnv("staging", false); err != nil {
+		t.Fatalf("re-switch staging: %v", err)
+	}
+	if got := token.Load(baseURL); got == "" {
+		t.Error("re-switching to the current environment deleted its session")
+	}
+}
+
+// The guard must not weaken the real case: a switch that DOES move the base URL
+// still ends the session it leaves behind.
+func TestEnvSwitchToAnotherEnvironmentStillClearsTheSession(t *testing.T) {
+	isolate(t)
+
+	if err := switchEnv("staging", false); err != nil {
+		t.Fatalf("switch staging: %v", err)
+	}
+	stagingURL, _ := effectiveSetting(mustKey(t, envIdentityKey))
+	if err := token.Save(stagingURL, "header.payload.signature"); err != nil {
+		t.Fatalf("save token: %v", err)
+	}
+
+	// No gateway is reachable here, so the revocation cannot be confirmed — but the
+	// local token must be gone either way, which is the property that matters: a
+	// bearer credential for a gateway nobody is watching any more.
+	if err := switchEnv("development", false); err != nil {
+		t.Fatalf("switch development: %v", err)
+	}
+	if got := token.Load(stagingURL); got != "" {
+		t.Error("switching away left the previous gateway's session on disk")
+	}
+}
+
+// mustKey resolves a setting name to the descriptor effectiveSetting takes.
+func mustKey(t *testing.T, name string) configKey {
+	t.Helper()
+	k, err := lookupKey(name)
+	if err != nil {
+		t.Fatalf("lookupKey(%q): %v", name, err)
+	}
+	return k
 }

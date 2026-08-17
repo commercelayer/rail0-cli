@@ -284,6 +284,18 @@ sent from an address to itself.`,
 			if err != nil {
 				return nil, err
 			}
+			// Check the authorization against what was ASKED FOR before signing it.
+			// Everything on the right-hand side here came from the user (the flags
+			// they typed) or from the key itself, not from the response being
+			// checked — see verifySigningPayload.
+			if err := verifySigningPayload(created.SigningPayload, payloadExpectation{
+				signer:         signer,
+				chainID:        req.ChainID,
+				token:          string(req.Token),
+				valueBaseUnits: expectedBaseUnits(ctx, req.ChainID, string(req.Token), req.Amount),
+			}); err != nil {
+				return nil, err
+			}
 			// Sign the gateway's payload verbatim — see cmd/signing.go for why the
 			// CLI must not rebuild the digest (#93).
 			sig, err := signSigningPayload(created.SigningPayload, signingKey)
@@ -353,6 +365,16 @@ recovered signer is the payment's payer.`,
 				return nil, fmt.Errorf(
 					"payment %s is %s, not unsigned — there is no signature to deposit",
 					args[0], payment.Status)
+			}
+			// The payment's own stored amount is the expectation here: the caller named
+			// a payment rather than an amount, so this is what they are agreeing to.
+			if err := verifySigningPayload(payment.SigningPayload, payloadExpectation{
+				signer:         signer,
+				chainID:        payment.ChainID,
+				token:          string(payment.Token),
+				valueBaseUnits: payment.Amount,
+			}); err != nil {
+				return nil, err
 			}
 			sig, err := signSigningPayload(payment.SigningPayload, signingKey)
 			if err != nil {
@@ -910,6 +932,14 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 				return nil, errors.New("refund prepare did not return a signing_payload")
 			}
 
+			// This is the payload the whole guard exists for: a ReceiveWithAuthorization
+			// is honoured by the token itself, so an endpoint that answered with the
+			// payee's whole balance as `value` used to get exactly that signed.
+			// `refundAmount` is what the user typed, scaled locally.
+			if err := sc.verifySigningPayload(phase1.SigningPayload,
+				expectedBaseUnits(ctx, sc.payment.ChainID, string(sc.payment.Token), refundAmount)); err != nil {
+				return nil, err
+			}
 			// Sign the EIP-3009 ReceiveWithAuthorization payload (payee key).
 			v, r, s, err := signRefundPayload(phase1.SigningPayload, signingKey)
 			if err != nil {

@@ -40,7 +40,7 @@ rail0 payments refund <rail0Id> [flags]
   -a, --amount string        Amount to refund as a decimal in token units (e.g. 1.00); > 0 and ≤ refundable
   -h, --help                 help for refund
   -p, --private-key string   Caller's secp256k1 private key (0x-prefixed hex); signs and broadcasts in one step
-      --timeout duration     Max time to wait when --wait is set (default 2m0s)
+      --timeout duration     Max time to wait when --wait is set — the default covers the slowest chain's finality (default 15m0s)
   -w, --wait                 Block until the operation confirms on-chain (or fails)
   -y, --yes                  Skip the confirmation prompt (required to run non-interactively)
 ```

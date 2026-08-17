@@ -41,8 +41,8 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.
 	Caller's secp256k1 private key (0x-prefixed hex); signs and broadcasts in one step
 
 .PP
-\fB--timeout\fP=2m0s
-	Max time to wait when --wait is set
+\fB--timeout\fP=15m0s
+	Max time to wait when --wait is set — the default covers the slowest chain's finality
 
 .PP
 \fB-w\fP, \fB--wait\fP[=false]

@@ -27,6 +27,40 @@ var (
 // for real seconds.
 var waitPollInterval = 2 * time.Second
 
+// Default polling deadline for --wait.
+//
+// It was 2 minutes, chosen when every chain gated its notify at ONE confirmation, so a
+// capture confirmed in seconds. The gateway and indexer now gate on the chain's own
+// `safe`/`finalized` block (commercelayer/rail0-indexer#91), and the measured lag of
+// that block from the head is:
+//
+//	Arc Testnet        safe = head        ~0
+//	Polygon Amoy       finalized ≈ head   ~0
+//	OP Sepolia         safe               ~1.8 min
+//	Base Sepolia       safe               ~2.0 min
+//	Arbitrum Sepolia   safe               ~11.0 min   (2640 blocks, L1 batch cadence)
+//
+// So the old default could not be reached on Arbitrum Sepolia at all, and on Base/OP the
+// tag's lag alone consumed the whole budget before the notifier's tick and the gateway's
+// apply. Every `--wait` there exited non-zero for an operation that was simply not
+// settled yet — and a script reads non-zero as failure, so the natural retry of a capture
+// attempts a SECOND capture. That is the cost this number carries.
+//
+// 15 minutes covers the slowest chain served today with margin. It is deliberately a
+// single number rather than a per-chain one: the wait a chain needs is a fact the GATEWAY
+// knows (`finality_tag`, `required_confirmations`) but does not publish in seconds and
+// cannot today — neither it nor the seeds carry a block time — and the public catalog
+// omits both fields anyway. Guessing per-chain here would put chain knowledge in the
+// client, which is what #193 and the catalog exist to avoid. See
+// commercelayer/rail0-gateway#200.
+//
+// The trade is honest and one-sided: on a fast chain a genuinely stuck operation now
+// takes 15 minutes to be reported instead of 2. Nothing is lost by waiting — the progress
+// line keeps saying the wait is alive, Ctrl-C says what is still running, and the give-up
+// message names the check command. Whereas a deadline shorter than settlement reports a
+// healthy operation as a failure, which is the error that costs money.
+const defaultWaitTimeout = 15 * time.Minute
+
 // How many polls between progress lines on stderr. Off a TTY (--json, -q, CI)
 // there is no spinner, so a wait used to be COMPLETELY silent for up to two
 // minutes with no way to tell it apart from a hang. Every 5th poll is one line
@@ -75,7 +109,8 @@ func transientPollError(err error) bool {
 // returning at the gateway's 202.
 func addWaitFlags(cmd *cobra.Command) {
 	cmd.Flags().BoolVarP(&waitFlag, "wait", "w", false, "Block until the operation confirms on-chain (or fails)")
-	cmd.Flags().DurationVar(&waitTimeout, "timeout", 2*time.Minute, "Max time to wait when --wait is set")
+	cmd.Flags().DurationVar(&waitTimeout, "timeout", defaultWaitTimeout,
+		"Max time to wait when --wait is set — the default covers the slowest chain\x27s finality")
 }
 
 // actionLabel appends a "waiting" hint to the spinner label when --wait is set,
@@ -192,6 +227,11 @@ func interruptedError(checkCmd string) error {
 // carries the last transport error when the wait spent itself on blips.
 func gaveUpError(timeout time.Duration, checkCmd string, lastTransient error) error {
 	msg := fmt.Sprintf("stopped waiting after %s — the operation may still be in flight; check it with '%s'", timeout, checkCmd)
+	// Name the usual cause, because the usual cause is not a problem: the gateway is
+	// notified only once the chain calls the block settled, which on a slow chain is
+	// minutes rather than seconds. Without this the message reads as "something is
+	// wrong" for the one case where nothing is.
+	msg += " — a wait longer than expected is usually the chain's finality, not a failure; --timeout raises the budget"
 	if lastTransient != nil {
 		msg += fmt.Sprintf(" (last read error: %v)", lastTransient)
 	}
@@ -367,6 +407,7 @@ func init() {
 		func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
 			return paymentStatuses, cobra.ShellCompDirectiveNoFileComp
 		})
-	paymentsWaitCmd.Flags().DurationVar(&waitTimeout, "timeout", 2*time.Minute, "Max time to wait")
+	paymentsWaitCmd.Flags().DurationVar(&waitTimeout, "timeout", defaultWaitTimeout,
+		"Max time to wait — the default covers the slowest chain\x27s finality")
 	paymentsCmd.AddCommand(paymentsWaitCmd)
 }

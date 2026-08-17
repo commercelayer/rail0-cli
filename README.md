@@ -432,7 +432,7 @@ Every on-chain action command (`authorize`, `charge`, `capture`, `void`, `releas
 |------|-------|-------------|
 | `--private-key` | `-p` | Caller's secp256k1 private key: 0x-prefixed hex, or `@name` for a key saved in the OS keychain (`rail0 keys add`) |
 | `--wait` | `-w` | Block until the operation confirms on-chain (or fails) instead of returning at the `202` |
-| `--timeout` | — | Max time to wait with `--wait` (default `2m`) |
+| `--timeout` | — | Max time to wait with `--wait` (default `15m`). The gateway is notified only once the chain calls the block settled, so settlement is minutes, not seconds: ~2 min on Base/OP Sepolia and ~11 min on Arbitrum Sepolia (its `safe` block sits ~2640 blocks back, on L1 batch cadence), ~0 on Arc and Amoy. The old `2m` default could not be reached on Arbitrum at all — and a `--wait` that gives up exits non-zero, which a script reads as a failed capture. Lower it on a fast chain if you want a stuck operation reported sooner |
 | `--yes` | `-y` | Skip the confirmation prompt on any irreversible op (`void`/`release`/`refund`, `keys rm`, `wallets delete`, `webhooks delete`/`rotate-secret`); required to run them non-interactively |
 
 **Waiting for confirmation.** The gateway returns `202` immediately and the indexer

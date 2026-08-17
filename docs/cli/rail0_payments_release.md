@@ -36,7 +36,7 @@ rail0 payments release <rail0Id> [flags]
 ```
   -h, --help                 help for release
   -p, --private-key string   Caller's secp256k1 private key (0x-prefixed hex); signs and broadcasts in one step
-      --timeout duration     Max time to wait when --wait is set (default 2m0s)
+      --timeout duration     Max time to wait when --wait is set — the default covers the slowest chain's finality (default 15m0s)
   -w, --wait                 Block until the operation confirms on-chain (or fails)
   -y, --yes                  Skip the confirmation prompt (required to run non-interactively)
 ```

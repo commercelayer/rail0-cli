@@ -26,8 +26,8 @@ Close a dispute (payer only): prepare, sign, broadcast
 	bytes32 reason code (0x…); defaults to zero
 
 .PP
-\fB--timeout\fP=2m0s
-	Max time to wait when --wait is set
+\fB--timeout\fP=15m0s
+	Max time to wait when --wait is set — the default covers the slowest chain's finality
 
 .PP
 \fB-w\fP, \fB--wait\fP[=false]

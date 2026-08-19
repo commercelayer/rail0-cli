@@ -12,7 +12,7 @@ Command-line interface for the [RAIL0](https://rail0.xyz) stablecoin payment pro
 - [Installation](#installation) — [release binary](#download-a-release-binary-recommended) · [from source](#build-from-source-contributors) · [`rail0 init`](#guided-setup-rail0-init)
 - [**Your first payment**](#your-first-payment) — the guided path
 - [Shell completion](#shell-completion)
-- [Configuration](#configuration) — [defaults](#persisted-defaults-config) · [environments](#environments-env) · [address book](#address-book-aliases) · [signing keys](#signing-keys-os-keychain) · [a broken config file](#if-the-config-file-goes-bad)
+- [Configuration](#configuration) — [defaults](#persisted-defaults-config) · [environments](#environments-env) · [address book](#address-book-aliases) · [signing keys](#signing-keys-os-keychain)
 - [Signing modes](#signing-modes) — who signs what, and when
 - [Commands](#commands) — the full reference, including [repairing a webhook](#repairing-a-webhook-that-stopped-delivering)
 - [Full flow examples](#full-flow-examples) — authorize/capture, charge, refund
@@ -313,17 +313,6 @@ config file. Precedence is: **flag  >  env var  >  config file  >  built-in defa
 | `--pretty`   | —                    | Key-value/table view instead of JSON (terminal only) |
 | `--quiet` / `-q` | —                | Print only the result's id/hash, one per line — no JSON parser needed |
 | — | `RAIL0_HTTP_TIMEOUT` | Per-request HTTP timeout in seconds (default 30). Distinct from the wait commands' `--timeout`, which is the polling deadline |
-
-#### If the config file goes bad
-
-A file the CLI cannot parse is **ignored, with a warning naming it** — commands keep working on flags, env vars and defaults, so nothing is blocked. Reads refuse rather than act on settings they could not read.
-
-Any command that *writes* the config replaces it: `config set`, `config unset`, `env <name>`, `aliases add`/`rm`, `keys add`/`rm`. They say on stderr that the old contents are gone — which they are, since keys inside unparseable YAML cannot be recovered by any means. So the fastest repair is simply to pick an environment again:
-
-```sh
-rail0 config path      # where it lives, if you'd rather look first
-rail0 env staging      # rewrites the file, valid
-```
 
 ### Amounts and expiries in the output
 

@@ -17,10 +17,13 @@ directly from payer to payee without an escrow window.
 .PP
 The payment must have been created with -C/--charge and signed by the
 payer via 'payments create -p' (create + sign in one atomic step).
-The API returns 202 immediately. The payment stays at "signed" until
-rail0-indexer confirms and the API transitions it to "charged".
-Poll 'payments get \&' until payment=charged and the charge
-transaction shows confirmed.
+The API returns 202 immediately: broadcasting is not settling. The payment
+stays at "signed" until rail0-indexer sees the on-chain event and the API
+transitions it to "charged".
+
+.PP
+Add -w/--wait to block until that happens (or the operation fails) and exit
+non-zero if it didn't land, instead of polling 'payments get \&'.
 
 .PP
 Pass --private-key (-p): the CLI signs locally and broadcasts in one step.
@@ -70,7 +73,7 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.
 
 .SH EXAMPLE
 .EX
-  rail0 payments charge 0xrail0Id… -p 0xPayeeKey…
+  rail0 payments charge 0xrail0Id… -p @merchant-key --wait
 .EE
 
 

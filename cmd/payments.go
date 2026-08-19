@@ -539,18 +539,22 @@ pulling funds from the payer into escrow.
 
 The payer must have created and signed the payment first via
 'payments create -p' (create + sign in one atomic step).
-The API returns 202 immediately. The payment stays at "signed" until
-rail0-indexer confirms the on-chain event and the API transitions it to
-"authorized". Poll 'payments get <rail0Id>' until payment=authorized
-and the authorize transaction shows confirmed.
+The API returns 202 immediately: broadcasting is not settling. The payment
+stays at "signed" until rail0-indexer sees the on-chain event and the API
+transitions it to "authorized".
+
+Add -w/--wait to block until that happens (or the operation fails) and exit
+non-zero if it didn't land — that is almost always what you want, and it saves
+polling 'payments get <rail0Id>' by hand. Without it the command returns as
+soon as the transaction is broadcast.
 
 Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 	Example: `  # 1. Payer creates and signs the payment in one step
-  rail0 payments create --from 0xBuyer… --to 0xMerchant… \
-    --token 0x3600… --amount 1.00 --chain-id 5042002 -p 0xPayerKey…
+  rail0 payments create --from @buyer --to @merchant \
+    --token USDC --amount 1.00 --chain-id 5042002 -p @payer
 
-  # 2. Payee authorizes
-  rail0 payments authorize <rail0Id> -p 0xPayeeKey…`,
+  # 2. Payee authorizes, and waits for the chain to confirm it
+  rail0 payments authorize <rail0Id> -p @merchant-key --wait`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		signingKey, err := signingKeyOrPrompt(authorizePrivateKey)
@@ -601,13 +605,15 @@ directly from payer to payee without an escrow window.
 
 The payment must have been created with -C/--charge and signed by the
 payer via 'payments create -p' (create + sign in one atomic step).
-The API returns 202 immediately. The payment stays at "signed" until
-rail0-indexer confirms and the API transitions it to "charged".
-Poll 'payments get <rail0Id>' until payment=charged and the charge
-transaction shows confirmed.
+The API returns 202 immediately: broadcasting is not settling. The payment
+stays at "signed" until rail0-indexer sees the on-chain event and the API
+transitions it to "charged".
+
+Add -w/--wait to block until that happens (or the operation fails) and exit
+non-zero if it didn't land, instead of polling 'payments get <rail0Id>'.
 
 Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
-	Example: `  rail0 payments charge 0xrail0Id… -p 0xPayeeKey…`,
+	Example: `  rail0 payments charge 0xrail0Id… -p @merchant-key --wait`,
 	Args:    cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		signingKey, err := signingKeyOrPrompt(chargePrivateKey)
@@ -663,20 +669,25 @@ var paymentsCaptureCmd = &cobra.Command{
 The payment must be in 'authorized' or 'partially_captured' status.
 Partial captures are supported: pass --amount less than capturableAmount
 to capture a portion; the remaining balance stays available until
-authorizationExpiry. Note that capturableAmount is the LAST CONFIRMED balance,
-so it is stale while another capture of yours is still in flight — 'payments
-wait' settles it before you choose an amount.
-The API returns 202 immediately. The payment stays at "authorized" until
-rail0-indexer confirms and the API transitions it to "captured" or
-"partially_captured". Poll 'payments get <rail0Id>' until the payment
-reaches the expected state and the capture transaction shows confirmed.
+authorizationExpiry.
+
+The API returns 202 immediately: broadcasting is not settling. The payment
+stays at "authorized" until rail0-indexer sees the on-chain event and the API
+transitions it to "captured" or "partially_captured".
+
+Add -w/--wait to block until that happens (or the operation fails) and exit
+non-zero if it didn't land. On partial captures it is close to required:
+capturableAmount is the LAST CONFIRMED balance, so it reads stale while a
+capture of yours is still in flight, and picking the next amount from it is how
+you over- or under-capture. ('payments wait' settles it separately if you'd
+rather not block the capture itself.)
 
 Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
-	Example: `  # Full capture
-  rail0 payments capture 0xrail0Id… --amount 1.00 -p 0xPayeeKey…
+	Example: `  # Full capture, waiting for the chain to confirm it
+  rail0 payments capture 0xrail0Id… --amount 1.00 -p @merchant-key --wait
 
-  # Partial capture
-  rail0 payments capture 0xrail0Id… --amount 0.50 -p 0xPayeeKey…`,
+  # Partial capture — --wait settles the balance before the next one
+  rail0 payments capture 0xrail0Id… --amount 0.50 -p @merchant-key --wait`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		signingKey, err := signingKeyOrPrompt(capturePrivateKey)

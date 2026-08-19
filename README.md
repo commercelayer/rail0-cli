@@ -2,6 +2,22 @@
 
 Command-line interface for the [RAIL0](https://rail0.xyz) stablecoin payment protocol. Wraps the RAIL0 gateway's REST API and exposes every payment lifecycle step as a subcommand. Output is always JSON — syntax-highlighted on a terminal and plain (machine-readable) when piped or when `--json` is passed.
 
+**New here? [Your first payment](#your-first-payment) is a start-to-finish walkthrough** — install, save the buyer and merchant addresses, sign in, and settle one payment on a testnet. The rest of this file is reference material you can come back to.
+
+---
+
+## Contents
+
+- [Requirements](#requirements)
+- [Installation](#installation) — [release binary](#download-a-release-binary-recommended) · [from source](#build-from-source-contributors) · [`rail0 init`](#guided-setup-rail0-init)
+- [**Your first payment**](#your-first-payment) — the guided path
+- [Shell completion](#shell-completion)
+- [Configuration](#configuration) — [defaults](#persisted-defaults-config) · [environments](#environments-env) · [address book](#address-book-aliases) · [signing keys](#signing-keys-os-keychain)
+- [Signing modes](#signing-modes) — who signs what, and when
+- [Commands](#commands) — the full reference
+- [Full flow examples](#full-flow-examples) — authorize/capture, charge, refund
+- [Output modes](#output-modes)
+
 ---
 
 ## Requirements
@@ -106,6 +122,162 @@ a private key reads as if the key were the problem.
 Markdown in `docs/cli/` (for a docs site) and man pages in `docs/man/`. Run it after
 changing any command, flag, or help text. The generator lives in `tools/gendocs`, so
 its doc dependencies never enter the shipped binary.
+
+---
+
+## Your first payment
+
+From an empty machine to a settled payment. Nothing below is demo-only
+scaffolding — every command here is one you keep using.
+
+### First, the two sides
+
+A rail0 payment always has two, and keeping them straight from the start saves
+most of the confusion later:
+
+| | signs | pays gas | needs a gateway account |
+| --- | --- | --- | --- |
+| **buyer** (`payer`) | the EIP-3009 authorization, **off-chain** | no | **no** — any wallet can pay |
+| **merchant** (`payee`) | the **on-chain** transactions | yes | yes, for wallets and analytics |
+
+The buyer never sends a transaction. They sign a message; the merchant submits it
+and pays the gas. That is why the buyer needs no account and no separate login,
+and why the merchant does.
+
+This walkthrough plays **both** roles from one machine, which is the honest way to
+try it. In production they are two people on two machines.
+
+### 1. Install and point at a gateway
+
+```sh
+rail0 init
+```
+
+Four questions — gateway, reachability check, an optional key, an optional
+sign-in — each skippable, safe to re-run. If you'd rather not be asked:
+
+```sh
+rail0 env development     # or staging / production — writes base-url once
+rail0 health              # confirm it answers before going further
+```
+
+### 2. Save the two addresses
+
+Give the buyer and merchant wallets names, so no 42-character hex ever appears
+in a command again. `@name` then works on **any** address flag (`--from`,
+`--to`, `--address`):
+
+```sh
+rail0 aliases add buyer    0xBuyerAddress…
+rail0 aliases add merchant 0xMerchantAddress…
+
+rail0 aliases             # bare: lists the address book
+```
+
+Names are unique — to repoint one, `rail0 aliases rm buyer` first. One address
+may carry several names.
+
+### 3. Save the two keys
+
+Same `@name` sigil, different store: keys live in the **OS keychain**, never in
+the config file and never in your shell history. `keys add` prompts for the
+secret hidden.
+
+```sh
+rail0 keys add buyer-key         # prompts (hidden) for the buyer's private key
+rail0 keys add merchant-key      # and the merchant's
+
+rail0 keys                       # lists the NAMES — never a secret
+rail0 keys address buyer-key     # the derived 0x address, to check you saved the right one
+```
+
+> **Which store does `@name` hit?** The flag decides, not the name: `@x` on
+> `--private-key`/`-p` is a key, on `--from`/`--to`/`--address` it's an address.
+> That is why `buyer` and `buyer-key` above are named apart — nothing forces it,
+> but you will thank yourself when reading a script six months from now.
+
+On headless Linux there may be no keychain; there, pass `--private-key` or set
+`RAIL0_PRIVATE_KEY`.
+
+### 4. Sign in as the merchant
+
+```sh
+rail0 auth login -p @merchant-key
+rail0 auth status                  # address, account, expiry
+```
+
+**The buyer does not need this step.** `payments create` signs in on its own with
+the payer key, so a buyer with a wallet and nothing else can pay. The merchant
+logs in because the action commands and the account views require it.
+
+### 5. Check what the merchant accepts
+
+Public, no login — this is what a buyer's client would call first:
+
+```sh
+rail0 payment-methods -A @merchant
+```
+
+It returns the chains and tokens that merchant can be paid on. Pick one for the
+next step; if you have no preference, **Arc Testnet (`5042002`)** settles in about
+four confirmations, where Base Sepolia wants sixty — a much shorter wait for a
+first run.
+
+### 6. Buyer creates and signs the payment
+
+```sh
+RAIL0_ID=$(rail0 payments create \
+  --from @buyer --to @merchant \
+  --token USDC --amount 1.00 --chain-id 5042002 \
+  --private-key @buyer-key --quiet)
+
+echo "$RAIL0_ID"
+```
+
+One step, not two: it creates the payment **and** signs the EIP-3009
+authorization locally. The key never leaves your machine — the gateway stores the
+signature, not the secret. Omit `--private-key` and it prompts, hidden.
+
+`--quiet`/`-q` prints just the id, which is what you want in a variable. Drop it
+to see the whole payment.
+
+> `--amount` is a **human decimal** — `1.00` means one USDC, not one base unit.
+
+### 7. Merchant authorizes, then captures
+
+```sh
+# funds move into escrow — and --wait blocks until the chain confirms it
+rail0 payments authorize "$RAIL0_ID" -p @merchant-key --wait
+
+# and out of escrow to the merchant
+rail0 payments capture "$RAIL0_ID" --amount 1.00 -p @merchant-key --wait
+```
+
+**`--wait` is the flag that makes this pleasant.** Without it the commands return
+the moment the transaction is broadcast, which is not the same as settled: the
+payment sits at `signed` until rail0-indexer sees the event. With it, the command
+blocks until the state actually changes, prints progress while it does, and exits
+non-zero if the operation failed — so a script reads top to bottom instead of
+growing a polling loop.
+
+Check the result any time:
+
+```sh
+rail0 payments get "$RAIL0_ID" --pretty
+```
+
+### That's the whole loop
+
+Authorize-then-capture is the escrow flow. Two variants worth knowing now that
+the shape is familiar:
+
+- **One-shot**: add `-C`/`--charge` at step 6 and run `rail0 payments charge`
+  instead of authorize+capture. Funds go straight from buyer to merchant, no
+  escrow window.
+- **Undo**: `rail0 payments refund <id> -a 1.00 -p @merchant-key --wait` sends
+  captured funds back. Before anything is captured, `void` releases the hold.
+
+Full worked versions of all three are in [Full flow examples](#full-flow-examples).
 
 ---
 
@@ -939,47 +1111,76 @@ rail0 payments refund <rail0Id> -a 1.00 -p 0xPayeeKey…
 
 ## Full flow examples
 
-### Authorize-and-capture — direct key
+Worked versions of the three shapes, using the address book and keychain names
+from [Your first payment](#your-first-payment) — `@buyer`/`@merchant` are
+addresses, `@buyer-key`/`@merchant-key` are keys. Substitute raw `0x…` values
+anywhere if you have not saved them.
+
+All three use `--wait`, so each command returns only once the chain has confirmed
+it and exits non-zero if it did not. That is what makes these safe to paste into a
+script: without it a command succeeds the moment the transaction is *broadcast*,
+and the next line runs against a payment that has not moved yet.
+
+### Authorize-and-capture
+
+The escrow flow: funds are held, then released to the merchant — possibly in
+parts, possibly never.
 
 ```sh
 export RAIL0_BASE_URL=https://api.rail0.xyz
-rail0 auth login -p @buyer
 
-# 1. Payer creates payment and signs EIP-712 locally
+# The MERCHANT logs in: the action commands need a session.
+# The buyer does not — 'payments create' signs in with the payer key on its own.
+rail0 auth login -p @merchant-key
+
+# 1. Buyer creates the payment and signs the EIP-3009 authorization locally
 RAIL0_ID=$(rail0 payments create \
-  -F 0xBuyer… -T 0xMerchant… -t USDC -a 1.00 -c 5042002 \
-  -p 0xPayerKey… --json | jq -r .rail0_id)
+  -F @buyer -T @merchant -t USDC -a 1.00 -c 5042002 \
+  -p @buyer-key -q)
 
-# 2. Payee authorizes (funds → escrow) and polls until confirmed
-rail0 payments authorize "$RAIL0_ID" -p 0xPayeeKey…
-rail0 payments get "$RAIL0_ID"   # poll until payment=authorized, authorize:confirmed
+# 2. Merchant authorizes — funds move into escrow
+rail0 payments authorize "$RAIL0_ID" -p @merchant-key --wait
 
-# 3. Payee captures
-rail0 payments capture "$RAIL0_ID" -a 1.00 -p 0xPayeeKey…
-rail0 payments get "$RAIL0_ID"   # poll until payment=captured, capture:confirmed
+# 3. Merchant captures — funds move to the merchant
+rail0 payments capture "$RAIL0_ID" -a 1.00 -p @merchant-key --wait
+
+rail0 payments get "$RAIL0_ID" --pretty
+```
+
+To capture in parts, call `capture` more than once with smaller amounts; the rest
+stays available until `authorizationExpiry`. `--wait` matters more here than
+anywhere else — `capturableAmount` is the last *confirmed* balance, so without it
+you would pick the second amount from a stale number.
+
+---
+
+### Charge (one-shot)
+
+No escrow: funds go straight from buyer to merchant. Note the `-C` at create —
+the mode is fixed when the payment is created, not when it is submitted.
+
+```sh
+RAIL0_ID=$(rail0 payments create \
+  -F @buyer -T @merchant -t USDC -a 1.00 -c 5042002 -C \
+  -p @buyer-key -q)
+
+rail0 payments charge "$RAIL0_ID" -p @merchant-key --wait
 ```
 
 ---
 
-### Charge (one-shot) — direct key
+### Refund
+
+Sends captured funds back to the buyer. The **merchant** signs, because the money
+is now in the merchant's wallet — this is the mirror of the buyer's signature at
+create, and needs no allowance either.
 
 ```sh
-RAIL0_ID=$(rail0 payments create \
-  -F 0xBuyer… -T 0xMerchant… -t USDC -a 1.00 -c 5042002 -C \
-  -p 0xPayerKey… --json | jq -r .rail0_id)
-
-rail0 payments charge "$RAIL0_ID" -p 0xPayeeKey…
-rail0 payments get "$RAIL0_ID"   # poll until charged
+rail0 payments refund "$RAIL0_ID" -a 1.00 -p @merchant-key --wait
 ```
 
----
-
-### Refund — direct key
-
-```sh
-rail0 payments refund "$RAIL0_ID" -a 1.00 -p 0xPayeeKey…
-rail0 payments get "$RAIL0_ID"   # poll until refunded
-```
+Before anything is captured there is nothing to refund — use `void` to drop the
+hold instead, or `release` once the authorization window has closed.
 
 ---
 

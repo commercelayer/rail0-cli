@@ -12,9 +12,9 @@ Command-line interface for the [RAIL0](https://rail0.xyz) stablecoin payment pro
 - [Installation](#installation) — [release binary](#download-a-release-binary-recommended) · [from source](#build-from-source-contributors) · [`rail0 init`](#guided-setup-rail0-init)
 - [**Your first payment**](#your-first-payment) — the guided path
 - [Shell completion](#shell-completion)
-- [Configuration](#configuration) — [defaults](#persisted-defaults-config) · [environments](#environments-env) · [address book](#address-book-aliases) · [signing keys](#signing-keys-os-keychain)
+- [Configuration](#configuration) — [defaults](#persisted-defaults-config) · [environments](#environments-env) · [address book](#address-book-aliases) · [signing keys](#signing-keys-os-keychain) · [a broken config file](#if-the-config-file-goes-bad)
 - [Signing modes](#signing-modes) — who signs what, and when
-- [Commands](#commands) — the full reference
+- [Commands](#commands) — the full reference, including [repairing a webhook](#repairing-a-webhook-that-stopped-delivering)
 - [Full flow examples](#full-flow-examples) — authorize/capture, charge, refund
 - [Output modes](#output-modes)
 
@@ -313,6 +313,17 @@ config file. Precedence is: **flag  >  env var  >  config file  >  built-in defa
 | `--pretty`   | —                    | Key-value/table view instead of JSON (terminal only) |
 | `--quiet` / `-q` | —                | Print only the result's id/hash, one per line — no JSON parser needed |
 | — | `RAIL0_HTTP_TIMEOUT` | Per-request HTTP timeout in seconds (default 30). Distinct from the wait commands' `--timeout`, which is the polling deadline |
+
+#### If the config file goes bad
+
+A file the CLI cannot parse is **ignored, with a warning naming it** — commands keep working on flags, env vars and defaults, so nothing is blocked. Reads refuse rather than act on settings they could not read.
+
+Any command that *writes* the config replaces it: `config set`, `config unset`, `env <name>`, `aliases add`/`rm`, `keys add`/`rm`. They say on stderr that the old contents are gone — which they are, since keys inside unparseable YAML cannot be recovered by any means. So the fastest repair is simply to pick an environment again:
+
+```sh
+rail0 config path      # where it lives, if you'd rather look first
+rail0 env staging      # rewrites the file, valid
+```
 
 ### Amounts and expiries in the output
 
@@ -652,8 +663,10 @@ Obtain a JWT via SIWE (Sign-In With Ethereum) and cache it under `~/.cache/rail0
 
 ```sh
 rail0 auth login -p 0xYourPrivateKey…
-rail0 auth login -p @payee -t          # also print the token + its expiry
+rail0 auth login -p @merchant-key -t   # also print the token + its expiry
 ```
+
+The cache is **per gateway**, so switching with [`rail0 env`](#environments-env) switches session along with it rather than logging you out — come back and the earlier session is still there, if it has not expired.
 
 On success the command prints the session (address, expiry) but **not** the raw token. Pass `--token` / `-t` to also print the token itself along with its duration and expiry timestamp, or fetch it later with [`rail0 token`](#token).
 
@@ -759,11 +772,26 @@ rail0 wallets update 0xABCD… --label "New label" --active false
 | `--label` | `-l` | New wallet label |
 | `--active` | — | Set active flag (`true` or `false`) |
 
+`--active false` is the merchant's **revocation** switch, and it does more than hide a row:
+
+- the address stops being offered by [`payment-methods`](#payment-methods), so buyers can no longer discover it and no new payment can name it;
+- webhooks stop being dispatched for payments to it — deliberately: deactivation says "stop trusting this address", and an outbound push about its payments would contradict that.
+
+Existing payments are unaffected. They carry their own payee address and settle whatever the flag says now. Reversible with `--active true`.
+
 #### `wallets delete <wallet>`
 
+**A soft delete, despite the verb.** The gateway sets `active=false` and keeps the row — it is the *same operation* as `wallets update <wallet> --active false`, with the same consequences and the same way back. Nothing is removed, nothing on-chain is touched, no funds move.
+
+Both spellings exist because the API exposes a `DELETE` verb as well as the flag. Use whichever reads better where you are writing it.
+
 ```sh
-rail0 wallets delete 0xABCD…
+rail0 wallets delete 0xABCD…                      # same as…
+rail0 wallets update 0xABCD… --active false       # …this
+rail0 wallets update 0xABCD… --active true        # back on
 ```
+
+> Contrast [`webhooks delete`](#webhooks), which really does destroy the record.
 
 #### `wallets balances <wallet>`
 
@@ -843,7 +871,38 @@ rail0 tokens --symbol USDC
 
 ### Webhooks
 
-Manage webhook subscriptions for the authenticated account. The shared secret used to verify delivery signatures is returned only once — on `create` and `rotate-secret`. All webhook commands require authentication.
+Manage webhook subscriptions for the authenticated account. A webhook subscribes to exactly one payment-lifecycle topic and delivers a signed callback to your endpoint. All webhook commands require authentication.
+
+#### Two ways to be off — and only one `enable`
+
+A webhook delivers only while it is **active**, and there are two independent switches:
+
+| | what turned it off | what turns it back on |
+| --- | --- | --- |
+| **disabled** | you ran `disable` | `enable` |
+| **circuit open** | 10 consecutive failed *events* tripped the breaker | `reset-circuit`, and nothing else |
+
+They are not interchangeable, and this is the trap worth knowing before you need it: **a tripped breaker also marks the webhook disabled**, so `enable` looks like it worked — it returns 200 with the webhook in the body — while the webhook stays silent, because the breaker is still open.
+
+Read `active` in the response rather than trusting the exit code. It is false whenever either switch is off, and `circuit_state` says which.
+
+The breaker never closes on its own: nothing is delivered while it is open, so no later success can reset it.
+
+#### Repairing a webhook that stopped delivering
+
+```sh
+rail0 webhooks event-callbacks <webhook_id> --status failed   # 1. what was it failing on?
+rail0 webhooks update <webhook_id> --callback-url https://…   # 2. fix it
+rail0 webhooks reset-circuit <webhook_id>                     # 3. let it deliver again
+```
+
+Step 3 is not optional after a tripped breaker — `update` changes the URL but not the active state, so repointing a broken webhook at a working endpoint leaves it exactly as dead as it was. And doing 3 before 2 just spends another 10 events reopening the breaker.
+
+#### The shared secret
+
+Returned **once**, on `create` and `rotate-secret`. The gateway stores a hash, not the value, so it cannot be read back — capture it when it appears. `rotate-secret` is the recovery, not a lookup.
+
+Rotation has **no overlap window**: the old secret stops verifying immediately, so any delivery already in flight was signed with the old one and a receiver that has not been updated will reject it — which counts as a failure and feeds the breaker. Update the receiver first where you can.
 
 ```sh
 rail0 webhooks list --topic payments.captured --active true
@@ -864,11 +923,12 @@ rail0 webhooks delete <webhook_id>
 | `get` | Fetch a single webhook |
 | `create` | Register a webhook (`--name`, `--callback-url`, `--topic`; returns shared secret) |
 | `update` | Patch `--name`, `--callback-url`, or `--topic` |
-| `enable` / `disable` | Toggle delivery |
+| `enable` | Clear the **manual** disable only — see [the two switches](#two-ways-to-be-off--and-only-one-enable) |
+| `disable` | Stop deliveries reversibly, keeping the id and secret (`delete` is the permanent form) |
 | `rotate-secret` | Issue a new shared secret (returned once) |
-| `reset-circuit` | Reset the delivery circuit breaker and re-enable |
-| `event-callbacks` | List delivery attempts (`--status`, `--topic`, `--payment-id`, `--since`, `--until`, `--sort`) |
-| `delete` | Remove a webhook |
+| `reset-circuit` | Close the breaker **and** clear the manual disable — the only way back from a trip |
+| `event-callbacks` | Delivery attempts — the log to read when a callback did not arrive (`--status`, `--topic`, `--payment-id`, `--since`, `--until`, `--sort`) |
+| `delete` | Destroy the webhook and its secret, permanently (unlike `wallets delete`, this one is real) |
 
 ---
 
@@ -934,6 +994,10 @@ Two nulls that are deliberate, not missing data: a **timeseries** row carries a 
 only when a single token *and* chain are filtered, and a **breakdown** by `mode` or
 `status` carries none at all — a group spanning several tokens has no single unit to
 add up in.
+
+**`summary` is exempt**, and it is worth knowing which rule applies where: its volume is
+broken out per (token, chain) already, so every figure has one unit behind it and can be
+read directly. It never returns a null for this reason.
 
 ---
 
@@ -1012,10 +1076,15 @@ rail0 payments list --chain-id 5042002 --token 0x3600… --min-amount 1.00
 
 #### `payments transactions <rail0Id>`
 
-List on-chain transactions for a payment.
+One row per on-chain attempt the payment has produced, newest first by default.
+
+**This is the view `--wait` watches.** It polls this table for the attempt it created and returns when that row reads `confirmed` or `failed` — so it is also where to look when a `--wait` timed out, or when an operation was submitted without one. The row's status says whether the chain has spoken yet, and a failed row carries the decoded revert reason.
+
+A payment can hold several rows for the same operation (a retried broadcast, or successive partial captures), which is why the balances a payment reports are the last **confirmed** ones and not the last submitted.
 
 ```sh
 rail0 payments transactions 0xabc123…
+rail0 payments transactions 0xabc123… --sort -submitted_at
 ```
 
 ---

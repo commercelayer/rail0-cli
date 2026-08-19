@@ -10,10 +10,17 @@ Release is only available after authorizationExpiry has passed on-chain.
 Returns the remaining (uncaptured) escrowed balance to the payer. Permissionless
 — both payer and payee can call it; the caller is whoever the signing key belongs
 to (derived from the key), so pass the payer's key to release as the payer.
-The API returns 202 immediately; poll 'payments get <rail0Id>'. The status
-advances to "released" only on a TOTAL release (an untouched authorization,
-nothing captured); if a capture left a refundable residual the status stays
-unchanged and that residual remains refundable.
+
+The API returns 202 immediately: broadcasting is not settling. Add -w/--wait to
+block until the operation confirms on-chain (or fails) and exit non-zero if it
+didn't land.
+
+Note that the payment STATUS advances to "released" only on a TOTAL release (an
+untouched authorization, nothing captured); if a capture left a refundable
+residual the status stays unchanged and that residual remains refundable. This
+does not weaken --wait: it waits on THIS operation's transaction reaching
+confirmed or failed, not on a status change — so it settles a partial release
+correctly, where waiting for a new status would hang until the deadline.
 
 Pass --private-key (-p): the CLI signs locally and broadcasts in one step.
 
@@ -25,10 +32,10 @@ rail0 payments release <rail0Id> [flags]
 
 ```
   # Payee releases
-  rail0 payments release 0xrail0Id… -p 0xPayeeKey…
+  rail0 payments release 0xrail0Id… -p @merchant-key --wait
 
   # Payer releases (just use the payer's key)
-  rail0 payments release 0xrail0Id… -p 0xPayerKey…
+  rail0 payments release 0xrail0Id… -p @buyer-key --wait
 ```
 
 ### Options

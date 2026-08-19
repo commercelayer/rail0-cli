@@ -10,6 +10,10 @@ sign and submit it like any other operation (the gateway broadcasts it).
 Disputes are payer-driven and signal-only: they move no money. Only the payer
 may dispute, while the refund window is open and the merchant holds the funds.
 
+Signal-only does not mean instant: it is still an on-chain transaction, so the
+API returns 202 and the dispute is not visible until it confirms. Add -w/--wait
+to block until it does (or fails).
+
 Pass --private-key (-p): the CLI signs locally with the payer key and broadcasts.
 
 ```
@@ -19,7 +23,7 @@ rail0 payments dispute <rail0Id> [flags]
 ### Examples
 
 ```
-  rail0 payments dispute 0xrail0Id… -p 0xPayerKey… --reason 0x…
+  rail0 payments dispute 0xrail0Id… -p @buyer-key --reason 0x… --wait
 ```
 
 ### Options

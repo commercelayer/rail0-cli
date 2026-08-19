@@ -759,11 +759,13 @@ forbidden once any (even partial) capture has occurred (the contract reverts
 AlreadyCaptured) — recover the uncaptured remainder via 'release' instead. Void
 cancels the authorization and returns the full escrowed balance to the payer.
 Only callable before authorizationExpiry, by the payee.
-The API returns 202 immediately; poll 'payments get <rail0Id>' until
-status advances to "voided".
+
+The API returns 202 immediately: broadcasting is not settling. Add -w/--wait to
+block until the operation confirms on-chain (or fails) and exit non-zero if it
+didn't land, instead of polling 'payments get <rail0Id>' yourself.
 
 Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
-	Example: `  rail0 payments void 0xrail0Id… -p 0xPayeeKey…`,
+	Example: `  rail0 payments void 0xrail0Id… -p @merchant-key --wait`,
 	Args:    cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		signingKey, err := signingKeyOrPrompt(voidPrivateKey)
@@ -817,17 +819,24 @@ Release is only available after authorizationExpiry has passed on-chain.
 Returns the remaining (uncaptured) escrowed balance to the payer. Permissionless
 — both payer and payee can call it; the caller is whoever the signing key belongs
 to (derived from the key), so pass the payer's key to release as the payer.
-The API returns 202 immediately; poll 'payments get <rail0Id>'. The status
-advances to "released" only on a TOTAL release (an untouched authorization,
-nothing captured); if a capture left a refundable residual the status stays
-unchanged and that residual remains refundable.
+
+The API returns 202 immediately: broadcasting is not settling. Add -w/--wait to
+block until the operation confirms on-chain (or fails) and exit non-zero if it
+didn't land.
+
+Note that the payment STATUS advances to "released" only on a TOTAL release (an
+untouched authorization, nothing captured); if a capture left a refundable
+residual the status stays unchanged and that residual remains refundable. This
+does not weaken --wait: it waits on THIS operation's transaction reaching
+confirmed or failed, not on a status change — so it settles a partial release
+correctly, where waiting for a new status would hang until the deadline.
 
 Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 	Example: `  # Payee releases
-  rail0 payments release 0xrail0Id… -p 0xPayeeKey…
+  rail0 payments release 0xrail0Id… -p @merchant-key --wait
 
   # Payer releases (just use the payer's key)
-  rail0 payments release 0xrail0Id… -p 0xPayerKey…`,
+  rail0 payments release 0xrail0Id… -p @buyer-key --wait`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		signingKey, err := signingKeyOrPrompt(releasePrivateKey)
@@ -892,16 +901,23 @@ less than refundableAmount.
 No separate approval step is needed: the CLI signs the payee's EIP-3009
 ReceiveWithAuthorization payload locally with the same key, so the refund
 funds are pulled from the payee without a prior allowance grant.
-The API returns 202 immediately; poll 'payments get <rail0Id>'. The status
-advances to "refunded" only when the payment is fully settled (both escrow and
-refundable drained); a partial refund leaves the status unchanged.
+
+The API returns 202 immediately: broadcasting is not settling. Add -w/--wait to
+block until the operation confirms on-chain (or fails) and exit non-zero if it
+didn't land.
+
+Note that the payment STATUS advances to "refunded" only when the payment is
+fully settled (both escrow and refundable drained); a partial refund leaves it
+unchanged. This does not weaken --wait: it waits on THIS operation's transaction
+reaching confirmed or failed, not on a status change — so it settles a partial
+refund correctly, where waiting for a new status would hang until the deadline.
 
 Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 	Example: `  # Full refund
-  rail0 payments refund 0xrail0Id… --amount 1.00 -p 0xPayeeKey…
+  rail0 payments refund 0xrail0Id… --amount 1.00 -p @merchant-key --wait
 
   # Partial refund
-  rail0 payments refund 0xrail0Id… --amount 0.25 -p 0xPayeeKey…`,
+  rail0 payments refund 0xrail0Id… --amount 0.25 -p @merchant-key --wait`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		signingKey, err := signingKeyOrPrompt(refundPrivateKey)
@@ -1001,8 +1017,12 @@ sign and submit it like any other operation (the gateway broadcasts it).
 Disputes are payer-driven and signal-only: they move no money. Only the payer
 may dispute, while the refund window is open and the merchant holds the funds.
 
+Signal-only does not mean instant: it is still an on-chain transaction, so the
+API returns 202 and the dispute is not visible until it confirms. Add -w/--wait
+to block until it does (or fails).
+
 Pass --private-key (-p): the CLI signs locally with the payer key and broadcasts.`,
-	Example: `  rail0 payments dispute 0xrail0Id… -p 0xPayerKey… --reason 0x…`,
+	Example: `  rail0 payments dispute 0xrail0Id… -p @buyer-key --reason 0x… --wait`,
 	Args:    cobra.MaximumNArgs(1),
 	RunE: func(_ *cobra.Command, args []string) error {
 		signingKey, err := signingKeyOrPrompt(disputePrivateKey)
@@ -1052,10 +1072,23 @@ Pass --private-key (-p): the CLI signs locally with the payer key and broadcasts
 }
 
 var paymentsDisputeCloseCmd = &cobra.Command{
-	Use:     "close <rail0Id>",
-	Short:   "Close a dispute (payer only): prepare, sign, broadcast",
+	Use:   "close <rail0Id>",
+	Short: "Close a dispute (payer only): prepare, sign, broadcast",
+	Long: `Prepare the transaction that calls closeDispute() on the RAIL0 contract, then
+sign and submit it like any other operation.
+
+Only the PAYER may withdraw a dispute — a merchant cannot dismiss one. The
+merchant's only way to close a dispute is a full 'refund', which closes it
+automatically. A withdrawn dispute can be reopened while the refund window is
+open.
+
+Like 'dispute', this is an on-chain transaction: the API returns 202 and the
+close is not visible until it confirms. Add -w/--wait to block until it does
+(or fails).
+
+Pass --private-key (-p): the CLI signs locally with the payer key and broadcasts.`,
+	Example: `  rail0 payments dispute close 0xrail0Id… -p @buyer-key --wait`,
 	Args:    cobra.MaximumNArgs(1),
-	Example: `  rail0 payments dispute close 0xrail0Id… -p 0xPayerKey…`,
 	RunE: func(_ *cobra.Command, args []string) error {
 		signingKey, err := signingKeyOrPrompt(closeDisputePrivateKey)
 		if err != nil {

@@ -16,6 +16,26 @@ import (
 var authCmd = &cobra.Command{
 	Use:   "auth",
 	Short: "Authenticate with the RAIL0 gateway using SIWE",
+	Long: `Sign in to the gateway with an Ethereum wallet, using SIWE (EIP-4361).
+
+Signing in proves you hold a key — it does not require a gateway account. ANY
+wallet can log in; an account is what unlocks the merchant surface (wallets,
+analytics, webhooks, disputes).
+
+Who actually needs this:
+
+  buyers      no. 'payments create' signs in on its own with the payer key,
+              so paying needs nothing but a key.
+  merchants   yes. The action commands (authorize, capture, refund, …) and
+              every account view read the session.
+
+The session is a JWT cached per gateway under the OS cache dir, so switching
+'rail0 env' switches session with it rather than logging you out. The token is
+never written to the config file. 'auth status' prints who you are and when it
+expires; 'rail0 token' prints the token itself.`,
+	Example: `  rail0 auth login -p @merchant-key
+  rail0 auth status
+  rail0 auth logout`,
 }
 
 // ── auth login ────────────────────────────────────────────────────────────────

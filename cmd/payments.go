@@ -197,6 +197,18 @@ var paymentsTransactionsCmd = &cobra.Command{
 	Use:   "transactions <rail0Id>",
 	Short: "List on-chain transactions for a payment",
 	Args:  cobra.ExactArgs(1),
+	Long: `List the on-chain transactions a payment has produced, one row per attempt,
+newest first by default.
+
+This is the view -w/--wait watches: it polls THIS table for the attempt it
+created and returns when that row reads confirmed or failed. So it is also
+where to look when a --wait timed out, or when an operation was submitted
+without one — the row's status says whether the chain has spoken yet, and a
+failed row carries the decoded revert reason.
+
+A payment can hold several rows for the same operation (a retried broadcast, or
+successive partial captures), which is why the balances a payment reports are
+the last CONFIRMED ones and not the last submitted.`,
 	Example: `  rail0 payments transactions 0xabc123…
   rail0 payments transactions 0xabc123… --sort -submitted_at`,
 	RunE: func(cmd *cobra.Command, args []string) error {

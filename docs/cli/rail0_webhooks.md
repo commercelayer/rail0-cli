@@ -11,6 +11,28 @@ payments.captured) and delivers a signed callback to your endpoint. The
 shared secret used to verify delivery signatures is returned only once, on
 create and rotate-secret.
 
+A webhook delivers only when it is active, and there are TWO independent ways
+for it to stop being active:
+
+  disabled       you turned it off              → 'enable' brings it back
+  circuit open   10 consecutive failed events   → 'reset-circuit', and
+                 tripped the breaker              nothing else, brings it back
+
+They are not interchangeable. A tripped breaker also marks the webhook
+disabled, so 'enable' appears to work — it returns 200 — while the webhook
+stays silent, because the breaker is still open. Read 'active' in the response
+rather than trusting the exit code: it is false whenever either switch is off,
+and 'circuit_state' says which.
+
+### Examples
+
+```
+  rail0 webhooks list
+  rail0 webhooks create --name "capture hook" \
+    --callback-url https://example.com/hook --topic payments.captured
+  rail0 webhooks event-callbacks whk_abc123 --status failed   # why isn't it arriving?
+```
+
 ### Options
 
 ```

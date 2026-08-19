@@ -26,8 +26,8 @@ rail0 wallets create [flags]
 ### Examples
 
 ```
-  rail0 wallets create --address 0xABCD… -p @payee --label "Main wallet"
-  rail0 wallets create --address @payee --pk 0xYourKey…
+  rail0 wallets create --address 0xABCD… -p @merchant-key --label "Main wallet"
+  rail0 wallets create --address @merchant -p 0xYourKey…
 ```
 
 ### Options

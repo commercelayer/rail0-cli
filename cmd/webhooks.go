@@ -13,12 +13,29 @@ import (
 var webhooksCmd = &cobra.Command{
 	Use:   "webhooks",
 	Short: "Webhook subscription management (requires login)",
+	Example: `  rail0 webhooks list
+  rail0 webhooks create --name "capture hook" \
+    --callback-url https://example.com/hook --topic payments.captured
+  rail0 webhooks event-callbacks whk_abc123 --status failed   # why isn't it arriving?`,
 	Long: `Manage webhook subscriptions for the authenticated account.
 
 A webhook subscribes to exactly one payment-lifecycle topic (e.g.
 payments.captured) and delivers a signed callback to your endpoint. The
 shared secret used to verify delivery signatures is returned only once, on
-create and rotate-secret.`,
+create and rotate-secret.
+
+A webhook delivers only when it is active, and there are TWO independent ways
+for it to stop being active:
+
+  disabled       you turned it off              → 'enable' brings it back
+  circuit open   10 consecutive failed events   → 'reset-circuit', and
+                 tripped the breaker              nothing else, brings it back
+
+They are not interchangeable. A tripped breaker also marks the webhook
+disabled, so 'enable' appears to work — it returns 200 — while the webhook
+stays silent, because the breaker is still open. Read 'active' in the response
+rather than trusting the exit code: it is false whenever either switch is off,
+and 'circuit_state' says which.`,
 }
 
 // ── webhooks list ──────────────────────────────────────────────────────────────
@@ -81,6 +98,15 @@ var webhooksCreateTopic string
 var webhooksCreateCmd = &cobra.Command{
 	Use:   "create",
 	Short: "Register a new webhook (returns the one-time shared secret)",
+	Long: `Register a webhook for one topic on the logged-in account.
+
+The response carries the shared SECRET, and it is the only time it is shown:
+the gateway stores a hash, not the value, so it cannot be read back. Capture it
+now — 'rotate-secret' issues a new one, which is the recovery, not a lookup.
+
+Use the secret to verify the X-Rail0-Signature header on each delivery. A
+delivery whose signature you cannot verify should be treated as untrusted, not
+as a malformed request.`,
 	Example: `  rail0 webhooks create --name "capture hook" \
     --callback-url https://example.com/hook --topic payments.captured`,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -121,8 +147,14 @@ var webhooksUpdateCmd = &cobra.Command{
 // ── webhooks enable / disable / rotate-secret / reset-circuit ─────────────────────
 
 var webhooksEnableCmd = &cobra.Command{
-	Use:     "enable <webhook_id>",
-	Short:   "Re-enable a disabled webhook",
+	Use:   "enable <webhook_id>",
+	Short: "Re-enable a disabled webhook",
+	Long: `Turn a manually disabled webhook back on.
+
+This clears ONLY the manual disable. If the delivery circuit breaker tripped,
+the webhook stays inactive and no delivery goes out — the command still returns
+200, so check 'active' in the response rather than the exit code. When it comes
+back false with circuit_state "open", the fix is 'reset-circuit'.`,
 	Example: `  rail0 webhooks enable whk_abc123`,
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -133,8 +165,16 @@ var webhooksEnableCmd = &cobra.Command{
 }
 
 var webhooksDisableCmd = &cobra.Command{
-	Use:     "disable <webhook_id>",
-	Short:   "Disable a webhook",
+	Use:   "disable <webhook_id>",
+	Short: "Disable a webhook",
+	Long: `Stop deliveries without deleting the webhook.
+
+Reversible with 'enable', and it keeps the subscription, its id and its secret —
+which is what makes it the right tool for a receiver that is down for
+maintenance. 'delete' is the permanent form and loses the secret with it.
+
+Note this is only ONE of the two ways a webhook goes inactive; see the circuit
+breaker under 'rail0 webhooks --help'.`,
 	Example: `  rail0 webhooks disable whk_abc123`,
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -145,8 +185,18 @@ var webhooksDisableCmd = &cobra.Command{
 }
 
 var webhooksRotateSecretCmd = &cobra.Command{
-	Use:     "rotate-secret <webhook_id>",
-	Short:   "Generate a new shared secret (returned once on the response)",
+	Use:   "rotate-secret <webhook_id>",
+	Short: "Generate a new shared secret (returned once on the response)",
+	Long: `Issue a new shared secret for a webhook, returned once on the response.
+
+The old secret stops verifying immediately — there is no overlap window. Any
+delivery already in flight was signed with the old one, so a receiver that has
+not yet been updated will reject it and the delivery counts as failed, which
+feeds the circuit breaker. Update the receiver first where you can, or expect a
+short window of failures.
+
+Rotate on suspected exposure, and after anyone who had the secret loses
+access.`,
 	Example: `  rail0 webhooks rotate-secret whk_abc123`,
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -168,8 +218,20 @@ var webhooksRotateSecretCmd = &cobra.Command{
 }
 
 var webhooksResetCircuitCmd = &cobra.Command{
-	Use:     "reset-circuit <webhook_id>",
-	Short:   "Reset the delivery circuit breaker and re-enable the webhook",
+	Use:   "reset-circuit <webhook_id>",
+	Short: "Reset the delivery circuit breaker and re-enable the webhook",
+	Long: `Close the delivery circuit breaker and re-enable the webhook.
+
+The breaker opens after 10 consecutive failed EVENTS (a distinct event, not
+each retry of one), and opening it also marks the webhook disabled. Once open
+it never closes on its own: a later success cannot close it, because nothing is
+delivered while it is open. This command is the only way back, and it clears
+the manual disable at the same time — so it works whichever way the webhook
+went inactive.
+
+Fix the endpoint FIRST. Resetting a breaker in front of a receiver that is
+still failing just spends another 10 events reopening it. 'event-callbacks
+<id> --status failed' shows what it was failing on.`,
 	Example: `  rail0 webhooks reset-circuit whk_abc123`,
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -191,6 +253,16 @@ var webhooksEventsUntil string
 var webhooksEventCallbacksCmd = &cobra.Command{
 	Use:   "event-callbacks <webhook_id>",
 	Short: "List delivery attempts for a webhook",
+	Long: `List the delivery attempts for a webhook — the log to read when a callback did
+not arrive.
+
+Each row is one attempt, with its status and the event it carried, so it
+answers the two questions worth asking: is the gateway trying at all (no rows
+means the event never dispatched — check that the webhook is active and the
+topic matches), and if it is, what is the receiver returning.
+
+'--status failed' is the usual starting point, and the one to read before
+'reset-circuit'.`,
 	Example: `  rail0 webhooks event-callbacks whk_abc123 --status failed
   rail0 webhooks event-callbacks whk_abc123 --topic payments.captured
   rail0 webhooks event-callbacks whk_abc123 --payment-id 0x… --since 2026-01-01T00:00:00Z`,
@@ -217,8 +289,13 @@ var webhooksEventCallbacksCmd = &cobra.Command{
 // ── webhooks delete ──────────────────────────────────────────────────────────────
 
 var webhooksDeleteCmd = &cobra.Command{
-	Use:     "delete <webhook_id>",
-	Short:   "Remove a webhook",
+	Use:   "delete <webhook_id>",
+	Short: "Remove a webhook",
+	Long: `Remove a webhook permanently.
+
+The subscription and its shared secret go with it — there is no undo and no way
+to recover the secret, so a recreated webhook needs its receiver reconfigured
+with the new one. To stop deliveries reversibly, use 'disable' instead.`,
 	Example: `  rail0 webhooks delete whk_abc123`,
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {

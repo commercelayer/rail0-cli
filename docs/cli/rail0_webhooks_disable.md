@@ -2,6 +2,17 @@
 
 Disable a webhook
 
+### Synopsis
+
+Stop deliveries without deleting the webhook.
+
+Reversible with 'enable', and it keeps the subscription, its id and its secret —
+which is what makes it the right tool for a receiver that is down for
+maintenance. 'delete' is the permanent form and loses the secret with it.
+
+Note this is only ONE of the two ways a webhook goes inactive; see the circuit
+breaker under 'rail0 webhooks --help'.
+
 ```
 rail0 webhooks disable <webhook_id> [flags]
 ```

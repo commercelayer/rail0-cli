@@ -2,6 +2,19 @@
 
 List delivery attempts for a webhook
 
+### Synopsis
+
+List the delivery attempts for a webhook — the log to read when a callback did
+not arrive.
+
+Each row is one attempt, with its status and the event it carried, so it
+answers the two questions worth asking: is the gateway trying at all (no rows
+means the event never dispatched — check that the webhook is active and the
+topic matches), and if it is, what is the receiver returning.
+
+'--status failed' is the usual starting point, and the one to read before
+'reset-circuit'.
+
 ```
 rail0 webhooks event-callbacks <webhook_id> [flags]
 ```

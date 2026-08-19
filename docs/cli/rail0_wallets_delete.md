@@ -1,6 +1,23 @@
 ## rail0 wallets delete
 
-Remove a wallet from the account (by id or 0x address)
+Deactivate a wallet — soft delete, reversible (by id or 0x address)
+
+### Synopsis
+
+Deactivate a wallet. Despite the verb, this is a SOFT delete and it is
+reversible: the gateway sets active=false and keeps the row, so 'wallets update
+<wallet> --active true' brings it back. Nothing is removed, nothing on-chain is
+touched, and no funds move.
+
+It is the same operation as 'wallets update <wallet> --active false'. Both
+spellings exist because the API exposes a DELETE verb as well as the flag —
+use whichever reads better where you are writing it.
+
+What deactivation actually does: the address stops being offered by
+'payment-methods', so buyers can no longer discover it and no new payment can
+name it, and webhooks stop being dispatched for payments to it. Existing
+payments are unaffected — they carry their own payee address and settle
+normally.
 
 ```
 rail0 wallets delete <wallet> [flags]

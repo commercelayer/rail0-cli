@@ -54,7 +54,7 @@ rail0 wallets [flags]
 * [rail0 wallets alias](rail0_wallets_alias.md)	 - Save a unique address-book alias for an address (like 'aliases add', args reversed)
 * [rail0 wallets balances](rail0_wallets_balances.md)	 - Read a wallet's live on-chain balances (by id or 0x address)
 * [rail0 wallets create](rail0_wallets_create.md)	 - Register a new EVM wallet address on the account (SIWE proof-of-ownership)
-* [rail0 wallets delete](rail0_wallets_delete.md)	 - Remove a wallet from the account (by id or 0x address)
+* [rail0 wallets delete](rail0_wallets_delete.md)	 - Deactivate a wallet — soft delete, reversible (by id or 0x address)
 * [rail0 wallets get](rail0_wallets_get.md)	 - Fetch a single wallet (by id or 0x address)
 * [rail0 wallets update](rail0_wallets_update.md)	 - Update label or active status on a wallet (by id or 0x address)
 

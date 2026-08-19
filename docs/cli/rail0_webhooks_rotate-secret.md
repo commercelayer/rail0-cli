@@ -2,6 +2,19 @@
 
 Generate a new shared secret (returned once on the response)
 
+### Synopsis
+
+Issue a new shared secret for a webhook, returned once on the response.
+
+The old secret stops verifying immediately — there is no overlap window. Any
+delivery already in flight was signed with the old one, so a receiver that has
+not yet been updated will reject it and the delivery counts as failed, which
+feeds the circuit breaker. Update the receiver first where you can, or expect a
+short window of failures.
+
+Rotate on suspected exposure, and after anyone who had the secret loses
+access.
+
 ```
 rail0 webhooks rotate-secret <webhook_id> [flags]
 ```

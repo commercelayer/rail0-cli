@@ -213,7 +213,7 @@ func switchEnv(name string, details bool) error {
 		revoked = revokeCurrentSession()
 	}
 
-	cfg, err := config.Load()
+	cfg, err := loadConfigForWrite()
 	if err != nil {
 		return err
 	}

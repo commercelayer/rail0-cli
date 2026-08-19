@@ -85,6 +85,35 @@ func Load() (*Config, error) {
 //
 // Same directory on purpose: os.Rename is only atomic within a filesystem, and
 // the OS temp dir can be on another one.
+// LoadForWrite reads the config for a caller that is about to REWRITE it. It is
+// Load, except that an unparseable file yields an empty Config and replaced=true
+// instead of an error.
+//
+// Reading and writing want opposite things from a corrupt file. A reader must not
+// act on settings it cannot parse, so Load refuses — correctly. But when every
+// WRITER refused as well, the CLI had no way out of the state its own error
+// message tells you to leave: "fix or delete it" was advice that no command could
+// carry out. `config set`, `config unset`, `env <name>`, `aliases add` and `keys
+// add` all failed on precisely the file they exist to rewrite, so a single stray
+// character disabled the whole local-configuration surface until the user found
+// the file by hand.
+//
+// Discarding it costs nothing that was not already lost: keys inside a file YAML
+// cannot parse are unrecoverable by any means, so there is nothing to preserve.
+// The caller's only remaining job is to SAY that the old contents went away.
+func LoadForWrite() (cfg *Config, replaced bool, err error) {
+	c, err := Load()
+	if err == nil {
+		return c, false, nil
+	}
+	// A path/permission problem is not a parse problem: it will hit Save too, so
+	// surface it rather than pretending we start from an empty config.
+	if _, pathErr := Path(); pathErr != nil {
+		return nil, false, err
+	}
+	return &Config{}, true, nil
+}
+
 func (c *Config) Save() error {
 	path, err := Path()
 	if err != nil {

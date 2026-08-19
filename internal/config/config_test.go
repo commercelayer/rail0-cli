@@ -125,3 +125,96 @@ func TestLoadNamesThePathAndTheRemedyOnMalformedYAML(t *testing.T) {
 		}
 	}
 }
+
+// writeCorruptConfig plants a config file that YAML cannot parse — the state a
+// stray character leaves behind, and the one the CLI could not recover from.
+func writeCorruptConfig(t *testing.T) string {
+	t.Helper()
+	path, err := Path()
+	if err != nil {
+		t.Fatalf("Path: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(path, []byte("settings:\n  base-url: [unclosed\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	return path
+}
+
+// A reader must refuse an unparseable config — acting on settings we could not
+// read is worse than stopping — and the message has to name the file and the way
+// out, since it lives in an OS directory most people never open.
+func TestLoadRefusesACorruptFileAndSaysWhereItIs(t *testing.T) {
+	withTempConfigDir(t)
+	path := writeCorruptConfig(t)
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("Load must refuse a config it cannot parse")
+	}
+	if !strings.Contains(err.Error(), path) {
+		t.Errorf("error must name the file, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "rail0 config path") {
+		t.Errorf("error must carry the remedy, got: %v", err)
+	}
+}
+
+// ...but a WRITER must not, or the CLI has no way to carry out the advice that
+// error just gave. Every config-writing command went through Load, so a single
+// stray character disabled 'config set', 'config unset', 'env <name>',
+// 'aliases add' and 'keys add' — all of which exist to rewrite that very file.
+func TestLoadForWriteReplacesACorruptFileInsteadOfFailing(t *testing.T) {
+	withTempConfigDir(t)
+	writeCorruptConfig(t)
+
+	cfg, replaced, err := LoadForWrite()
+	if err != nil {
+		t.Fatalf("LoadForWrite must not fail on a corrupt file: %v", err)
+	}
+	if !replaced {
+		t.Error("replaced must be true so the caller can say the old contents are gone")
+	}
+	if cfg == nil || len(cfg.Settings) != 0 || len(cfg.Aliases) != 0 {
+		t.Errorf("expected an empty config to build on, got %+v", cfg)
+	}
+
+	// And the write that follows must actually land — the point of the exercise.
+	cfg.Settings = map[string]string{"base-url": "https://example.test"}
+	if err := cfg.Save(); err != nil {
+		t.Fatalf("Save after replacing a corrupt config: %v", err)
+	}
+	reloaded, err := Load()
+	if err != nil {
+		t.Fatalf("the rewritten file must parse: %v", err)
+	}
+	if got := reloaded.Settings["base-url"]; got != "https://example.test" {
+		t.Errorf("base-url = %q, want the value just written", got)
+	}
+}
+
+// On a healthy file LoadForWrite must be Load — same contents, and replaced
+// false, so no command ever claims to have discarded settings it kept.
+func TestLoadForWritePreservesAReadableFile(t *testing.T) {
+	withTempConfigDir(t)
+	original := &Config{
+		Settings: map[string]string{"base-url": "https://kept.test"},
+		Aliases:  map[string]string{"merchant": "0xabc"},
+	}
+	if err := original.Save(); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	cfg, replaced, err := LoadForWrite()
+	if err != nil {
+		t.Fatalf("LoadForWrite: %v", err)
+	}
+	if replaced {
+		t.Error("replaced must be false for a file that parsed")
+	}
+	if cfg.Settings["base-url"] != "https://kept.test" || cfg.Aliases["merchant"] != "0xabc" {
+		t.Errorf("readable contents must survive, got %+v", cfg)
+	}
+}

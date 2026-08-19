@@ -70,7 +70,7 @@ token' later.
 The signing key is resolved like every other signing command: pass -p as a raw
 0x-prefixed hex key, as @name for a key saved in the OS keychain ('rail0 keys
 add'), or omit it to fall back to the RAIL0_PRIVATE_KEY environment variable.`,
-	Example: `  rail0 auth login -p @payee     # or -p 0xYourPrivateKey…
+	Example: `  rail0 auth login -p @merchant-key   # or -p 0xYourPrivateKey…
   rail0 auth login -p @payee -t  # also print the token + its expiry`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := context.Background()

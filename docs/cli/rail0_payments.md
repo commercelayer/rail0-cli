@@ -9,16 +9,21 @@ Manage the full RAIL0 payment lifecycle.
 Every on-chain operation is atomic: pass --private-key (-p) and the CLI prepares
 the unsigned transaction, signs it locally, and broadcasts it in a single step.
 
-  rail0 payments authorize <rail0Id> -p 0xYourPrivateKey…
+  rail0 payments authorize <rail0Id> -p @merchant-key --wait
 
-Authorize-and-capture flow:
-  1. payments create -F 0xBuyer… -p 0xPayerKey…  — payer creates + signs
-  2. payments authorize <rail0Id> -p 0xPayeeKey…  — payee authorizes
-  3. payments capture   <rail0Id> -a <n> -p 0xPayeeKey…  — payee captures
+Add -w/--wait to any of them to block until the chain confirms the operation,
+rather than returning as soon as it is broadcast. A key is given as a raw 0x
+hex key, as @name for one saved with 'rail0 keys add', or omitted to be
+prompted for (hidden).
 
-Charge (one-shot) flow:
-  1. payments create -C -F 0xBuyer… -p 0xPayerKey…
-  2. payments charge <rail0Id> -p 0xPayeeKey…
+Authorize-and-capture flow — the buyer signs off-chain, the merchant submits:
+  1. payments create -F @buyer -T @merchant -p @buyer-key   — buyer creates + signs
+  2. payments authorize <rail0Id> -p @merchant-key -w       — merchant escrows
+  3. payments capture   <rail0Id> -a <n> -p @merchant-key -w  — merchant takes it
+
+Charge (one-shot) flow — no escrow, funds move straight through:
+  1. payments create -C -F @buyer -T @merchant -p @buyer-key
+  2. payments charge <rail0Id> -p @merchant-key -w
 
 ### Options
 

@@ -491,7 +491,7 @@ rail0 wallets alias 0xAbC123… payee  # same as 'aliases add', address-first or
 rail0 aliases                        # bare command lists the address book
 rail0 aliases rm payee               # remove (e.g. to repoint a name)
 
-rail0 payments create --from @buyer --to @payee -t USDC -a 10.50 -c 84532 -p 0xPayerKey…
+rail0 payments create --from @buyer --to @merchant -t USDC -a 10.50 -c 84532 -p @buyer-key
 ```
 
 The JWT session token is **not** stored in the config file — it stays in the OS cache dir (written by `rail0 auth login`).
@@ -541,7 +541,7 @@ The payer creates the payment and signs the EIP-712 payload with their key
 (`--private-key` / `-p`), submitting the signature in one step:
 
 ```sh
-rail0 payments create -F 0xBuyer… -T 0xMerchant… -t USDC -a 10.50 -c 5042002 -p 0xPayerKey…
+rail0 payments create -F @buyer -T @merchant -t USDC -a 10.50 -c 5042002 -p @buyer-key
 ```
 
 > **Auto sign-in.** The gateway requires a SIWE session for every `/payments`
@@ -562,7 +562,7 @@ key), the payment exists at `unsigned` with no signature. Don't create it again 
 deposit the signature on the existing one:
 
 ```sh
-rail0 payments sign 0xRail0Id… -p 0xPayerKey…
+rail0 payments sign 0xRail0Id… -p @buyer-key
 ```
 
 **Token/chain discovery from the payee.** On a terminal, if you give `--to` but
@@ -572,7 +572,7 @@ from those combinations — a single accepted method is used automatically. So a
 buyer who knows only the merchant's address can run:
 
 ```sh
-rail0 payments create -F @buyer -T 0xMerchant… -a 10.50 -p @payer
+rail0 payments create -F @buyer -T @merchant -a 10.50 -p @payer
 # → prompts "Select the token and chain the merchant accepts" (skipped if only one)
 ```
 
@@ -737,7 +737,7 @@ are prompted if none is set).
 
 ```sh
 rail0 wallets create --address 0xABCD… -p @treasury --label "Treasury"
-rail0 wallets create --address @payee --pk 0xYourKey…
+rail0 wallets create --address @merchant -p 0xYourKey…
 ```
 
 | Flag | Short | Required | Description |
@@ -784,7 +784,7 @@ Save an address-book alias, in address-first order — handy right after copying
 
 ```sh
 rail0 wallets alias 0xABCD… treasury
-rail0 payments create --to @treasury -t USDC -a 10.50 -c 84532 -p 0xPayerKey…
+rail0 payments create --to @treasury -t USDC -a 10.50 -c 84532 -p @buyer-key
 ```
 
 ---
@@ -956,8 +956,8 @@ Create a payment, sign the EIP-712 payload with the payer's key, and submit the 
 
 ```sh
 rail0 payments create \
-  -F 0xBuyer… -T 0xMerchant… -t USDC -a 10.50 -c 5042002 \
-  -p 0xPayerKey…
+  -F @buyer -T @merchant -t USDC -a 10.50 -c 5042002 \
+  -p @buyer-key
 ```
 
 If required flags are missing and stdin is a TTY, an interactive form launches automatically.
@@ -1046,7 +1046,7 @@ rail0 payments history 0xabc123…
 Prepare the `authorize()` transaction pulling funds into escrow. Payer signature must be submitted first.
 
 ```sh
-rail0 payments authorize <rail0Id> -p 0xPayeeKey…
+rail0 payments authorize <rail0Id> -p @merchant-key
 ```
 
 ---
@@ -1056,7 +1056,7 @@ rail0 payments authorize <rail0Id> -p 0xPayeeKey…
 Prepare the `charge()` transaction — authorize + capture in one call (no escrow). Payment must have been created with `-C` / `--charge`.
 
 ```sh
-rail0 payments charge <rail0Id> -p 0xPayeeKey…
+rail0 payments charge <rail0Id> -p @merchant-key
 ```
 
 ---
@@ -1067,10 +1067,10 @@ Prepare the `capture()` transaction. Partial captures supported: pass `-a` less 
 
 ```sh
 # Full capture
-rail0 payments capture <rail0Id> -a 1.00 -p 0xPayeeKey…
+rail0 payments capture <rail0Id> -a 1.00 -p @merchant-key
 
 # Partial capture
-rail0 payments capture <rail0Id> -a 0.50 -p 0xPayeeKey…
+rail0 payments capture <rail0Id> -a 0.50 -p @merchant-key
 ```
 
 ---
@@ -1080,7 +1080,7 @@ rail0 payments capture <rail0Id> -a 0.50 -p 0xPayeeKey…
 Prepare the `void()` transaction — cancels authorization and returns escrowed funds to payer. Only callable before `authorizationExpiry`, by the payee.
 
 ```sh
-rail0 payments void <rail0Id> -p 0xPayeeKey…
+rail0 payments void <rail0Id> -p @merchant-key
 ```
 
 ---
@@ -1091,10 +1091,10 @@ Prepare the `release()` transaction — returns remaining escrowed funds to paye
 
 ```sh
 # Payee releases
-rail0 payments release <rail0Id> -p 0xPayeeKey…
+rail0 payments release <rail0Id> -p @merchant-key
 
 # Payer releases (just use the payer's key)
-rail0 payments release <rail0Id> -p 0xPayerKey…
+rail0 payments release <rail0Id> -p @buyer-key
 ```
 
 ---
@@ -1104,7 +1104,7 @@ rail0 payments release <rail0Id> -p 0xPayerKey…
 Prepare the `refund()` transaction. Partial refunds supported.
 
 ```sh
-rail0 payments refund <rail0Id> -a 1.00 -p 0xPayeeKey…
+rail0 payments refund <rail0Id> -a 1.00 -p @merchant-key
 ```
 
 ---
@@ -1196,7 +1196,7 @@ Every command prints the gateway response with all fields the gateway returns.
 
 ```sh
 # Extract the rail0_id of a freshly created payment
-RAIL0_ID=$(rail0 payments create -F 0xBuyer… -T 0xMerchant… -t USDC -a 10.50 -c 5042002 -p 0xPayerKey… --json | jq -r .rail0_id)
+RAIL0_ID=$(rail0 payments create -F @buyer -T @merchant -t USDC -a 10.50 -c 5042002 -p @buyer-key --json | jq -r .rail0_id)
 
 # Check payment status in a script
 STATUS=$(rail0 payments get <rail0Id> --json | jq -r .status)

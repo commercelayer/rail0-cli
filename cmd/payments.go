@@ -22,16 +22,21 @@ var paymentsCmd = &cobra.Command{
 Every on-chain operation is atomic: pass --private-key (-p) and the CLI prepares
 the unsigned transaction, signs it locally, and broadcasts it in a single step.
 
-  rail0 payments authorize <rail0Id> -p 0xYourPrivateKey…
+  rail0 payments authorize <rail0Id> -p @merchant-key --wait
 
-Authorize-and-capture flow:
-  1. payments create -F 0xBuyer… -p 0xPayerKey…  — payer creates + signs
-  2. payments authorize <rail0Id> -p 0xPayeeKey…  — payee authorizes
-  3. payments capture   <rail0Id> -a <n> -p 0xPayeeKey…  — payee captures
+Add -w/--wait to any of them to block until the chain confirms the operation,
+rather than returning as soon as it is broadcast. A key is given as a raw 0x
+hex key, as @name for one saved with 'rail0 keys add', or omitted to be
+prompted for (hidden).
 
-Charge (one-shot) flow:
-  1. payments create -C -F 0xBuyer… -p 0xPayerKey…
-  2. payments charge <rail0Id> -p 0xPayeeKey…`,
+Authorize-and-capture flow — the buyer signs off-chain, the merchant submits:
+  1. payments create -F @buyer -T @merchant -p @buyer-key   — buyer creates + signs
+  2. payments authorize <rail0Id> -p @merchant-key -w       — merchant escrows
+  3. payments capture   <rail0Id> -a <n> -p @merchant-key -w  — merchant takes it
+
+Charge (one-shot) flow — no escrow, funds move straight through:
+  1. payments create -C -F @buyer -T @merchant -p @buyer-key
+  2. payments charge <rail0Id> -p @merchant-key -w`,
 }
 
 // ── payments get ─────────────────────────────────────────────────────────────
@@ -243,8 +248,8 @@ terminal — so the key stays out of the shell history and process arguments.
 --from (payer) and --to (payee) must be different addresses: a payment can't be
 sent from an address to itself.`,
 	Example: `  rail0 payments create \
-    -F 0xBuyer… -T 0xMerchant… -t USDC -a 10.50 -c 5042002 \
-    -p 0xPayerKey…`,
+    -F @buyer -T @merchant -t USDC -a 10.50 -c 5042002 \
+    -p @buyer-key`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := context.Background()
@@ -336,7 +341,7 @@ would be stranded — the only way forward would be creating a duplicate.
 The payer signs locally: the key never leaves this machine, only the signature
 is sent. Requires the payer's own key, since the gateway checks that the
 recovered signer is the payment's payer.`,
-	Example: `  rail0 payments sign 0xabc123… -p 0xPayerKey…`,
+	Example: `  rail0 payments sign 0xabc123… -p @buyer-key`,
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := context.Background()

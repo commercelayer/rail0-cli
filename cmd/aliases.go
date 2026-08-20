@@ -94,7 +94,7 @@ func addAlias(name, addr string) error {
 	if !evmAddressPattern.MatchString(addr) {
 		return fmt.Errorf("invalid address %q: expected a 0x-prefixed 40-hex-character EVM address", addr)
 	}
-	cfg, err := config.Load()
+	cfg, err := loadConfigForWrite()
 	if err != nil {
 		return err
 	}
@@ -114,7 +114,7 @@ var aliasesRemoveCmd = &cobra.Command{
 	Example: `  rail0 aliases rm payee`,
 	Args:    cobra.ExactArgs(1),
 	RunE: func(_ *cobra.Command, args []string) error {
-		cfg, err := config.Load()
+		cfg, err := loadConfigForWrite()
 		if err != nil {
 			return err
 		}

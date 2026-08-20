@@ -79,7 +79,7 @@ enumerated — which is exactly why the name index exists.`,
 		if strings.HasPrefix(name, "@") {
 			return errors.New("key name must not include the leading '@'")
 		}
-		cfg, err := config.Load()
+		cfg, err := loadConfigForWrite()
 		if err != nil {
 			return err
 		}
@@ -138,7 +138,7 @@ var keysRemoveCmd = &cobra.Command{
 	Args:    cobra.ExactArgs(1),
 	RunE: func(_ *cobra.Command, args []string) error {
 		name := args[0]
-		cfg, err := config.Load()
+		cfg, err := loadConfigForWrite()
 		if err != nil {
 			return err
 		}

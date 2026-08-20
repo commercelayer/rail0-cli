@@ -233,6 +233,23 @@ func warnConfigUnreadable(err error) {
 	fmt.Fprintf(os.Stderr, "warning: ignoring the config file — %v\n", err)
 }
 
+// loadConfigForWrite is config.LoadForWrite plus the one thing the package
+// cannot do: tell the user, on stderr, that an unreadable config is being
+// dropped. Silence here would turn a corrupt file into a silently empty one,
+// which is the failure mode that makes "why did my aliases vanish?" unanswerable.
+func loadConfigForWrite() (*config.Config, error) {
+	cfg, replaced, err := config.LoadForWrite()
+	if err != nil {
+		return nil, err
+	}
+	if replaced {
+		fmt.Fprintln(os.Stderr,
+			"warning: the config file could not be parsed, so it is being replaced —\n"+
+				"         any settings, aliases or key names it held are gone")
+	}
+	return cfg, nil
+}
+
 // configCmd lists the effective settings when run bare, and holds the
 // set/get/unset/path verbs.
 var configCmd = &cobra.Command{
@@ -298,7 +315,7 @@ var configSetCmd = &cobra.Command{
 				return err
 			}
 		}
-		cfg, err := config.Load()
+		cfg, err := loadConfigForWrite()
 		if err != nil {
 			return err
 		}
@@ -342,7 +359,7 @@ var configUnsetCmd = &cobra.Command{
 		if _, err := lookupKey(key); err != nil {
 			return err
 		}
-		cfg, err := config.Load()
+		cfg, err := loadConfigForWrite()
 		if err != nil {
 			return err
 		}

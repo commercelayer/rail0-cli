@@ -314,6 +314,17 @@ config file. Precedence is: **flag  >  env var  >  config file  >  built-in defa
 | `--quiet` / `-q` | —                | Print only the result's id/hash, one per line — no JSON parser needed |
 | — | `RAIL0_HTTP_TIMEOUT` | Per-request HTTP timeout in seconds (default 30). Distinct from the wait commands' `--timeout`, which is the polling deadline |
 
+#### If the config file goes bad
+
+A file the CLI cannot parse is **ignored, with a warning naming it** — commands keep working on flags, env vars and defaults, so nothing is blocked. Reads refuse rather than act on settings they could not read.
+
+Any command that *writes* the config replaces it: `config set`, `config unset`, `env <name>`, `aliases add`/`rm`, `keys add`/`rm`. They say on stderr that the old contents are gone — which they are, since keys inside unparseable YAML cannot be recovered by any means. So the fastest repair is simply to pick an environment again:
+
+```sh
+rail0 config path      # where it lives, if you'd rather look first
+rail0 env staging      # rewrites the file, valid
+```
+
 ### Amounts and expiries in the output
 
 Every amount the CLI prints carries a **human companion** next to the raw value:

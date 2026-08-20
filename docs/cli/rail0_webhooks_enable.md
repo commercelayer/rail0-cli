@@ -2,6 +2,15 @@
 
 Re-enable a disabled webhook
 
+### Synopsis
+
+Turn a manually disabled webhook back on.
+
+This clears ONLY the manual disable. If the delivery circuit breaker tripped,
+the webhook stays inactive and no delivery goes out — the command still returns
+200, so check 'active' in the response rather than the exit code. When it comes
+back false with circuit_state "open", the fix is 'reset-circuit'.
+
 ```
 rail0 webhooks enable <webhook_id> [flags]
 ```

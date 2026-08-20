@@ -22,16 +22,21 @@ var paymentsCmd = &cobra.Command{
 Every on-chain operation is atomic: pass --private-key (-p) and the CLI prepares
 the unsigned transaction, signs it locally, and broadcasts it in a single step.
 
-  rail0 payments authorize <rail0Id> -p 0xYourPrivateKey…
+  rail0 payments authorize <rail0Id> -p @merchant-key --wait
 
-Authorize-and-capture flow:
-  1. payments create -F 0xBuyer… -p 0xPayerKey…  — payer creates + signs
-  2. payments authorize <rail0Id> -p 0xPayeeKey…  — payee authorizes
-  3. payments capture   <rail0Id> -a <n> -p 0xPayeeKey…  — payee captures
+Add -w/--wait to any of them to block until the chain confirms the operation,
+rather than returning as soon as it is broadcast. A key is given as a raw 0x
+hex key, as @name for one saved with 'rail0 keys add', or omitted to be
+prompted for (hidden).
 
-Charge (one-shot) flow:
-  1. payments create -C -F 0xBuyer… -p 0xPayerKey…
-  2. payments charge <rail0Id> -p 0xPayeeKey…`,
+Authorize-and-capture flow — the buyer signs off-chain, the merchant submits:
+  1. payments create -F @buyer -T @merchant -p @buyer-key   — buyer creates + signs
+  2. payments authorize <rail0Id> -p @merchant-key -w       — merchant escrows
+  3. payments capture   <rail0Id> -a <n> -p @merchant-key -w  — merchant takes it
+
+Charge (one-shot) flow — no escrow, funds move straight through:
+  1. payments create -C -F @buyer -T @merchant -p @buyer-key
+  2. payments charge <rail0Id> -p @merchant-key -w`,
 }
 
 // ── payments get ─────────────────────────────────────────────────────────────
@@ -197,6 +202,18 @@ var paymentsTransactionsCmd = &cobra.Command{
 	Use:   "transactions <rail0Id>",
 	Short: "List on-chain transactions for a payment",
 	Args:  cobra.ExactArgs(1),
+	Long: `List the on-chain transactions a payment has produced, one row per attempt,
+newest first by default.
+
+This is the view -w/--wait watches: it polls THIS table for the attempt it
+created and returns when that row reads confirmed or failed. So it is also
+where to look when a --wait timed out, or when an operation was submitted
+without one — the row's status says whether the chain has spoken yet, and a
+failed row carries the decoded revert reason.
+
+A payment can hold several rows for the same operation (a retried broadcast, or
+successive partial captures), which is why the balances a payment reports are
+the last CONFIRMED ones and not the last submitted.`,
 	Example: `  rail0 payments transactions 0xabc123…
   rail0 payments transactions 0xabc123… --sort -submitted_at`,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -231,8 +248,8 @@ terminal — so the key stays out of the shell history and process arguments.
 --from (payer) and --to (payee) must be different addresses: a payment can't be
 sent from an address to itself.`,
 	Example: `  rail0 payments create \
-    -F 0xBuyer… -T 0xMerchant… -t USDC -a 10.50 -c 5042002 \
-    -p 0xPayerKey…`,
+    -F @buyer -T @merchant -t USDC -a 10.50 -c 5042002 \
+    -p @buyer-key`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := context.Background()
@@ -324,7 +341,7 @@ would be stranded — the only way forward would be creating a duplicate.
 The payer signs locally: the key never leaves this machine, only the signature
 is sent. Requires the payer's own key, since the gateway checks that the
 recovered signer is the payment's payer.`,
-	Example: `  rail0 payments sign 0xabc123… -p 0xPayerKey…`,
+	Example: `  rail0 payments sign 0xabc123… -p @buyer-key`,
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := context.Background()
@@ -539,18 +556,22 @@ pulling funds from the payer into escrow.
 
 The payer must have created and signed the payment first via
 'payments create -p' (create + sign in one atomic step).
-The API returns 202 immediately. The payment stays at "signed" until
-rail0-indexer confirms the on-chain event and the API transitions it to
-"authorized". Poll 'payments get <rail0Id>' until payment=authorized
-and the authorize transaction shows confirmed.
+The API returns 202 immediately: broadcasting is not settling. The payment
+stays at "signed" until rail0-indexer sees the on-chain event and the API
+transitions it to "authorized".
+
+Add -w/--wait to block until that happens (or the operation fails) and exit
+non-zero if it didn't land — that is almost always what you want, and it saves
+polling 'payments get <rail0Id>' by hand. Without it the command returns as
+soon as the transaction is broadcast.
 
 Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 	Example: `  # 1. Payer creates and signs the payment in one step
-  rail0 payments create --from 0xBuyer… --to 0xMerchant… \
-    --token 0x3600… --amount 1.00 --chain-id 5042002 -p 0xPayerKey…
+  rail0 payments create --from @buyer --to @merchant \
+    --token USDC --amount 1.00 --chain-id 5042002 -p @payer
 
-  # 2. Payee authorizes
-  rail0 payments authorize <rail0Id> -p 0xPayeeKey…`,
+  # 2. Payee authorizes, and waits for the chain to confirm it
+  rail0 payments authorize <rail0Id> -p @merchant-key --wait`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		signingKey, err := signingKeyOrPrompt(authorizePrivateKey)
@@ -601,13 +622,15 @@ directly from payer to payee without an escrow window.
 
 The payment must have been created with -C/--charge and signed by the
 payer via 'payments create -p' (create + sign in one atomic step).
-The API returns 202 immediately. The payment stays at "signed" until
-rail0-indexer confirms and the API transitions it to "charged".
-Poll 'payments get <rail0Id>' until payment=charged and the charge
-transaction shows confirmed.
+The API returns 202 immediately: broadcasting is not settling. The payment
+stays at "signed" until rail0-indexer sees the on-chain event and the API
+transitions it to "charged".
+
+Add -w/--wait to block until that happens (or the operation fails) and exit
+non-zero if it didn't land, instead of polling 'payments get <rail0Id>'.
 
 Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
-	Example: `  rail0 payments charge 0xrail0Id… -p 0xPayeeKey…`,
+	Example: `  rail0 payments charge 0xrail0Id… -p @merchant-key --wait`,
 	Args:    cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		signingKey, err := signingKeyOrPrompt(chargePrivateKey)
@@ -663,20 +686,25 @@ var paymentsCaptureCmd = &cobra.Command{
 The payment must be in 'authorized' or 'partially_captured' status.
 Partial captures are supported: pass --amount less than capturableAmount
 to capture a portion; the remaining balance stays available until
-authorizationExpiry. Note that capturableAmount is the LAST CONFIRMED balance,
-so it is stale while another capture of yours is still in flight — 'payments
-wait' settles it before you choose an amount.
-The API returns 202 immediately. The payment stays at "authorized" until
-rail0-indexer confirms and the API transitions it to "captured" or
-"partially_captured". Poll 'payments get <rail0Id>' until the payment
-reaches the expected state and the capture transaction shows confirmed.
+authorizationExpiry.
+
+The API returns 202 immediately: broadcasting is not settling. The payment
+stays at "authorized" until rail0-indexer sees the on-chain event and the API
+transitions it to "captured" or "partially_captured".
+
+Add -w/--wait to block until that happens (or the operation fails) and exit
+non-zero if it didn't land. On partial captures it is close to required:
+capturableAmount is the LAST CONFIRMED balance, so it reads stale while a
+capture of yours is still in flight, and picking the next amount from it is how
+you over- or under-capture. ('payments wait' settles it separately if you'd
+rather not block the capture itself.)
 
 Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
-	Example: `  # Full capture
-  rail0 payments capture 0xrail0Id… --amount 1.00 -p 0xPayeeKey…
+	Example: `  # Full capture, waiting for the chain to confirm it
+  rail0 payments capture 0xrail0Id… --amount 1.00 -p @merchant-key --wait
 
-  # Partial capture
-  rail0 payments capture 0xrail0Id… --amount 0.50 -p 0xPayeeKey…`,
+  # Partial capture — --wait settles the balance before the next one
+  rail0 payments capture 0xrail0Id… --amount 0.50 -p @merchant-key --wait`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		signingKey, err := signingKeyOrPrompt(capturePrivateKey)
@@ -748,11 +776,13 @@ forbidden once any (even partial) capture has occurred (the contract reverts
 AlreadyCaptured) — recover the uncaptured remainder via 'release' instead. Void
 cancels the authorization and returns the full escrowed balance to the payer.
 Only callable before authorizationExpiry, by the payee.
-The API returns 202 immediately; poll 'payments get <rail0Id>' until
-status advances to "voided".
+
+The API returns 202 immediately: broadcasting is not settling. Add -w/--wait to
+block until the operation confirms on-chain (or fails) and exit non-zero if it
+didn't land, instead of polling 'payments get <rail0Id>' yourself.
 
 Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
-	Example: `  rail0 payments void 0xrail0Id… -p 0xPayeeKey…`,
+	Example: `  rail0 payments void 0xrail0Id… -p @merchant-key --wait`,
 	Args:    cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		signingKey, err := signingKeyOrPrompt(voidPrivateKey)
@@ -806,17 +836,24 @@ Release is only available after authorizationExpiry has passed on-chain.
 Returns the remaining (uncaptured) escrowed balance to the payer. Permissionless
 — both payer and payee can call it; the caller is whoever the signing key belongs
 to (derived from the key), so pass the payer's key to release as the payer.
-The API returns 202 immediately; poll 'payments get <rail0Id>'. The status
-advances to "released" only on a TOTAL release (an untouched authorization,
-nothing captured); if a capture left a refundable residual the status stays
-unchanged and that residual remains refundable.
+
+The API returns 202 immediately: broadcasting is not settling. Add -w/--wait to
+block until the operation confirms on-chain (or fails) and exit non-zero if it
+didn't land.
+
+Note that the payment STATUS advances to "released" only on a TOTAL release (an
+untouched authorization, nothing captured); if a capture left a refundable
+residual the status stays unchanged and that residual remains refundable. This
+does not weaken --wait: it waits on THIS operation's transaction reaching
+confirmed or failed, not on a status change — so it settles a partial release
+correctly, where waiting for a new status would hang until the deadline.
 
 Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 	Example: `  # Payee releases
-  rail0 payments release 0xrail0Id… -p 0xPayeeKey…
+  rail0 payments release 0xrail0Id… -p @merchant-key --wait
 
   # Payer releases (just use the payer's key)
-  rail0 payments release 0xrail0Id… -p 0xPayerKey…`,
+  rail0 payments release 0xrail0Id… -p @buyer-key --wait`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		signingKey, err := signingKeyOrPrompt(releasePrivateKey)
@@ -881,16 +918,23 @@ less than refundableAmount.
 No separate approval step is needed: the CLI signs the payee's EIP-3009
 ReceiveWithAuthorization payload locally with the same key, so the refund
 funds are pulled from the payee without a prior allowance grant.
-The API returns 202 immediately; poll 'payments get <rail0Id>'. The status
-advances to "refunded" only when the payment is fully settled (both escrow and
-refundable drained); a partial refund leaves the status unchanged.
+
+The API returns 202 immediately: broadcasting is not settling. Add -w/--wait to
+block until the operation confirms on-chain (or fails) and exit non-zero if it
+didn't land.
+
+Note that the payment STATUS advances to "refunded" only when the payment is
+fully settled (both escrow and refundable drained); a partial refund leaves it
+unchanged. This does not weaken --wait: it waits on THIS operation's transaction
+reaching confirmed or failed, not on a status change — so it settles a partial
+refund correctly, where waiting for a new status would hang until the deadline.
 
 Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 	Example: `  # Full refund
-  rail0 payments refund 0xrail0Id… --amount 1.00 -p 0xPayeeKey…
+  rail0 payments refund 0xrail0Id… --amount 1.00 -p @merchant-key --wait
 
   # Partial refund
-  rail0 payments refund 0xrail0Id… --amount 0.25 -p 0xPayeeKey…`,
+  rail0 payments refund 0xrail0Id… --amount 0.25 -p @merchant-key --wait`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		signingKey, err := signingKeyOrPrompt(refundPrivateKey)
@@ -990,8 +1034,12 @@ sign and submit it like any other operation (the gateway broadcasts it).
 Disputes are payer-driven and signal-only: they move no money. Only the payer
 may dispute, while the refund window is open and the merchant holds the funds.
 
+Signal-only does not mean instant: it is still an on-chain transaction, so the
+API returns 202 and the dispute is not visible until it confirms. Add -w/--wait
+to block until it does (or fails).
+
 Pass --private-key (-p): the CLI signs locally with the payer key and broadcasts.`,
-	Example: `  rail0 payments dispute 0xrail0Id… -p 0xPayerKey… --reason 0x…`,
+	Example: `  rail0 payments dispute 0xrail0Id… -p @buyer-key --reason 0x… --wait`,
 	Args:    cobra.MaximumNArgs(1),
 	RunE: func(_ *cobra.Command, args []string) error {
 		signingKey, err := signingKeyOrPrompt(disputePrivateKey)
@@ -1041,10 +1089,23 @@ Pass --private-key (-p): the CLI signs locally with the payer key and broadcasts
 }
 
 var paymentsDisputeCloseCmd = &cobra.Command{
-	Use:     "close <rail0Id>",
-	Short:   "Close a dispute (payer only): prepare, sign, broadcast",
+	Use:   "close <rail0Id>",
+	Short: "Close a dispute (payer only): prepare, sign, broadcast",
+	Long: `Prepare the transaction that calls closeDispute() on the RAIL0 contract, then
+sign and submit it like any other operation.
+
+Only the PAYER may withdraw a dispute — a merchant cannot dismiss one. The
+merchant's only way to close a dispute is a full 'refund', which closes it
+automatically. A withdrawn dispute can be reopened while the refund window is
+open.
+
+Like 'dispute', this is an on-chain transaction: the API returns 202 and the
+close is not visible until it confirms. Add -w/--wait to block until it does
+(or fails).
+
+Pass --private-key (-p): the CLI signs locally with the payer key and broadcasts.`,
+	Example: `  rail0 payments dispute close 0xrail0Id… -p @buyer-key --wait`,
 	Args:    cobra.MaximumNArgs(1),
-	Example: `  rail0 payments dispute close 0xrail0Id… -p 0xPayerKey…`,
 	RunE: func(_ *cobra.Command, args []string) error {
 		signingKey, err := signingKeyOrPrompt(closeDisputePrivateKey)
 		if err != nil {

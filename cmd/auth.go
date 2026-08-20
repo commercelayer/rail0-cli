@@ -16,6 +16,26 @@ import (
 var authCmd = &cobra.Command{
 	Use:   "auth",
 	Short: "Authenticate with the RAIL0 gateway using SIWE",
+	Long: `Sign in to the gateway with an Ethereum wallet, using SIWE (EIP-4361).
+
+Signing in proves you hold a key — it does not require a gateway account. ANY
+wallet can log in; an account is what unlocks the merchant surface (wallets,
+analytics, webhooks, disputes).
+
+Who actually needs this:
+
+  buyers      no. 'payments create' signs in on its own with the payer key,
+              so paying needs nothing but a key.
+  merchants   yes. The action commands (authorize, capture, refund, …) and
+              every account view read the session.
+
+The session is a JWT cached per gateway under the OS cache dir, so switching
+'rail0 env' switches session with it rather than logging you out. The token is
+never written to the config file. 'auth status' prints who you are and when it
+expires; 'rail0 token' prints the token itself.`,
+	Example: `  rail0 auth login -p @merchant-key
+  rail0 auth status
+  rail0 auth logout`,
 }
 
 // ── auth login ────────────────────────────────────────────────────────────────
@@ -50,7 +70,7 @@ token' later.
 The signing key is resolved like every other signing command: pass -p as a raw
 0x-prefixed hex key, as @name for a key saved in the OS keychain ('rail0 keys
 add'), or omit it to fall back to the RAIL0_PRIVATE_KEY environment variable.`,
-	Example: `  rail0 auth login -p @payee     # or -p 0xYourPrivateKey…
+	Example: `  rail0 auth login -p @merchant-key   # or -p 0xYourPrivateKey…
   rail0 auth login -p @payee -t  # also print the token + its expiry`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := context.Background()

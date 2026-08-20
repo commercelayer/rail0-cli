@@ -9,10 +9,14 @@ pulling funds from the payer into escrow.
 
 The payer must have created and signed the payment first via
 'payments create -p' (create + sign in one atomic step).
-The API returns 202 immediately. The payment stays at "signed" until
-rail0-indexer confirms the on-chain event and the API transitions it to
-"authorized". Poll 'payments get <rail0Id>' until payment=authorized
-and the authorize transaction shows confirmed.
+The API returns 202 immediately: broadcasting is not settling. The payment
+stays at "signed" until rail0-indexer sees the on-chain event and the API
+transitions it to "authorized".
+
+Add -w/--wait to block until that happens (or the operation fails) and exit
+non-zero if it didn't land — that is almost always what you want, and it saves
+polling 'payments get <rail0Id>' by hand. Without it the command returns as
+soon as the transaction is broadcast.
 
 Pass --private-key (-p): the CLI signs locally and broadcasts in one step.
 
@@ -24,11 +28,11 @@ rail0 payments authorize <rail0Id> [flags]
 
 ```
   # 1. Payer creates and signs the payment in one step
-  rail0 payments create --from 0xBuyer… --to 0xMerchant… \
-    --token 0x3600… --amount 1.00 --chain-id 5042002 -p 0xPayerKey…
+  rail0 payments create --from @buyer --to @merchant \
+    --token USDC --amount 1.00 --chain-id 5042002 -p @payer
 
-  # 2. Payee authorizes
-  rail0 payments authorize <rail0Id> -p 0xPayeeKey…
+  # 2. Payee authorizes, and waits for the chain to confirm it
+  rail0 payments authorize <rail0Id> -p @merchant-key --wait
 ```
 
 ### Options

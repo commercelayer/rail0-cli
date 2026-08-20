@@ -61,8 +61,16 @@ func analyticsFiltersFromFlags() rail0.AnalyticsFilters {
 }
 
 var analyticsSummaryCmd = &cobra.Command{
-	Use:     "summary",
-	Short:   "Headline figures: orders, disputes, refund/dispute rates, volume",
+	Use:   "summary",
+	Short: "Headline figures: orders, disputes, refund/dispute rates, volume",
+	Long: `Headline figures for the account: order count, disputed count, refund and
+dispute rates, per-status counts, and volume.
+
+Volume here is broken out per (token, chain), so it never hits the problem its
+siblings warn about: each figure has a single unit behind it and is safe to read
+directly. 'timeseries' and 'breakdown' return null volumes instead wherever a
+row would span more than one token, since summing different tokens' base units
+would produce a number that looks addable and is not.`,
 	Example: `  rail0 analytics summary --chain-id 5042002`,
 	Args:    cobra.NoArgs,
 	RunE: func(_ *cobra.Command, _ []string) error {

@@ -16,13 +16,20 @@ Prepare the transaction that calls capture() on the RAIL0 contract.
 The payment must be in 'authorized' or 'partially_captured' status.
 Partial captures are supported: pass --amount less than capturableAmount
 to capture a portion; the remaining balance stays available until
-authorizationExpiry. Note that capturableAmount is the LAST CONFIRMED balance,
-so it is stale while another capture of yours is still in flight — 'payments
-wait' settles it before you choose an amount.
-The API returns 202 immediately. The payment stays at "authorized" until
-rail0-indexer confirms and the API transitions it to "captured" or
-"partially_captured". Poll 'payments get \&' until the payment
-reaches the expected state and the capture transaction shows confirmed.
+authorizationExpiry.
+
+.PP
+The API returns 202 immediately: broadcasting is not settling. The payment
+stays at "authorized" until rail0-indexer sees the on-chain event and the API
+transitions it to "captured" or "partially_captured".
+
+.PP
+Add -w/--wait to block until that happens (or the operation fails) and exit
+non-zero if it didn't land. On partial captures it is close to required:
+capturableAmount is the LAST CONFIRMED balance, so it reads stale while a
+capture of yours is still in flight, and picking the next amount from it is how
+you over- or under-capture. ('payments wait' settles it separately if you'd
+rather not block the capture itself.)
 
 .PP
 Pass --private-key (-p): the CLI signs locally and broadcasts in one step.
@@ -76,11 +83,11 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.
 
 .SH EXAMPLE
 .EX
-  # Full capture
-  rail0 payments capture 0xrail0Id… --amount 1.00 -p 0xPayeeKey…
+  # Full capture, waiting for the chain to confirm it
+  rail0 payments capture 0xrail0Id… --amount 1.00 -p @merchant-key --wait
 
-  # Partial capture
-  rail0 payments capture 0xrail0Id… --amount 0.50 -p 0xPayeeKey…
+  # Partial capture — --wait settles the balance before the next one
+  rail0 payments capture 0xrail0Id… --amount 0.50 -p @merchant-key --wait
 .EE
 
 

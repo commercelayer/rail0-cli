@@ -14,9 +14,16 @@ less than refundableAmount.
 No separate approval step is needed: the CLI signs the payee's EIP-3009
 ReceiveWithAuthorization payload locally with the same key, so the refund
 funds are pulled from the payee without a prior allowance grant.
-The API returns 202 immediately; poll 'payments get <rail0Id>'. The status
-advances to "refunded" only when the payment is fully settled (both escrow and
-refundable drained); a partial refund leaves the status unchanged.
+
+The API returns 202 immediately: broadcasting is not settling. Add -w/--wait to
+block until the operation confirms on-chain (or fails) and exit non-zero if it
+didn't land.
+
+Note that the payment STATUS advances to "refunded" only when the payment is
+fully settled (both escrow and refundable drained); a partial refund leaves it
+unchanged. This does not weaken --wait: it waits on THIS operation's transaction
+reaching confirmed or failed, not on a status change — so it settles a partial
+refund correctly, where waiting for a new status would hang until the deadline.
 
 Pass --private-key (-p): the CLI signs locally and broadcasts in one step.
 
@@ -28,10 +35,10 @@ rail0 payments refund <rail0Id> [flags]
 
 ```
   # Full refund
-  rail0 payments refund 0xrail0Id… --amount 1.00 -p 0xPayeeKey…
+  rail0 payments refund 0xrail0Id… --amount 1.00 -p @merchant-key --wait
 
   # Partial refund
-  rail0 payments refund 0xrail0Id… --amount 0.25 -p 0xPayeeKey…
+  rail0 payments refund 0xrail0Id… --amount 0.25 -p @merchant-key --wait
 ```
 
 ### Options

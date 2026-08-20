@@ -17,18 +17,24 @@ Every on-chain operation is atomic: pass --private-key (-p) and the CLI prepares
 the unsigned transaction, signs it locally, and broadcasts it in a single step.
 
 .PP
-rail0 payments authorize  -p 0xYourPrivateKey…
+rail0 payments authorize  -p @merchant-key --wait
 
 .PP
-Authorize-and-capture flow:
-  1. payments create -F 0xBuyer… -p 0xPayerKey…  — payer creates + signs
-  2. payments authorize  -p 0xPayeeKey…  — payee authorizes
-  3. payments capture    -a  -p 0xPayeeKey…  — payee captures
+Add -w/--wait to any of them to block until the chain confirms the operation,
+rather than returning as soon as it is broadcast. A key is given as a raw 0x
+hex key, as @name for one saved with 'rail0 keys add', or omitted to be
+prompted for (hidden).
 
 .PP
-Charge (one-shot) flow:
-  1. payments create -C -F 0xBuyer… -p 0xPayerKey…
-  2. payments charge  -p 0xPayeeKey…
+Authorize-and-capture flow — the buyer signs off-chain, the merchant submits:
+  1. payments create -F @buyer -T @merchant -p @buyer-key   — buyer creates + signs
+  2. payments authorize  -p @merchant-key -w       — merchant escrows
+  3. payments capture    -a  -p @merchant-key -w  — merchant takes it
+
+.PP
+Charge (one-shot) flow — no escrow, funds move straight through:
+  1. payments create -C -F @buyer -T @merchant -p @buyer-key
+  2. payments charge  -p @merchant-key -w
 
 
 .SH OPTIONS

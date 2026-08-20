@@ -34,7 +34,7 @@ rail0 auth login [flags]
 ### Examples
 
 ```
-  rail0 auth login -p @payee     # or -p 0xYourPrivateKey…
+  rail0 auth login -p @merchant-key   # or -p 0xYourPrivateKey…
   rail0 auth login -p @payee -t  # also print the token + its expiry
 ```
 

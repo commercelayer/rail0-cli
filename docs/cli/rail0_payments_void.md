@@ -11,8 +11,10 @@ forbidden once any (even partial) capture has occurred (the contract reverts
 AlreadyCaptured) — recover the uncaptured remainder via 'release' instead. Void
 cancels the authorization and returns the full escrowed balance to the payer.
 Only callable before authorizationExpiry, by the payee.
-The API returns 202 immediately; poll 'payments get <rail0Id>' until
-status advances to "voided".
+
+The API returns 202 immediately: broadcasting is not settling. Add -w/--wait to
+block until the operation confirms on-chain (or fails) and exit non-zero if it
+didn't land, instead of polling 'payments get <rail0Id>' yourself.
 
 Pass --private-key (-p): the CLI signs locally and broadcasts in one step.
 
@@ -23,7 +25,7 @@ rail0 payments void <rail0Id> [flags]
 ### Examples
 
 ```
-  rail0 payments void 0xrail0Id… -p 0xPayeeKey…
+  rail0 payments void 0xrail0Id… -p @merchant-key --wait
 ```
 
 ### Options

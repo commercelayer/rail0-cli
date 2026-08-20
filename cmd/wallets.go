@@ -124,8 +124,8 @@ The added address need NOT be your session address — a merchant may register
 several payee wallets — but the key must match --address (the command derives
 the signer from the key and rejects a mismatch). Addresses are globally unique:
 one already registered to any account is refused (409).`,
-	Example: `  rail0 wallets create --address 0xABCD… -p @payee --label "Main wallet"
-  rail0 wallets create --address @payee --pk 0xYourKey…`,
+	Example: `  rail0 wallets create --address 0xABCD… -p @merchant-key --label "Main wallet"
+  rail0 wallets create --address @merchant -p 0xYourKey…`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		account, err := currentAccountID()
@@ -187,8 +187,21 @@ var updateWalletLabel string
 var updateWalletActive string
 
 var walletsUpdateCmd = &cobra.Command{
-	Use:     "update <wallet>",
-	Short:   "Update label or active status on a wallet (by id or 0x address)",
+	Use:   "update <wallet>",
+	Short: "Update label or active status on a wallet (by id or 0x address)",
+	Long: `Change a wallet's label, or turn it on and off with --active.
+
+--active false is the merchant's REVOCATION switch, and it does more than hide a
+row: a deactivated wallet stops being offered by 'payment-methods', so no new
+payment can name it, and webhooks stop being dispatched for payments to it. That
+is deliberate — deactivation says "stop trusting this address", and an outbound
+push to a revoked wallet's payments would contradict it.
+
+Existing payments are unaffected: they carry their own payee address and settle
+whatever the flag says now. Reversible with --active true.
+
+'wallets delete' is the same operation under the API's DELETE verb — a soft
+delete, not a removal — so the two are interchangeable.`,
 	Example: `  rail0 wallets update 0xABCD… --label "New label" --active true`,
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -219,8 +232,22 @@ var walletsUpdateCmd = &cobra.Command{
 // ── wallets delete ──────────────────────────────────────────────────────────
 
 var walletsDeleteCmd = &cobra.Command{
-	Use:     "delete <wallet>",
-	Short:   "Remove a wallet from the account (by id or 0x address)",
+	Use:   "delete <wallet>",
+	Short: "Deactivate a wallet — soft delete, reversible (by id or 0x address)",
+	Long: `Deactivate a wallet. Despite the verb, this is a SOFT delete and it is
+reversible: the gateway sets active=false and keeps the row, so 'wallets update
+<wallet> --active true' brings it back. Nothing is removed, nothing on-chain is
+touched, and no funds move.
+
+It is the same operation as 'wallets update <wallet> --active false'. Both
+spellings exist because the API exposes a DELETE verb as well as the flag —
+use whichever reads better where you are writing it.
+
+What deactivation actually does: the address stops being offered by
+'payment-methods', so buyers can no longer discover it and no new payment can
+name it, and webhooks stop being dispatched for payments to it. Existing
+payments are unaffected — they carry their own payee address and settle
+normally.`,
 	Example: `  rail0 wallets delete 0xABCD…`,
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {

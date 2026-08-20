@@ -2,6 +2,21 @@
 
 Reset the delivery circuit breaker and re-enable the webhook
 
+### Synopsis
+
+Close the delivery circuit breaker and re-enable the webhook.
+
+The breaker opens after 10 consecutive failed EVENTS (a distinct event, not
+each retry of one), and opening it also marks the webhook disabled. Once open
+it never closes on its own: a later success cannot close it, because nothing is
+delivered while it is open. This command is the only way back, and it clears
+the manual disable at the same time — so it works whichever way the webhook
+went inactive.
+
+Fix the endpoint FIRST. Resetting a breaker in front of a receiver that is
+still failing just spends another 10 events reopening it. 'event-callbacks
+<id> --status failed' shows what it was failing on.
+
 ```
 rail0 webhooks reset-circuit <webhook_id> [flags]
 ```

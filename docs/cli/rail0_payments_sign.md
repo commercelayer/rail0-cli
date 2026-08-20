@@ -23,7 +23,7 @@ rail0 payments sign <rail0Id> [flags]
 ### Examples
 
 ```
-  rail0 payments sign 0xabc123… -p 0xPayerKey…
+  rail0 payments sign 0xabc123… -p @buyer-key
 ```
 
 ### Options

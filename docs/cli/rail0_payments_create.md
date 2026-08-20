@@ -20,8 +20,8 @@ rail0 payments create [flags]
 
 ```
   rail0 payments create \
-    -F 0xBuyer… -T 0xMerchant… -t USDC -a 10.50 -c 5042002 \
-    -p 0xPayerKey…
+    -F @buyer -T @merchant -t USDC -a 10.50 -c 5042002 \
+    -p @buyer-key
 ```
 
 ### Options

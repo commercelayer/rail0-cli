@@ -10,7 +10,22 @@ rail0-wallets-update - Update label or active status on a wallet (by id or 0x ad
 
 
 .SH DESCRIPTION
-Update label or active status on a wallet (by id or 0x address)
+Change a wallet's label, or turn it on and off with --active.
+
+.PP
+--active false is the merchant's REVOCATION switch, and it does more than hide a
+row: a deactivated wallet stops being offered by 'payment-methods', so no new
+payment can name it, and webhooks stop being dispatched for payments to it. That
+is deliberate — deactivation says "stop trusting this address", and an outbound
+push to a revoked wallet's payments would contradict it.
+
+.PP
+Existing payments are unaffected: they carry their own payee address and settle
+whatever the flag says now. Reversible with --active true.
+
+.PP
+\&'wallets delete' is the same operation under the API's DELETE verb — a soft
+delete, not a removal — so the two are interchangeable.
 
 
 .SH OPTIONS

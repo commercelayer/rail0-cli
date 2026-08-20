@@ -2,6 +2,14 @@
 
 Remove a webhook
 
+### Synopsis
+
+Remove a webhook permanently.
+
+The subscription and its shared secret go with it — there is no undo and no way
+to recover the secret, so a recreated webhook needs its receiver reconfigured
+with the new one. To stop deliveries reversibly, use 'disable' instead.
+
 ```
 rail0 webhooks delete <webhook_id> [flags]
 ```

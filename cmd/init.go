@@ -155,6 +155,10 @@ func validateKeyName(name string) error {
 // printNextSteps closes the setup with the commands that follow from it, which is the
 // part a first-time reader cannot infer: the discovery call is public, and creating a
 // payment needs the payer to be the signed-in address.
+//
+// It leads with 'aliases add' and then uses @names throughout, including the key it
+// just saved. Setup is where the habit is cheapest to form, and a first example that
+// pastes raw hex teaches the opposite of everything downstream.
 func printNextSteps(keyName string) {
 	ref := "@<name>"
 	if keyName != "" {
@@ -163,9 +167,10 @@ func printNextSteps(keyName string) {
 	fmt.Fprintf(os.Stderr, `
 Set up. From here:
 
-  rail0 payment-methods --address 0xMerchant…   # what a merchant accepts (public, no login)
-  rail0 payments create -F 0xYou… -T 0xMerchant… -t USDC -a 1.00 -c 5042002 -p %s
-  rail0 payments list                            # your payments, as payer or payee
+  rail0 aliases add merchant 0x…      # name the addresses once, then use @merchant
+  rail0 payment-methods -A @merchant  # what that merchant accepts (public, no login)
+  rail0 payments create -F @me -T @merchant -t USDC -a 1.00 -c 5042002 -p %s
+  rail0 payments list                 # your payments, as payer or payee
 
 'rail0 <command> --help' has the detail; 'rail0 env current -d' shows what this wrote.
 `, ref)

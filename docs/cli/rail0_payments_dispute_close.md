@@ -2,6 +2,22 @@
 
 Close a dispute (payer only): prepare, sign, broadcast
 
+### Synopsis
+
+Prepare the transaction that calls closeDispute() on the RAIL0 contract, then
+sign and submit it like any other operation.
+
+Only the PAYER may withdraw a dispute — a merchant cannot dismiss one. The
+merchant's only way to close a dispute is a full 'refund', which closes it
+automatically. A withdrawn dispute can be reopened while the refund window is
+open.
+
+Like 'dispute', this is an on-chain transaction: the API returns 202 and the
+close is not visible until it confirms. Add -w/--wait to block until it does
+(or fails).
+
+Pass --private-key (-p): the CLI signs locally with the payer key and broadcasts.
+
 ```
 rail0 payments dispute close <rail0Id> [flags]
 ```
@@ -9,7 +25,7 @@ rail0 payments dispute close <rail0Id> [flags]
 ### Examples
 
 ```
-  rail0 payments dispute close 0xrail0Id… -p 0xPayerKey…
+  rail0 payments dispute close 0xrail0Id… -p @buyer-key --wait
 ```
 
 ### Options

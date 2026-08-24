@@ -223,6 +223,15 @@ delete, not a removal — so the two are interchangeable.`,
 				return errors.New("--active must be 'true' or 'false'")
 			}
 		}
+		// --active false IS the revocation, so it is gated like `wallets delete`, which
+		// performs the identical operation. Before this only the delete spelling asked,
+		// while the flag spelling — the one the help points at, and the one a script is
+		// likelier to reach for — went straight through. (gateway#237)
+		if req.Active != nil && !*req.Active {
+			if err := confirmDestructive(deactivationPrompt(wallet)); err != nil {
+				return err
+			}
+		}
 		return ui.RunAPI(func() (any, error) {
 			return newClient().Wallets.Update(context.Background(), account, wallet, req)
 		})
@@ -245,9 +254,13 @@ use whichever reads better where you are writing it.
 
 What deactivation actually does: the address stops being offered by
 'payment-methods', so buyers can no longer discover it and no new payment can
-name it, and webhooks stop being dispatched for payments to it. Existing
-payments are unaffected — they carry their own payee address and settle
-normally.`,
+name it, and webhooks stop being dispatched for payments to it.
+
+Existing payments still SETTLE — they carry their own payee address and the chain
+does not care — but you stop being TOLD about the ones still in flight: webhook
+dispatch resolves the payee wallet's account, so a deactivated wallet delivers
+nothing further and no delivery is recorded as skipped. Capture them, or expect
+to poll. (rail0-gateway#237)`,
 	Example: `  rail0 wallets delete 0xABCD…`,
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -255,13 +268,31 @@ normally.`,
 		if err != nil {
 			return err
 		}
-		if err := confirmDestructive(fmt.Sprintf("Delete wallet %s from the account?", args[0])); err != nil {
+		if err := confirmDestructive(deactivationPrompt(args[0])); err != nil {
 			return err
 		}
 		return ui.RunAPI(func() (any, error) {
 			return nil, newClient().Wallets.Delete(context.Background(), account, args[0])
 		})
 	},
+}
+
+// deactivationPrompt is shared by `wallets delete` and `wallets update --active false`,
+// which are the same operation on the gateway — so they must ask the same question.
+//
+// It names the WEBHOOK consequence because that is the one nothing else surfaces. The rest
+// of deactivation announces itself: the wallet stops appearing in payment-methods, buyers
+// stop being able to name it. But webhook dispatch resolves the payee wallet's account, so
+// a deactivated wallet silently stops delivering events for payments that are STILL IN
+// FLIGHT — the merchant is not told, no delivery is recorded as skipped, and the payments
+// settle on-chain regardless. That asymmetry is gateway#237.
+func deactivationPrompt(wallet string) string {
+	return fmt.Sprintf(
+		"Deactivate wallet %s?\n"+
+			"  - buyers can no longer discover it and no new payment can name it\n"+
+			"  - webhooks STOP for its payments that are still in flight (they settle, you are not told)\n"+
+			"  - reversible: rail0 wallets update %s --active true",
+		wallet, wallet)
 }
 
 // ── wallets balances ──────────────────────────────────────────────────────────
@@ -347,6 +378,10 @@ func init() {
 	_ = walletsBalancesCmd.Flags().MarkHidden("token")
 
 	addYesFlag(walletsDeleteCmd)
+	// --active false is the same revocation, so it needs the same escape hatch: without
+	// --yes the new confirmation would refuse in a non-interactive shell, which would
+	// break any script that turns a wallet off.
+	addYesFlag(walletsUpdateCmd)
 	walletsCmd.AddCommand(
 		walletsGetCmd,
 		walletsCreateCmd,

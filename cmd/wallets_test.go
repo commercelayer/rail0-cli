@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/spf13/cobra"
@@ -76,5 +77,60 @@ func TestWalletsCreateHasSigningKeyFlags(t *testing.T) {
 	}
 	if ann := addr.Annotations[cobra.BashCompOneRequiredFlag]; len(ann) != 1 || ann[0] != "true" {
 		t.Error("wallets create: --address should be required")
+	}
+}
+
+// Deactivation is one operation with two spellings — `wallets delete <w>` and
+// `wallets update <w> --active false` — and the help says so. So they must ask the same
+// question. Only the delete spelling used to ask, while the flag spelling (the one the
+// help points at, and the one a script reaches for) went straight through.
+//
+// The prompt has to name the WEBHOOK consequence, because it is the one nothing else
+// surfaces: dispatch resolves the payee wallet's account, so a deactivated wallet stops
+// delivering events for payments still in flight, records no skip, and the payments settle
+// anyway. (rail0-gateway#237)
+func TestDeactivationPromptNamesWhatIsLost(t *testing.T) {
+	prompt := deactivationPrompt("0xABCD")
+
+	for _, want := range []string{
+		"0xABCD",          // which wallet
+		"webhooks STOP",   // the consequence nothing else surfaces
+		"still in flight", // and precisely which payments it hits
+		"--active true",   // and that it is reversible
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Errorf("prompt must mention %q\ngot: %s", want, prompt)
+		}
+	}
+}
+
+// Structural pin: the flag spelling must carry -y/--yes. It only needs one because it is
+// gated — so the flag's presence is the cheapest evidence the gate was wired, and its
+// absence would mean the new confirmation refuses in every non-interactive shell and
+// breaks any script that turns a wallet off.
+func TestUpdateCarriesTheYesFlag(t *testing.T) {
+	for _, c := range []*cobra.Command{walletsUpdateCmd, walletsDeleteCmd} {
+		if c.Flags().Lookup("yes") == nil {
+			t.Errorf("%q must accept --yes: it gates on a confirmation", c.Name())
+		}
+	}
+}
+
+// Both spellings gate on the same prompt text, so neither can drift into asking a softer
+// question than the other.
+func TestBothDeactivationSpellingsAreGated(t *testing.T) {
+	// --yes off and no TTY: confirmDestructive refuses, which is what proves the gate is
+	// actually reached rather than skipped.
+	assumeYes = false
+	t.Cleanup(func() { assumeYes = false })
+
+	if err := confirmDestructive(deactivationPrompt("0x1")); err == nil {
+		t.Fatal("the gate must refuse without a TTY or --yes")
+	}
+
+	// And --yes passes it, so a script can still turn a wallet off deliberately.
+	assumeYes = true
+	if err := confirmDestructive(deactivationPrompt("0x1")); err != nil {
+		t.Errorf("--yes must pass the gate: %v", err)
 	}
 }

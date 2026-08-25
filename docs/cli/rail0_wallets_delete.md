@@ -15,9 +15,13 @@ use whichever reads better where you are writing it.
 
 What deactivation actually does: the address stops being offered by
 'payment-methods', so buyers can no longer discover it and no new payment can
-name it, and webhooks stop being dispatched for payments to it. Existing
-payments are unaffected — they carry their own payee address and settle
-normally.
+name it, and webhooks stop being dispatched for payments to it.
+
+Existing payments still SETTLE — they carry their own payee address and the chain
+does not care — but you stop being TOLD about the ones still in flight: webhook
+dispatch resolves the payee wallet's account, so a deactivated wallet delivers
+nothing further and no delivery is recorded as skipped. Capture them, or expect
+to poll. (rail0-gateway#237)
 
 ```
 rail0 wallets delete <wallet> [flags]

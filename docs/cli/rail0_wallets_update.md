@@ -34,6 +34,7 @@ rail0 wallets update <wallet> [flags]
       --active string   Set active flag ('true' or 'false')
   -h, --help            help for update
   -l, --label string    New wallet label
+  -y, --yes             Skip the confirmation prompt (required to run non-interactively)
 ```
 
 ### Options inherited from parent commands

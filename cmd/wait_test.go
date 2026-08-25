@@ -238,6 +238,21 @@ func TestTerminalMismatchErrorExplainsTheOutcome(t *testing.T) {
 	}
 }
 
+// `expired` is the status that would otherwise cost the operator the whole deadline AND
+// the right answer: no capture can land, so waiting is over — but the escrow is still
+// on-chain, so "terminal" must not read as "the funds are settled".
+func TestExpiredIsTerminalButNamesTheRecovery(t *testing.T) {
+	if !terminalStatuses["expired"] {
+		t.Fatal("expired must stop the wait: nothing will move it to captured")
+	}
+	err := terminalMismatchError(&rail0.Payment{ID: "0xabc", Status: "expired"}, "captured")
+	for _, want := range []string{"expired", "terminal", "recoverable", "release", "0xabc"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("message %q is missing %q", err.Error(), want)
+		}
+	}
+}
+
 // The status list backing both --until validation and its shell completion must
 // exclude the legacy status the gateway no longer produces: accepting it would
 // accept a wait that can never finish.

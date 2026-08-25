@@ -21,7 +21,7 @@ func TestHumanizeError(t *testing.T) {
 		{"connection refused (string)", errors.New("dial tcp [::1]:9292: connect: connection refused"), "is it running"},
 		{"timeout", errors.New("context deadline exceeded"), "timed out"},
 		{"unauthorized", &rail0.APIError{Status: 401}, "auth login"},
-		{"forbidden", &rail0.APIError{Status: 403, Message: "caller is not the payee"}, "forbidden (HTTP 403): caller is not the payee"},
+		{"forbidden", &rail0.APIError{Status: 403, Detail: "caller is not the payee"}, "forbidden (HTTP 403): caller is not the payee"},
 		{"conflict", &rail0.APIError{Status: 409, Code: "conflict"}, "conflict (HTTP 409)"},
 		{"server error", &rail0.APIError{Status: 502}, "upstream error (HTTP 502)"},
 		{"server error detail", &rail0.APIError{Status: 502, Code: "signing_payload_unavailable", Reason: "rpc_unreachable"}, "rpc_unreachable"},
@@ -48,9 +48,11 @@ func TestAPIHint(t *testing.T) {
 		err  *rail0.APIError
 		want string // substring the hint must contain (apiHint may append an actionable suffix from errorHints)
 	}{
-		{"message preferred", &rail0.APIError{Code: "no_active_contract", Message: "no active contract"}, "no active contract"},
+		// Detail, not Message: the gateway sends one text field and the SDK mirrors it into
+		// Message, so Detail is where the sentence lives.
+		{"detail preferred", &rail0.APIError{Code: "no_active_contract", Detail: "no active contract"}, "no active contract"},
 		{"code-only fallback", &rail0.APIError{Code: "no_active_contract"}, "no_active_contract"},
-		{"blank message falls back to code", &rail0.APIError{Code: "conflict", Message: "  "}, "conflict"},
+		{"blank detail falls back to code", &rail0.APIError{Code: "conflict", Detail: "  "}, "conflict"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

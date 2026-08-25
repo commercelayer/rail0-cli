@@ -73,11 +73,17 @@ const waitProgressEvery = 5
 // a wait that can never finish.
 var paymentStatuses = []string{
 	"unsigned", "signed", "authorized", "partially_captured",
-	"captured", "charged", "voided", "released", "refunded", "failed",
+	"captured", "charged", "voided", "released", "refunded", "expired", "failed",
 }
 
+// `expired` is terminal HERE, and the distinction is worth stating because it is not
+// terminal on-chain: a never-captured authorization whose window lapsed can still be
+// RELEASED, which closes the payment as `released`. What is over is the waiting — no
+// capture will ever land — so a loop that treated it as "not yet" would sit out the full
+// deadline on a payment that can never settle, and exit as a timeout rather than telling
+// the operator the escrow is recoverable. terminalMismatchError says how.
 var terminalStatuses = map[string]bool{
-	"voided": true, "released": true, "refunded": true, "failed": true,
+	"voided": true, "released": true, "refunded": true, "expired": true, "failed": true,
 }
 
 // stopPolling marks an error as a DECISION rather than a failed read: the poll
@@ -245,6 +251,11 @@ func gaveUpError(timeout time.Duration, checkCmd string, lastTransient error) er
 // recorded failure cause is included when it has one. (#107)
 func terminalMismatchError(p *rail0.Payment, want string) error {
 	msg := fmt.Sprintf("payment is %s, which is terminal — it can no longer become %s", p.Status, want)
+	// The one terminal status that still has money to move: say so, because "terminal"
+	// otherwise reads as "the funds are settled" and here they are sitting in escrow.
+	if p.Status == "expired" {
+		msg += ". The escrow is still recoverable: run `rail0 payments release " + p.ID + "`"
+	}
 	if detail := strings.TrimSpace(p.LastErrorMessage); detail != "" {
 		msg += fmt.Sprintf(": %s", detail)
 	} else if p.LastErrorCode != "" {

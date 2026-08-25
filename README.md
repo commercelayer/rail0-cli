@@ -260,6 +260,11 @@ blocks until the state actually changes, prints progress while it does, and exit
 non-zero if the operation failed — so a script reads top to bottom instead of
 growing a polling loop.
 
+A payment that reaches `expired` stops the wait rather than running to the deadline: no
+capture can land on a lapsed authorization, so waiting is over. The message says the
+escrow is still recoverable and names the `release` command for it — `expired` is
+terminal for the *wait*, not for the money.
+
 Check the result any time:
 
 ```sh

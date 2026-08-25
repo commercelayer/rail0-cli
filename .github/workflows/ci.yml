@@ -38,11 +38,35 @@ jobs:
         with:
           path: rail0-cli
 
+      # Which rail0-go to build against: the branch of the SAME NAME when it exists,
+      # otherwise main.
+      #
+      # `ref: main` alone made every coordinated change unbuildable. The SDK is consumed
+      # through `replace … => ../rail0-go`, so a CLI change that follows an SDK change
+      # cannot compile until the SDK has landed on main — and the CLI PR that carries the
+      # matching work fails for a reason that has nothing to do with it. Since branch
+      # names are shared across these repos by convention (feature/webhook-topics in
+      # both), looking for the twin first makes the pair testable before either merges,
+      # and falls back to main for every ordinary PR.
+      - name: Pick the rail0-go ref
+        id: sdk_ref
+        env:
+          GH_TOKEN: ${{ secrets.RAIL0_GO_TOKEN }}
+        run: |
+          branch="${{ github.head_ref || github.ref_name }}"
+          if gh api "repos/commercelayer/rail0-go/branches/$branch" >/dev/null 2>&1; then
+            echo "Building against rail0-go@$branch (twin branch found)"
+            echo "ref=$branch" >> "$GITHUB_OUTPUT"
+          else
+            echo "Building against rail0-go@main (no branch named $branch there)"
+            echo "ref=main" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Checkout rail0-go (private sibling; resolves ../rail0-go)
         uses: actions/checkout@v4
         with:
           repository: commercelayer/rail0-go
-          ref: main
+          ref: ${{ steps.sdk_ref.outputs.ref }}
           path: rail0-go
           token: ${{ secrets.RAIL0_GO_TOKEN }}
 

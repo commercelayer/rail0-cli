@@ -83,16 +83,17 @@ func detail(msg string) string {
 // apiHint composes what the user reads after the HTTP status: the gateway's own
 // sentence first, then this CLI's extra advice for that code.
 //
-// The gateway sends code/title/detail, so `Detail` is a sentence written to be shown
-// as-is and is always present — it is the text, not a fallback. The local hint is
+// The gateway sends exactly code/title/detail, so `Detail` is a sentence written to be
+// shown as-is and is always present — it is the text, not a fallback. The local hint is
 // appended only when it says something the gateway cannot: which rail0 command to run
-// next. Falling back to the bare Code stays for an older gateway, whose bodies could
-// carry a code and nothing else.
+// next.
+//
+// The Message step is gone: the SDK now sets it FROM Detail (the gateway deleted the
+// separate `message` rather than dual-sending it), so it could only ever repeat the
+// value just found empty. Falling back to the bare Code stays — a body with no text at
+// all is still better named by its code than by nothing.
 func apiHint(e *rail0.APIError) string {
 	msg := strings.TrimSpace(e.Detail)
-	if msg == "" {
-		msg = strings.TrimSpace(e.Message)
-	}
 	if msg == "" {
 		msg = e.Code
 	}
@@ -146,6 +147,17 @@ var errorHints = map[string]string{
 	"nothing_to_dispute":           "a dispute needs a merchant-held (refundable) balance",
 	"transaction_not_overwritable": "a transaction for this operation is already in flight — wait for it with 'rail0 payments wait <id>'",
 	"signer_mismatch":              "the signing key doesn't match the payment's payer/payee — use the right wallet's key",
+	// The SIWE BINDING failures, split out of signer_mismatch (gateway #216). These
+	// matter more here than in a library: the CLI signs the GATEWAY's own host, so a
+	// domain mismatch is a misconfigured base URL, and until this split it arrived
+	// looking like a bad signature — sending the operator after their key instead of
+	// their config. None of these echoes the server's allow-list; that endpoint is
+	// unauthenticated, so naming the config would make the hint a probe.
+	"siwe_domain_not_allowed":      "the gateway does not accept that origin — check `rail0 config` points at the right base URL, and have that host added to the gateway's SIWE domain allow-list",
+	"siwe_uri_mismatch":            "the signed message's uri host must equal its own domain — this is a client bug, not a key problem",
+	"siwe_chain_mismatch":          "the login's chain id is not the one this gateway expects; it is nominal and off-chain, so use the value the SDK sends",
+	"siwe_proof_expired":           "the proof took too long between nonce and signature — run `rail0 auth login` again",
+	"sessions_revoked":             "every session of this address from before its revoke-all cutoff is refused — run `rail0 auth login` again",
 	"config_hash_mismatch":         "this payment and its on-chain deployment disagree — check it with 'rail0 payments get <id>'; it can't be operated as recorded",
 	"payment_not_on_chain":         "the contract has no record of this payment — check its transactions with 'rail0 payments transactions <id>'",
 	"unsupported_contract_version": "this payment's RAIL0 deployment isn't one the gateway supports — nothing to do client-side, the gateway needs upgrading",

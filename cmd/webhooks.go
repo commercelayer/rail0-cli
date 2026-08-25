@@ -14,15 +14,22 @@ var webhooksCmd = &cobra.Command{
 	Use:   "webhooks",
 	Short: "Webhook subscription management (requires login)",
 	Example: `  rail0 webhooks list
-  rail0 webhooks create --name "capture hook" \
-    --callback-url https://example.com/hook --topic payments.captured
+  rail0 webhooks create --name "order hook" \
+    --callback-url https://example.com/hook -t payments.captured -t payments.refunded
   rail0 webhooks event-callbacks whk_abc123 --status failed   # why isn't it arriving?`,
 	Long: `Manage webhook subscriptions for the authenticated account.
 
-A webhook subscribes to exactly one payment-lifecycle topic (e.g.
-payments.captured) and delivers a signed callback to your endpoint. The
-shared secret used to verify delivery signatures is returned only once, on
+A webhook subscribes to one or more payment-lifecycle topics and delivers a
+signed callback to your endpoint. One subscription means ONE shared secret and
+ONE circuit breaker however many topics it carries, and each delivery names the
+event that fired in X-Rail0-Topic — so four events on one endpoint is one
+subscription, not four to keep in step. The secret is returned only once, on
 create and rotate-secret.
+
+Two subscriptions for the same callback URL must not overlap: the same event
+arriving twice under two different secrets is indistinguishable from a duplicate
+at the receiving end, so the gateway refuses it and names the topic that
+collided.
 
 A webhook delivers only when it is active, and there are TWO independent ways
 for it to stop being active:
@@ -93,12 +100,16 @@ var webhooksGetCmd = &cobra.Command{
 
 var webhooksCreateName string
 var webhooksCreateURL string
-var webhooksCreateTopic string
+var webhooksCreateTopics []string
 
 var webhooksCreateCmd = &cobra.Command{
 	Use:   "create",
 	Short: "Register a new webhook (returns the one-time shared secret)",
-	Long: `Register a webhook for one topic on the logged-in account.
+	Long: `Register a webhook for one or more topics on the logged-in account.
+
+Repeat -t/--topic for each event, or pass them comma-separated. They share one
+secret and one circuit breaker, which is the point: a per-topic subscription
+means a key to verify against and a rotation to coordinate for each one.
 
 The response carries the shared SECRET, and it is the only time it is shown:
 the gateway stores a hash, not the value, so it cannot be read back. Capture it
@@ -107,13 +118,14 @@ now — 'rotate-secret' issues a new one, which is the recovery, not a lookup.
 Use the secret to verify the X-Rail0-Signature header on each delivery. A
 delivery whose signature you cannot verify should be treated as untrusted, not
 as a malformed request.`,
-	Example: `  rail0 webhooks create --name "capture hook" \
-    --callback-url https://example.com/hook --topic payments.captured`,
+	Example: `  rail0 webhooks create --name "order lifecycle" \
+    --callback-url https://example.com/hook \
+    -t payments.authorized -t payments.captured -t payments.voided -t payments.refunded`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		req := rail0.CreateWebhookRequest{
 			Name:        webhooksCreateName,
 			CallbackURL: webhooksCreateURL,
-			Topic:       webhooksCreateTopic,
+			Topics:      webhooksCreateTopics,
 		}
 		return ui.RunAPI(func() (any, error) {
 			return newClient().Webhooks.Create(context.Background(), req)
@@ -125,13 +137,17 @@ as a malformed request.`,
 
 var webhooksUpdateName string
 var webhooksUpdateURL string
-var webhooksUpdateTopic string
+var webhooksUpdateTopics []string
 
 var webhooksUpdateCmd = &cobra.Command{
 	Use:   "update <webhook_id>",
-	Short: "Update a webhook's name, callback URL, or topic",
-	Long: `Change a webhook's name, callback URL, or topic in place. The id and the shared
+	Short: "Update a webhook's name, callback URL, or topics",
+	Long: `Change a webhook's name, callback URL, or topics in place. The id and the shared
 secret are kept, so the receiver keeps verifying with the secret it already has.
+
+--topic REPLACES the whole set, which is also how a topic is REMOVED: pass the
+ones you want to keep. Adding one means passing the existing topics plus the new
+one, so read them first with 'webhooks get <id>'.
 
 This does NOT change whether the webhook is active. Repointing a broken webhook
 at a URL that works leaves it exactly as inactive as it was — which is the
@@ -149,7 +165,7 @@ spends another 10 events reopening it.`,
 		req := rail0.UpdateWebhookRequest{
 			Name:        webhooksUpdateName,
 			CallbackURL: webhooksUpdateURL,
-			Topic:       webhooksUpdateTopic,
+			Topics:      webhooksUpdateTopics,
 		}
 		return ui.RunAPI(func() (any, error) {
 			return newClient().Webhooks.Update(context.Background(), args[0], req)
@@ -341,7 +357,8 @@ func parseBoolFlag(s string) (*bool, error) {
 }
 
 func init() {
-	webhooksListCmd.Flags().StringVar(&webhooksListTopic, "topic", "", "Filter by topic (e.g. payments.captured)")
+	webhooksListCmd.Flags().StringVar(&webhooksListTopic, "topic", "",
+		"Show subscriptions that INCLUDE this topic (e.g. payments.captured)")
 	webhooksListCmd.Flags().StringVar(&webhooksListActive, "active", "", "Filter by active flag ('true' or 'false')")
 	webhooksListCmd.Flags().StringVar(&webhooksListCircuit, "circuit-state", "", "Filter by circuit state ('closed' or 'open')")
 	webhooksListCmd.Flags().StringVar(&webhooksListSort, "sort", "", "Sort fields (e.g. -created_at)")
@@ -353,7 +370,9 @@ func init() {
 
 	webhooksCreateCmd.Flags().StringVarP(&webhooksCreateName, "name", "n", "", "Human-readable webhook name")
 	webhooksCreateCmd.Flags().StringVarP(&webhooksCreateURL, "callback-url", "u", "", "HTTPS endpoint that receives deliveries")
-	webhooksCreateCmd.Flags().StringVarP(&webhooksCreateTopic, "topic", "t", "", "Topic to subscribe to (e.g. payments.captured)")
+	// StringSlice, so -t repeats and also accepts a comma-separated list.
+	webhooksCreateCmd.Flags().StringSliceVarP(&webhooksCreateTopics, "topic", "t", nil,
+		"Topic to subscribe to; repeat for several (e.g. -t payments.captured -t payments.refunded)")
 	_ = webhooksCreateCmd.MarkFlagRequired("name")
 	_ = webhooksCreateCmd.MarkFlagRequired("callback-url")
 	_ = webhooksCreateCmd.MarkFlagRequired("topic")
@@ -361,7 +380,8 @@ func init() {
 
 	webhooksUpdateCmd.Flags().StringVarP(&webhooksUpdateName, "name", "n", "", "New webhook name")
 	webhooksUpdateCmd.Flags().StringVarP(&webhooksUpdateURL, "callback-url", "u", "", "New callback URL")
-	webhooksUpdateCmd.Flags().StringVarP(&webhooksUpdateTopic, "topic", "t", "", "New topic")
+	webhooksUpdateCmd.Flags().StringSliceVarP(&webhooksUpdateTopics, "topic", "t", nil,
+		"REPLACE the topic set; repeat for several. Omitting a topic removes it")
 	webhooksCmd.AddCommand(webhooksUpdateCmd)
 
 	webhooksCmd.AddCommand(webhooksEnableCmd)

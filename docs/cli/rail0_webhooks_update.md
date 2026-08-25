@@ -1,11 +1,15 @@
 ## rail0 webhooks update
 
-Update a webhook's name, callback URL, or topic
+Update a webhook's name, callback URL, or topics
 
 ### Synopsis
 
-Change a webhook's name, callback URL, or topic in place. The id and the shared
+Change a webhook's name, callback URL, or topics in place. The id and the shared
 secret are kept, so the receiver keeps verifying with the secret it already has.
+
+--topic REPLACES the whole set, which is also how a topic is REMOVED: pass the
+ones you want to keep. Adding one means passing the existing topics plus the new
+one, so read them first with 'webhooks get <id>'.
 
 This does NOT change whether the webhook is active. Repointing a broken webhook
 at a URL that works leaves it exactly as inactive as it was — which is the
@@ -34,7 +38,7 @@ rail0 webhooks update <webhook_id> [flags]
   -u, --callback-url string   New callback URL
   -h, --help                  help for update
   -n, --name string           New webhook name
-  -t, --topic string          New topic
+  -t, --topic strings         REPLACE the topic set; repeat for several. Omitting a topic removes it
 ```
 
 ### Options inherited from parent commands

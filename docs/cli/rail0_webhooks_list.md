@@ -21,7 +21,7 @@ rail0 webhooks list [flags]
       --page int               Page number (1-based)
       --per-page int           Results per page
       --sort string            Sort fields (e.g. -created_at)
-      --topic string           Filter by topic (e.g. payments.captured)
+      --topic string           Show subscriptions that INCLUDE this topic (e.g. payments.captured)
 ```
 
 ### Options inherited from parent commands

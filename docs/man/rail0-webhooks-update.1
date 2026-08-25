@@ -2,7 +2,7 @@
 .TH "RAIL0" "1" "Aug 2026" "rail0 CLI" ""
 
 .SH NAME
-rail0-webhooks-update - Update a webhook's name, callback URL, or topic
+rail0-webhooks-update - Update a webhook's name, callback URL, or topics
 
 
 .SH SYNOPSIS
@@ -10,8 +10,13 @@ rail0-webhooks-update - Update a webhook's name, callback URL, or topic
 
 
 .SH DESCRIPTION
-Change a webhook's name, callback URL, or topic in place. The id and the shared
+Change a webhook's name, callback URL, or topics in place. The id and the shared
 secret are kept, so the receiver keeps verifying with the secret it already has.
+
+.PP
+--topic REPLACES the whole set, which is also how a topic is REMOVED: pass the
+ones you want to keep. Adding one means passing the existing topics plus the new
+one, so read them first with 'webhooks get \&'.
 
 .PP
 This does NOT change whether the webhook is active. Repointing a broken webhook
@@ -42,8 +47,8 @@ spends another 10 events reopening it.
 	New webhook name
 
 .PP
-\fB-t\fP, \fB--topic\fP=""
-	New topic
+\fB-t\fP, \fB--topic\fP=[]
+	REPLACE the topic set; repeat for several. Omitting a topic removes it
 
 
 .SH OPTIONS INHERITED FROM PARENT COMMANDS

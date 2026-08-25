@@ -285,7 +285,12 @@ func waitForOp(ctx context.Context, client *rail0.Client, rail0Id, op, txID stri
 // opFailedError renders a reverted transaction: the gateway's decoded reason
 // (or its code, or a bare "reverted") plus the local hint for that code.
 func opFailedError(op string, tx *rail0.Transaction) error {
-	reason := tx.ErrorMessage
+	// ErrorDetail, not the ErrorMessage this used to read: the gateway trimmed the error
+	// shape to exactly code/title/detail and dropped the aliases, so `error_message` no
+	// longer exists on a transaction. Detail is the sentence — it carries the chain's own
+	// words when the revert is not one the gateway recognises — and the code is the
+	// fallback below, unchanged.
+	reason := tx.ErrorDetail
 	if reason == "" {
 		reason = tx.ErrorCode
 	}

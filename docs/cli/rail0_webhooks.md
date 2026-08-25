@@ -6,10 +6,17 @@ Webhook subscription management (requires login)
 
 Manage webhook subscriptions for the authenticated account.
 
-A webhook subscribes to exactly one payment-lifecycle topic (e.g.
-payments.captured) and delivers a signed callback to your endpoint. The
-shared secret used to verify delivery signatures is returned only once, on
+A webhook subscribes to one or more payment-lifecycle topics and delivers a
+signed callback to your endpoint. One subscription means ONE shared secret and
+ONE circuit breaker however many topics it carries, and each delivery names the
+event that fired in X-Rail0-Topic — so four events on one endpoint is one
+subscription, not four to keep in step. The secret is returned only once, on
 create and rotate-secret.
+
+Two subscriptions for the same callback URL must not overlap: the same event
+arriving twice under two different secrets is indistinguishable from a duplicate
+at the receiving end, so the gateway refuses it and names the topic that
+collided.
 
 A webhook delivers only when it is active, and there are TWO independent ways
 for it to stop being active:
@@ -28,8 +35,8 @@ and 'circuit_state' says which.
 
 ```
   rail0 webhooks list
-  rail0 webhooks create --name "capture hook" \
-    --callback-url https://example.com/hook --topic payments.captured
+  rail0 webhooks create --name "order hook" \
+    --callback-url https://example.com/hook -t payments.captured -t payments.refunded
   rail0 webhooks event-callbacks whk_abc123 --status failed   # why isn't it arriving?
 ```
 
@@ -61,5 +68,5 @@ and 'circuit_state' says which.
 * [rail0 webhooks list](rail0_webhooks_list.md)	 - List webhooks for the authenticated account
 * [rail0 webhooks reset-circuit](rail0_webhooks_reset-circuit.md)	 - Reset the delivery circuit breaker and re-enable the webhook
 * [rail0 webhooks rotate-secret](rail0_webhooks_rotate-secret.md)	 - Generate a new shared secret (returned once on the response)
-* [rail0 webhooks update](rail0_webhooks_update.md)	 - Update a webhook's name, callback URL, or topic
+* [rail0 webhooks update](rail0_webhooks_update.md)	 - Update a webhook's name, callback URL, or topics
 

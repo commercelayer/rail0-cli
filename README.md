@@ -871,7 +871,7 @@ rail0 tokens --symbol USDC
 
 ### Webhooks
 
-Manage webhook subscriptions for the authenticated account. A webhook subscribes to exactly one payment-lifecycle topic and delivers a signed callback to your endpoint. All webhook commands require authentication.
+Manage webhook subscriptions for the authenticated account. A webhook subscribes to one or more payment-lifecycle topics and delivers a signed callback to your endpoint — one subscription means **one** shared secret and **one** circuit breaker however many topics it carries, and each delivery names the event that fired in `X-Rail0-Topic`. Two subscriptions for the same callback URL must not overlap, since the same event arriving twice under two different secrets is indistinguishable from a duplicate at the receiving end. All webhook commands require authentication.
 
 #### Two ways to be off — and only one `enable`
 
@@ -907,7 +907,8 @@ Rotation has **no overlap window**: the old secret stops verifying immediately, 
 ```sh
 rail0 webhooks list --topic payments.captured --active true
 rail0 webhooks get <webhook_id>
-rail0 webhooks create --name "capture hook" --callback-url https://example.com/hook --topic payments.captured
+rail0 webhooks create --name "order lifecycle" --callback-url https://example.com/hook \
+  -t payments.authorized -t payments.captured -t payments.voided -t payments.refunded
 rail0 webhooks update <webhook_id> --callback-url https://example.com/new
 rail0 webhooks enable <webhook_id>
 rail0 webhooks disable <webhook_id>
@@ -919,10 +920,10 @@ rail0 webhooks delete <webhook_id>
 
 | Command | Description |
 |---------|-------------|
-| `list` | List webhooks (`--topic`, `--active`, `--circuit-state`, `--sort`) |
+| `list` | List webhooks (`--topic` shows subscriptions that *include* that event, `--active`, `--circuit-state`, `--sort`) |
 | `get` | Fetch a single webhook |
-| `create` | Register a webhook (`--name`, `--callback-url`, `--topic`; returns shared secret) |
-| `update` | Patch `--name`, `--callback-url`, or `--topic` |
+| `create` | Register a webhook (`--name`, `--callback-url`, `-t/--topic` repeated or comma-separated; returns shared secret) |
+| `update` | Patch `--name`, `--callback-url`, or `--topic` — the topic flag **replaces** the set, which is also how one is removed |
 | `enable` | Clear the **manual** disable only — see [the two switches](#two-ways-to-be-off--and-only-one-enable) |
 | `disable` | Stop deliveries reversibly, keeping the id and secret (`delete` is the permanent form) |
 | `rotate-secret` | Issue a new shared secret (returned once) |

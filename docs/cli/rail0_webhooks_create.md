@@ -4,7 +4,11 @@ Register a new webhook (returns the one-time shared secret)
 
 ### Synopsis
 
-Register a webhook for one topic on the logged-in account.
+Register a webhook for one or more topics on the logged-in account.
+
+Repeat -t/--topic for each event, or pass them comma-separated. They share one
+secret and one circuit breaker, which is the point: a per-topic subscription
+means a key to verify against and a rotation to coordinate for each one.
 
 The response carries the shared SECRET, and it is the only time it is shown:
 the gateway stores a hash, not the value, so it cannot be read back. Capture it
@@ -21,8 +25,9 @@ rail0 webhooks create [flags]
 ### Examples
 
 ```
-  rail0 webhooks create --name "capture hook" \
-    --callback-url https://example.com/hook --topic payments.captured
+  rail0 webhooks create --name "order lifecycle" \
+    --callback-url https://example.com/hook \
+    -t payments.authorized -t payments.captured -t payments.voided -t payments.refunded
 ```
 
 ### Options
@@ -31,7 +36,7 @@ rail0 webhooks create [flags]
   -u, --callback-url string   HTTPS endpoint that receives deliveries
   -h, --help                  help for create
   -n, --name string           Human-readable webhook name
-  -t, --topic string          Topic to subscribe to (e.g. payments.captured)
+  -t, --topic strings         Topic to subscribe to; repeat for several (e.g. -t payments.captured -t payments.refunded)
 ```
 
 ### Options inherited from parent commands

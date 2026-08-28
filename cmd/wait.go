@@ -67,13 +67,42 @@ const defaultWaitTimeout = 15 * time.Minute
 // per ~10s — enough to show life, quiet enough not to bury the result. (#107)
 const waitProgressEvery = 5
 
-// Every status GET /payments can report, and the subset that is terminal (no
-// transition leaves it). `partially_refunded` is deliberately absent: the
-// gateway no longer produces it, so accepting it in --until would be accepting
-// a wait that can never finish.
+// The gateway's payment-status vocabulary — `Payment.aasm.states`, which is exactly
+// what its `status` query parameter is validated against. So this is the list behind
+// the --status completions on `payments list` and `analytics`, where a value outside
+// it earns a 400 from Grape rather than an empty result.
+//
+// `failed` is deliberately NOT here, and it used to be. It is a TRANSACTION status,
+// never a payment one, and the mistake cost twice: the completions offered a value
+// the gateway rejects outright, and `--until failed` passed validation and then sat
+// out the entire deadline waiting for a status no payment can reach — precisely the
+// failure the validation below exists to prevent. The transaction vocabulary still
+// lives where it belongs, on tx.Status in waitForOp.
 var paymentStatuses = []string{
 	"unsigned", "signed", "authorized", "partially_captured",
-	"captured", "charged", "voided", "released", "refunded", "expired", "failed",
+	"captured", "charged", "voided", "released", "refunded",
+	"partially_refunded", "expired",
+}
+
+// The subset a `--until` target may name: every payment status except
+// `partially_refunded`. The gateway no longer produces that one — it is retained for
+// rows written before the rule changed — so accepting it as a wait target would
+// accept a wait that can never finish. It stays in the vocabulary above because
+// those historical rows are real and must remain filterable.
+//
+// Two lists rather than one because they answer different questions: "what can I
+// wait for" is not "what can I filter on". Sharing a single list is what let a
+// transaction status leak into three flags at once.
+var waitableStatuses = withoutLegacyStatuses(paymentStatuses)
+
+func withoutLegacyStatuses(all []string) []string {
+	out := make([]string, 0, len(all))
+	for _, s := range all {
+		if s != "partially_refunded" {
+			out = append(out, s)
+		}
+	}
+	return out
 }
 
 // `expired` is terminal HERE, and the distinction is worth stating because it is not
@@ -82,8 +111,11 @@ var paymentStatuses = []string{
 // capture will ever land — so a loop that treated it as "not yet" would sit out the full
 // deadline on a payment that can never settle, and exit as a timeout rather than telling
 // the operator the escrow is recoverable. terminalMismatchError says how.
+//
+// `failed` was in here too, for the same wrong reason as above — a payment never
+// carries it, so the entry could only ever be dead weight encoding a false belief.
 var terminalStatuses = map[string]bool{
-	"voided": true, "released": true, "refunded": true, "expired": true, "failed": true,
+	"voided": true, "released": true, "refunded": true, "expired": true,
 }
 
 // stopPolling marks an error as a DECISION rather than a failed read: the poll
@@ -375,9 +407,9 @@ With --until it instead waits for a specific payment status.`,
 		// `--until capture` (the singular typo) used to cost the full two-minute
 		// deadline and then report a timeout, which reads like a slow chain rather
 		// than a mistyped flag. (#107)
-		if waitUntil != "" && !slices.Contains(paymentStatuses, waitUntil) {
+		if waitUntil != "" && !slices.Contains(waitableStatuses, waitUntil) {
 			return fmt.Errorf("unknown --until status %q; expected one of: %s",
-				waitUntil, strings.Join(paymentStatuses, ", "))
+				waitUntil, strings.Join(waitableStatuses, ", "))
 		}
 		client := newReadClient()
 		ctx := context.Background()
@@ -416,12 +448,12 @@ With --until it instead waits for a specific payment status.`,
 
 func init() {
 	paymentsWaitCmd.Flags().StringVar(&waitUntil, "until", "",
-		"Wait until the payment reaches this status ("+strings.Join(paymentStatuses, ", ")+")")
+		"Wait until the payment reaches this status ("+strings.Join(waitableStatuses, ", ")+")")
 	// The set is finite and known locally, so completing it costs nothing and
 	// removes the typo class the validation above now rejects.
 	_ = paymentsWaitCmd.RegisterFlagCompletionFunc("until",
 		func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
-			return paymentStatuses, cobra.ShellCompDirectiveNoFileComp
+			return waitableStatuses, cobra.ShellCompDirectiveNoFileComp
 		})
 	paymentsWaitCmd.Flags().DurationVar(&waitTimeout, "timeout", defaultWaitTimeout,
 		"Max time to wait — the default covers the slowest chain\x27s finality")

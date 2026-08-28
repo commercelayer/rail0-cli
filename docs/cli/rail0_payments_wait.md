@@ -25,7 +25,7 @@ rail0 payments wait <rail0Id> [flags]
 ```
   -h, --help               help for wait
       --timeout duration   Max time to wait — the default covers the slowest chain's finality (default 15m0s)
-      --until string       Wait until the payment reaches this status (unsigned, signed, authorized, partially_captured, captured, charged, voided, released, refunded, expired, failed)
+      --until string       Wait until the payment reaches this status (unsigned, signed, authorized, partially_captured, captured, charged, voided, released, refunded, expired)
 ```
 
 ### Options inherited from parent commands

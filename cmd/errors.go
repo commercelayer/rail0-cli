@@ -194,8 +194,13 @@ var errorHints = map[string]string{
 	"unknown_token":              "the token isn't configured on this chain — see 'rail0 tokens'",
 	"no_active_contract":         "no active RAIL0 contract on that chain — see 'rail0 chains'",
 	"missing_param":              "a required parameter is missing from the request",
-	"forbidden":                  "not permitted for this session — on create the payer must be the signed-in address ('rail0 auth login' with that key)",
-	"payment_already_exists":     "a payment with this id already exists on-chain",
+	// A BARE forbidden is not a party mismatch: the gateway split those into codes of
+	// their own (not_the_payee, not_the_payer, wallet_deactivated, not_your_account)
+	// because they need different fixes. This entry kept describing one of them long
+	// after the split, and its remedy ('auth login' with the payer key) was wrong for
+	// all three real causes — the rule it named no longer exists in the gateway at all.
+	"forbidden":              "not permitted for this session — typically the operator grant, a resource owned by another account, or a transaction signed by the wrong wallet ('rail0 auth status' shows who you are signed in as)",
+	"payment_already_exists": "a payment with this id already exists on-chain",
 }
 
 // hintFor returns the actionable hint for an error code (preferred) or its

@@ -253,21 +253,18 @@ func TestExpiredIsTerminalButNamesTheRecovery(t *testing.T) {
 	}
 }
 
-// The status list backing both --until validation and its shell completion must
-// exclude the legacy status the gateway no longer produces: accepting it would
-// accept a wait that can never finish.
-func TestPaymentStatusesExcludeTheLegacyPartiallyRefunded(t *testing.T) {
-	for _, s := range paymentStatuses {
-		if s == "partially_refunded" {
-			t.Error("partially_refunded is no longer produced; --until on it can never complete")
+// The list backing --until must exclude the legacy status the gateway no longer
+// produces: accepting it would accept a wait that can never finish.
+func TestWaitableStatusesExcludeTheLegacyPartiallyRefunded(t *testing.T) {
+	if contains(waitableStatuses, "partially_refunded") {
+		t.Error("partially_refunded is no longer produced; --until on it can never complete")
+	}
+	for _, s := range []string{"captured", "refunded", "authorized", "expired"} {
+		if !contains(waitableStatuses, s) {
+			t.Errorf("waitableStatuses is missing %q", s)
 		}
 	}
-	for _, s := range []string{"captured", "refunded", "failed", "authorized"} {
-		if !contains(paymentStatuses, s) {
-			t.Errorf("paymentStatuses is missing %q", s)
-		}
-	}
-	for _, s := range []string{"voided", "released", "refunded", "failed"} {
+	for _, s := range []string{"voided", "released", "refunded", "expired"} {
 		if !terminalStatuses[s] {
 			t.Errorf("%q must be terminal", s)
 		}
@@ -275,6 +272,46 @@ func TestPaymentStatusesExcludeTheLegacyPartiallyRefunded(t *testing.T) {
 	for _, s := range []string{"authorized", "partially_captured", "captured", "charged"} {
 		if terminalStatuses[s] {
 			t.Errorf("%q is not terminal — a refund or capture can still follow", s)
+		}
+	}
+}
+
+// `failed` is a TRANSACTION status. It spent a release inside the payment
+// vocabulary, which cost twice: the --status completions on `payments list` and
+// `analytics` offered a value the gateway answers 400 to (its filter is validated
+// against Payment.aasm.states), and `--until failed` passed validation and then
+// waited out the whole deadline on a status no payment can reach — the exact
+// failure that validation exists to prevent. Pinned here so it cannot drift back.
+func TestFailedIsNotAPaymentStatus(t *testing.T) {
+	if contains(paymentStatuses, "failed") {
+		t.Error("failed is a transaction status; the gateway rejects it as a payment filter")
+	}
+	if contains(waitableStatuses, "failed") {
+		t.Error("no payment ever reaches `failed`; --until on it can only time out")
+	}
+	if terminalStatuses["failed"] {
+		t.Error("terminalStatuses must not carry a status no payment can hold")
+	}
+}
+
+// The filter vocabulary must match the gateway's own (Payment.aasm.states) exactly:
+// a value it omits cannot be filtered on from the CLI, and one it invents is a 400.
+// `partially_refunded` is the entry that separates this list from waitableStatuses —
+// no longer produced, but real on historical rows, so still queryable.
+func TestPaymentStatusesMatchTheGatewayVocabulary(t *testing.T) {
+	gateway := []string{
+		"unsigned", "signed", "authorized", "charged", "captured",
+		"partially_captured", "expired", "voided", "released",
+		"refunded", "partially_refunded",
+	}
+	for _, s := range gateway {
+		if !contains(paymentStatuses, s) {
+			t.Errorf("paymentStatuses is missing %q, which the gateway can report", s)
+		}
+	}
+	for _, s := range paymentStatuses {
+		if !contains(gateway, s) {
+			t.Errorf("paymentStatuses carries %q, which the gateway's filter rejects", s)
 		}
 	}
 }

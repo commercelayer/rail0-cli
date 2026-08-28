@@ -1054,7 +1054,14 @@ rail0 payments get 0xabc123…
 | `released` | Full authorization released back to payer (total release, nothing captured) |
 | `refunded` | Payment fully settled by refund (both escrow and refundable drained) |
 | `partially_refunded` | Legacy — no longer produced; a partial refund now leaves the status unchanged |
-| `failed` | Terminal failure; payment cannot proceed |
+| `expired` | Authorization window closed with nothing captured — the escrow is still on-chain and `release` recovers it |
+
+There is no `failed` payment **status**: `failed` belongs to a **transaction**. A
+payment whose transaction reverts keeps the status it already held — the gateway
+records the revert on the payment as `last_error_code` / `last_error_message` and
+changes nothing else — so the operation can simply be attempted again. A reverted
+attempt shows up in `rail0 payments transactions <rail0Id>`, under the transaction's
+own status.
 
 ---
 

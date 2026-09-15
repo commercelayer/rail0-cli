@@ -18,9 +18,12 @@ PREFIX="${PREFIX:-/usr/local/bin}"
 cd "$(dirname "$0")/.."
 
 echo "==> building ${BIN}"
-# Stamp the version from git (tag/commit), falling back to "dev".
-VERSION="${VERSION:-$(git describe --tags --always --dirty 2>/dev/null || echo dev)}"
-go build -ldflags "-X github.com/rail0/cli/cmd.version=${VERSION}" -o "${BIN}" .
+# Delegates the compile to `make build` rather than repeating it. The two used to
+# each hold their own `go build`, and they disagreed: this one stamped the version,
+# the Makefile's did not — so the path the README documents (`make install`) shipped
+# a binary that reports "dev" forever. One command knows how to compile; VERSION is
+# honoured by both because make declares it with `?=`.
+make build BIN="${BIN}" ${VERSION:+VERSION="${VERSION}"}
 
 if [ ! -d "${PREFIX}" ] || [ ! -w "${PREFIX}" ]; then
   echo "error: install dir '${PREFIX}' is missing or not writable." >&2

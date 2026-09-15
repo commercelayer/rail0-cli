@@ -11,10 +11,19 @@ BIN    ?= rail0
 SHORT  ?= r0
 PREFIX ?= /usr/local/bin
 
+# The version `rail0 --version` reports. Derived from git, overridable by the
+# caller (goreleaser passes the release tag). Without this the binary reports
+# "dev" forever — cmd/version.go's default — and there is then NO way to tell a
+# freshly built CLI from one seven weeks old. That is not hypothetical: a stale
+# /usr/local/bin/rail0 failed to sign a v1.4.0 authorize, and `--version` said
+# `dev`, so the cause took a file timestamp and a checksum against a fresh build
+# to find.
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+
 .PHONY: build install uninstall test
 
 build:
-	go build -o $(BIN) .
+	go build -ldflags "-X github.com/rail0/cli/cmd.version=$(VERSION)" -o $(BIN) .
 
 # Install the binary as `rail0` plus a short `r0` alias (a symlink to it), so
 # both names work from the terminal.

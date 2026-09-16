@@ -90,10 +90,15 @@ bin/build                       # into /usr/local/bin
 PREFIX="$HOME/go/bin" bin/build # into a dir you own (no sudo)
 ```
 
-Manual build (no alias) is still just `go build -o rail0 . && mv rail0 /usr/local/bin/`.
+Manual build (no alias) is `make build && mv rail0 /usr/local/bin/` — **not** a bare
+`go build`, which leaves the version at its `dev` default.
 
-Check the installed version with `rail0 version` (or `rail0 --version`); `bin/build`
-stamps it from `git describe`.
+Check the installed version with `rail0 version` (or `rail0 --version`). Every build
+path stamps it from `git describe`: `make build` does the compile, `bin/build` and
+`make install` delegate to it, and goreleaser passes the release tag as `VERSION`.
+That matters more than it looks — a binary that reports `dev` cannot be told apart
+from one built weeks earlier, and a stale CLI fails in ways that point at the server
+rather than at itself.
 
 ### Guided setup (`rail0 init`)
 

@@ -7,12 +7,18 @@ Register a new EVM wallet address on the account (SIWE proof-of-ownership)
 Register a wallet on the logged-in account.
 
 The gateway requires a SIWE proof-of-ownership of the address being added: this
-command fetches a single-use nonce, builds the SAME EIP-4361 message as
-'auth login' (signed for the added address), signs it, and submits the
-message + signature. So you must hold the private key OF THE ADDRESS you are
-adding, resolved exactly like the signing commands — pass -p as a raw 0x hex
-key, as @name for an OS-keychain key ('rail0 keys add'), or omit it to fall back
-to RAIL0_PRIVATE_KEY (you are prompted if none is set).
+command fetches a single-use nonce, builds an EIP-4361 message for the added
+address, signs it, and submits the message + signature. So you must hold the
+private key OF THE ADDRESS you are adding, resolved exactly like the signing
+commands — pass -p as a raw 0x hex key, as @name for an OS-keychain key
+('rail0 keys add'), or omit it to fall back to RAIL0_PRIVATE_KEY (you are
+prompted if none is set).
+
+The message is NOT the one 'auth login' signs. The gateway pins each endpoint to
+one statement — "Sign in to RAIL0" there, "Add this wallet to your RAIL0 account"
+here — and refuses the other with 422 siwe_purpose_mismatch. That separation is
+what stops a login signature, which you hand out on every sign-in, from being
+replayed to bind an address to someone else's account.
 
 The added address need NOT be your session address — a merchant may register
 several payee wallets — but the key must match --address (the command derives

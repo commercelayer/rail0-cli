@@ -6,6 +6,23 @@ Command-line interface for the [RAIL0](https://rail0.xyz) stablecoin payment pro
 
 ---
 
+## Safe re-runs (`--idempotency-key`)
+
+Every on-chain operation takes `--idempotency-key`. The hazard it closes is not this
+process retrying — it does not. It is a **script re-running the command**: a `--wait`
+that timed out on a slow chain exits non-zero, and the natural response to a non-zero
+capture is to capture again. Without a key the gateway cannot tell that re-run from a
+deliberate second partial capture, because by then the first transaction has left
+`pending` — so it opens a second one and the money moves twice.
+
+```bash
+rail0 payments capture <id> --amount 50.00 --idempotency-key "$ORDER_ID"
+```
+
+With a key, a re-run returns the first transaction and nothing moves. The same key with
+a different amount is refused `422 idempotency_key_reused`, so a key you forgot to
+rotate is reported rather than silently honoured. Keys are scoped to the payment.
+
 ## Contents
 
 - [Requirements](#requirements)

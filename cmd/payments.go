@@ -183,7 +183,16 @@ func fetchAllPayments(ctx context.Context, client *rail0.Client, p rail0.ListPay
 			return nil, err
 		}
 		all = append(all, resp.Data...)
-		if len(resp.Data) == 0 || len(all) >= resp.Meta.Total {
+		// Stop on the absence of a `next` link rather than on a running total. The
+		// total is a COUNT taken per request, so a row created between two pages
+		// moved it and the loop either stopped early or asked for a page that was
+		// no longer there; `next` is the gateway's own answer to "is there more",
+		// computed from the same query that produced this page. Falls back to the
+		// old test against a gateway that sends no Link header. (rail0-gateway#332)
+		if len(resp.Data) == 0 {
+			break
+		}
+		if resp.Meta.Links.Next == "" && (resp.Meta.Links.First != "" || len(all) >= resp.Meta.Total) {
 			break
 		}
 	}
@@ -426,6 +435,30 @@ func addSigningFlags(cmd *cobra.Command, privateKey *string) {
 		"Caller's secp256k1 private key (0x-prefixed hex); signs and broadcasts in one step")
 	cmd.Flags().StringVar(privateKey, "pk", "", "Alias for --private-key")
 	_ = cmd.Flags().MarkHidden("pk")
+	cmd.Flags().StringVar(&idempotencyKey, "idempotency-key", "",
+		"Make a re-run safe: the same key returns the first transaction instead of opening a second")
+}
+
+// idempotencyKey is --idempotency-key, shared by every on-chain operation because
+// addSigningFlags registers it for all of them.
+//
+// WHY A CLI WANTS THIS. The hazard is not this process retrying — it does not. It is a
+// SCRIPT re-running the command: a wait that timed out on a slow chain exits non-zero,
+// and the natural response to a non-zero capture is to capture again. Without a key the
+// gateway cannot tell that re-run from a deliberate second partial capture, because by
+// then the first transaction has left `pending` — so it opens a second one and the money
+// moves twice. With a key it returns the first transaction and nothing moves.
+var idempotencyKey string
+
+// prepareOp routes a prepare through the SDK's keyed variant when --idempotency-key was
+// given, and through the plain one otherwise, so an un-keyed run is byte-for-byte what it
+// was. One helper rather than a branch at each call site: nine of them, and the one that
+// got it wrong would be the one nobody tested.
+func prepareOp(ctx context.Context, client *rail0.Client, id rail0.Bytes32, op string, req ...rail0.PrepareRequest) (*rail0.Transaction, error) {
+	if idempotencyKey != "" {
+		return client.Payments.PrepareWithKey(ctx, id, op, idempotencyKey, req...)
+	}
+	return client.Payments.Prepare(ctx, id, op, req...)
 }
 
 // resolveSigningKey determines the private key to sign with.
@@ -590,7 +623,7 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 			if err != nil {
 				return nil, err
 			}
-			prep, err := client.Payments.AuthorizePrepare(ctx, rail0Id)
+			prep, err := prepareOp(ctx, client, rail0Id, rail0.OpAuthorize)
 			if err != nil {
 				return nil, err
 			}
@@ -654,7 +687,7 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 			if err != nil {
 				return nil, err
 			}
-			prep, err := client.Payments.ChargePrepare(ctx, rail0Id)
+			prep, err := prepareOp(ctx, client, rail0Id, rail0.OpCharge)
 			if err != nil {
 				return nil, err
 			}
@@ -743,7 +776,7 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 			if err != nil {
 				return nil, err
 			}
-			prep, err := client.Payments.CapturePrepare(ctx, rail0Id, captureAmount)
+			prep, err := prepareOp(ctx, client, rail0Id, rail0.OpCapture, rail0.PrepareRequest{Amount: captureAmount})
 			if err != nil {
 				return nil, err
 			}
@@ -804,7 +837,7 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 			if err != nil {
 				return nil, err
 			}
-			prep, err := client.Payments.VoidPrepare(ctx, rail0Id)
+			prep, err := prepareOp(ctx, client, rail0Id, rail0.OpVoid)
 			if err != nil {
 				return nil, err
 			}
@@ -881,7 +914,7 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 			if err != nil {
 				return nil, err
 			}
-			prep, err := client.Payments.ReleasePrepare(ctx, rail0Id, caller)
+			prep, err := prepareOp(ctx, client, rail0Id, rail0.OpRelease, rail0.PrepareRequest{From: caller})
 			if err != nil {
 				return nil, err
 			}
@@ -994,7 +1027,7 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 
 			// Phase 2: submit the signature → get the unsigned transaction with the
 			// EIP-3009 authorization embedded.
-			phase2, err := client.Payments.RefundPrepare(ctx, rail0Id, rail0.PrepareRequest{
+			phase2, err := prepareOp(ctx, client, rail0Id, rail0.OpRefund, rail0.PrepareRequest{
 				Amount:    refundAmount,
 				Signature: signature,
 			})
@@ -1069,7 +1102,7 @@ Pass --private-key (-p): the CLI signs locally with the payer key and broadcasts
 			if err != nil {
 				return nil, err
 			}
-			prep, err := client.Payments.DisputePrepare(ctx, rail0Id, disputeReason)
+			prep, err := client.Payments.DisputePrepareWithKey(ctx, rail0Id, idempotencyKey, disputeReason)
 			if err != nil {
 				return nil, err
 			}
@@ -1133,7 +1166,7 @@ Pass --private-key (-p): the CLI signs locally with the payer key and broadcasts
 			if err != nil {
 				return nil, err
 			}
-			prep, err := client.Payments.CloseDisputePrepare(ctx, rail0Id, closeDisputeReason)
+			prep, err := client.Payments.CloseDisputePrepareWithKey(ctx, rail0Id, idempotencyKey, closeDisputeReason)
 			if err != nil {
 				return nil, err
 			}

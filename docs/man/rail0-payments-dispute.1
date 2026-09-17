@@ -31,6 +31,10 @@ Pass --private-key (-p): the CLI signs locally with the payer key and broadcasts
 	help for dispute
 
 .PP
+\fB--idempotency-key\fP=""
+	Make a re-run safe: the same key returns the first transaction instead of opening a second
+
+.PP
 \fB-p\fP, \fB--private-key\fP=""
 	Caller's secp256k1 private key (0x-prefixed hex); signs and broadcasts in one step
 

@@ -8,7 +8,7 @@ import (
 	"syscall"
 	"time"
 
-	rail0 "github.com/rail0/go-sdk"
+	rail0 "github.com/commercelayer/rail0-go"
 )
 
 // humanizeError turns low-level transport and API errors into clear, actionable

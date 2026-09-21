@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
+	rail0 "github.com/commercelayer/rail0-go"
 	ethcrypto "github.com/ethereum/go-ethereum/crypto"
-	rail0 "github.com/rail0/go-sdk"
 )
 
 // signTx builds and signs the EIP-1559 transaction described by the gateway's

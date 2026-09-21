@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	rail0 "github.com/rail0/go-sdk"
+	rail0 "github.com/commercelayer/rail0-go"
 )
 
 // asJSON renders a redacted body the way the logger ultimately would, so a test can

@@ -11,9 +11,9 @@ import (
 	"time"
 
 	charmlog "github.com/charmbracelet/log"
+	rail0 "github.com/commercelayer/rail0-go"
 	"github.com/rail0/cli/internal/token"
 	"github.com/rail0/cli/internal/ui"
-	rail0 "github.com/rail0/go-sdk"
 	"github.com/spf13/cobra"
 )
 

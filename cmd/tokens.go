@@ -3,7 +3,7 @@ package cmd
 import (
 	"context"
 
-	rail0 "github.com/rail0/go-sdk"
+	rail0 "github.com/commercelayer/rail0-go"
 
 	"github.com/rail0/cli/internal/ui"
 	"github.com/spf13/cobra"

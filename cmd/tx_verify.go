@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	rail0 "github.com/rail0/go-sdk"
+	rail0 "github.com/commercelayer/rail0-go"
 )
 
 // signingContext carries what the pre-sign checks need, taken from the work

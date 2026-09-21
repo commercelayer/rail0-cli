@@ -3,7 +3,7 @@ package cmd
 import (
 	"fmt"
 
-	rail0 "github.com/rail0/go-sdk"
+	rail0 "github.com/commercelayer/rail0-go"
 )
 
 // EIP-3009 signing, for every payment operation that needs a payer/payee

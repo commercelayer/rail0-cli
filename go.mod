@@ -8,7 +8,7 @@ require (
 	github.com/charmbracelet/log v1.0.0
 	github.com/charmbracelet/x/term v0.2.2
 	github.com/ethereum/go-ethereum v1.17.4
-	github.com/rail0/go-sdk v0.0.0
+	github.com/commercelayer/rail0-go v0.0.0
 	github.com/spf13/cobra v1.10.2
 	github.com/zalando/go-keyring v0.2.8
 	gopkg.in/yaml.v3 v3.0.1
@@ -68,5 +68,9 @@ require (
 	golang.org/x/text v0.38.0 // indirect
 )
 
-// Replace with a tagged version once rail0-go is published.
-replace github.com/rail0/go-sdk => ../rail0-go
+// Still the sibling checkout, and still temporary -- but the path it replaces is now the
+// one the module actually declares, so the day rail0-go is tagged this becomes a two-line
+// change: drop this directive and require the version. It could not resolve before: the
+// module said `github.com/rail0/go-sdk` while its repo is github.com/commercelayer/rail0-go,
+// and the proxy fetches by repo.
+replace github.com/commercelayer/rail0-go => ../rail0-go

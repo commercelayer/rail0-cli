@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	rail0 "github.com/rail0/go-sdk"
+	rail0 "github.com/commercelayer/rail0-go"
 )
 
 // The interactive create form must prompt only for the required fields not

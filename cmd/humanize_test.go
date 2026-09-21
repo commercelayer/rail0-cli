@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	rail0 "github.com/rail0/go-sdk"
+	rail0 "github.com/commercelayer/rail0-go"
 )
 
 // Seeds the per-chain decimals cache so the pure rendering can be tested without a

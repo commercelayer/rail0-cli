@@ -78,7 +78,7 @@ Verify the download against `checksums.txt` from the same release.
 
 ### Build from source (contributors)
 
-Clone this repo and the `rail0-go` SDK **as siblings**, then build. rail0-cli imports the SDK through `replace github.com/rail0/go-sdk =>
+Clone this repo and the `rail0-go` SDK **as siblings**, then build. rail0-cli imports the SDK through `replace github.com/commercelayer/rail0-go =>
 ../rail0-go` (see `go.mod`), so `rail0-go` must sit next to `rail0-cli`.
 
 Both repositories must be present as siblings:

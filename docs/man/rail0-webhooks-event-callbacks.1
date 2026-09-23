@@ -22,7 +22,9 @@ topic matches), and if it is, what is the receiver returning.
 .PP
 \&'--status failed' is the usual starting point, and the one to read before
 \&'reset-circuit'; '--response-code 500' then tells the receiver's crashes apart
-from its rate limits. The gateway keeps 15 days of attempts; page through them
+from its rate limits. '--payment-id' narrows to one payment, named by either
+its UUID or its 0x rail0_id — any payment of the account, whichever of its
+wallets it belongs to. The gateway keeps 15 days of attempts; page through them
 with --page / --per-page.
 
 
@@ -36,7 +38,7 @@ with --page / --per-page.
 
 .PP
 \fB--payment-id\fP=""
-	Filter by the payment the delivery is for (its id or 0x rail0 id)
+	Filter by the payment the delivery is for: its UUID or its 0x rail0_id
 
 .PP
 \fB--per-page\fP=0

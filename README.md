@@ -1084,7 +1084,7 @@ rail0 webhooks delete <webhook_id>
 | `disable` | Stop deliveries reversibly, keeping the id and secret (`delete` is the permanent form) |
 | `rotate-secret` | Issue a new shared secret (returned once) |
 | `reset-circuit` | Close the breaker **and** clear the manual disable — the only way back from a trip |
-| `event-callbacks` | Delivery attempts — the log to read when a callback did not arrive (`--status delivered\|failed`, `--response-code`, `--topic`, `--payment-id` as the payment's id or 0x rail0 id, `--since`, `--until`, `--sort`, `--page` / `--per-page`) |
+| `event-callbacks` | Delivery attempts — the log to read when a callback did not arrive (`--status delivered\|failed`, `--response-code`, `--topic`, `--payment-id` as the payment's UUID or its 0x rail0_id — passed to the gateway as is, so any payment of the account matches whichever of its wallets it belongs to, `--since`, `--until`, `--sort`, `--page` / `--per-page`) |
 | `delete` | Destroy the webhook and its secret, permanently (unlike `wallets delete`, this one is real) |
 
 ---

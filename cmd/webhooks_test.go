@@ -1,14 +1,11 @@
 package cmd
 
 import (
-	"context"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
-	rail0 "github.com/commercelayer/rail0-go"
 	"github.com/spf13/cobra"
 )
 
@@ -111,33 +108,68 @@ func TestDestructiveWebhookCommandsRefuseWithoutATTY(t *testing.T) {
 	}
 }
 
-// A delivery row stores the payment's UUID, so the 0x rail0 id every other command
-// takes must be resolved before it reaches the filter — sent as-is it failed the whole
-// query. A UUID passes through without a lookup.
-func TestEventCallbackPaymentIDResolvesARail0ID(t *testing.T) {
-	var lookups int
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		lookups++
-		if r.URL.Path != "/payments/0xabc" {
-			t.Errorf("unexpected request %s", r.URL.Path)
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{"id": "7f1c0c8e-uuid", "rail0_id": "0xabc"})
-	}))
-	defer srv.Close()
-	client := rail0.NewClient(rail0.ClientOptions{BaseURL: srv.URL})
+// --payment-id reaches the gateway exactly as typed — it resolves both the UUID and
+// the 0x rail0_id itself. The CLI used to resolve a 0x id with Payments.Get, which is
+// participant-only (so another wallet's payment of the same account failed) and cost
+// an extra request: exactly one request now, the listing, carrying the value as is.
+func TestEventCallbacksPassesThePaymentIDThrough(t *testing.T) {
+	const rail0ID = "0xa1b2c3d40000000000000000000000000000000000000000000000000000beef"
+	for _, id := range []string{rail0ID, "7f1c0c8e-1d2b-4c3a-9e8f-0123456789ab"} {
+		t.Run(id, func(t *testing.T) {
+			isolate(t)
+			isolateTokenStore(t)
+			var paths []string
+			var got string
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				paths = append(paths, r.URL.Path)
+				got = r.URL.Query().Get("payment_id")
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`[]`))
+			}))
+			defer srv.Close()
+			t.Setenv("RAIL0_BASE_URL", srv.URL)
+			webhooksEventsPaymentID = id
+			t.Cleanup(func() { webhooksEventsPaymentID = "" })
 
-	got, err := eventCallbackPaymentID(context.Background(), client, "0xabc")
-	if err != nil || got != "7f1c0c8e-uuid" {
-		t.Fatalf("0x id: got %q err %v, want the payment's UUID", got, err)
+			_ = captureStdout(t, func() {
+				if err := webhooksEventCallbacksCmd.RunE(webhooksEventCallbacksCmd, []string{"whk_1"}); err != nil {
+					t.Fatalf("event-callbacks: %v", err)
+				}
+			})
+			if len(paths) != 1 || paths[0] != "/webhooks/whk_1/event_callbacks" {
+				t.Errorf("requests = %v, want only the listing", paths)
+			}
+			if got != id {
+				t.Errorf("payment_id = %q, want %q unchanged", got, id)
+			}
+		})
 	}
-	for _, passthrough := range []string{"", "7f1c0c8e-uuid"} {
-		if got, err := eventCallbackPaymentID(context.Background(), client, passthrough); err != nil || got != passthrough {
-			t.Errorf("%q: got %q err %v, want it untouched", passthrough, got, err)
+}
+
+// A value that is neither form is refused locally, before any request, naming both.
+func TestValidateEventCallbackPaymentID(t *testing.T) {
+	for _, ok := range []string{
+		"",
+		"7f1c0c8e-1d2b-4c3a-9e8f-0123456789ab",
+		"7F1C0C8E-1D2B-4C3A-9E8F-0123456789AB",
+		"0x" + strings.Repeat("aB", 32),
+	} {
+		if err := validateEventCallbackPaymentID(ok); err != nil {
+			t.Errorf("%q: %v, want accepted", ok, err)
 		}
 	}
-	if lookups != 1 {
-		t.Errorf("lookups = %d, want 1 (only the 0x id needs one)", lookups)
+	for _, bad := range []string{
+		"0xabc",                            // too short
+		"0X" + strings.Repeat("ab", 32),    // the gateway requires a lowercase 0x
+		"0x" + strings.Repeat("ab", 33),    // too long
+		strings.Repeat("ab", 32),           // no 0x
+		"7f1c0c8e-uuid",                    // not a UUID
+		"7f1c0c8e1d2b4c3a9e8f0123456789ab", // UUID without dashes
+	} {
+		err := validateEventCallbackPaymentID(bad)
+		if err == nil || !strings.Contains(err.Error(), "UUID") || !strings.Contains(err.Error(), "rail0_id") {
+			t.Errorf("%q: got %v, want a refusal naming both forms", bad, err)
+		}
 	}
 }
 

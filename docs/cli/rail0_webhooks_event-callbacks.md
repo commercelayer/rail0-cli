@@ -14,7 +14,9 @@ topic matches), and if it is, what is the receiver returning.
 
 '--status failed' is the usual starting point, and the one to read before
 'reset-circuit'; '--response-code 500' then tells the receiver's crashes apart
-from its rate limits. The gateway keeps 15 days of attempts; page through them
+from its rate limits. '--payment-id' narrows to one payment, named by either
+its UUID or its 0x rail0_id — any payment of the account, whichever of its
+wallets it belongs to. The gateway keeps 15 days of attempts; page through them
 with --page / --per-page.
 
 ```
@@ -35,7 +37,7 @@ rail0 webhooks event-callbacks <webhook_id> [flags]
 ```
   -h, --help                   help for event-callbacks
       --page int               Page number (1-based)
-      --payment-id string      Filter by the payment the delivery is for (its id or 0x rail0 id)
+      --payment-id string      Filter by the payment the delivery is for: its UUID or its 0x rail0_id
       --per-page int           Attempts per page
       --response-code string   Filter by the receiver's exact HTTP response code (e.g. 500)
       --since string           Only deliveries at/after this ISO-8601 time

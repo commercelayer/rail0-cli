@@ -355,9 +355,15 @@ func resolveBaseURL() string {
 // development`), so failing them on the very value they exist to fix would lock the
 // CLI out of its own recovery path. Verified against the newClient() call sites —
 // none of these trees has one.
+//
+// `version` and `token` read nothing but local state. `init` is the guided repair
+// path itself: the only gateway it talks to is the one its env step just validated.
+// cobra's hidden `__complete` / `__completeNoDesc` serve TAB completion, which a bad
+// base URL used to break outright — every completion returned the validation error.
 var localOnlyCommands = map[string]bool{
 	"config": true, "env": true, "keys": true, "aliases": true,
-	"help": true, "completion": true,
+	"help": true, "completion": true, "version": true, "token": true, "init": true,
+	cobra.ShellCompRequestCmd: true, cobra.ShellCompNoDescRequestCmd: true,
 }
 
 // topLevelName returns the first-level command `cmd` sits under — "payments" for

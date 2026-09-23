@@ -11,6 +11,12 @@ import (
 // names (from the local config index) for commands that take a <name> argument —
 // so `rail0 keys rm <TAB>` completes to the real key names. Local-only: no network
 // or auth, so tab-completion stays instant.
+// completeKeyNames suggests saved key names at the TAB key. It is the ONLY
+// consumer of config.Keys, and deliberately the only kind of consumer that may
+// exist: the list is a copy of what the keychain holds, and a keychain cannot
+// be enumerated to reconcile it. A missing suggestion therefore means a stale
+// index, never a missing key — which is tolerable for completion and would not
+// be for anything a user reads as an answer. (#139)
 func completeKeyNames(_ *cobra.Command, args []string, _ string) ([]string, cobra.ShellCompDirective) {
 	if len(args) != 0 {
 		return nil, cobra.ShellCompDirectiveNoFileComp

@@ -26,15 +26,18 @@ rail0 payments transactions <rail0Id> [flags]
 ```
   rail0 payments transactions 0xabc123…
   rail0 payments transactions 0xabc123… --sort -confirmed_at
+  rail0 payments transactions 0xabc123… --operation capture --status failed
 ```
 
 ### Options
 
 ```
-  -h, --help           help for transactions
-      --page int       Page number (1-based)
-      --per-page int   Results per page
-      --sort string    Sort fields: created_at, updated_at, block_number, confirmed_at (prefix - for descending, comma-separated)
+  -h, --help               help for transactions
+      --operation string   Filter by operation (authorize, charge, capture, void, release, refund, dispute, close_dispute)
+      --page int           Page number (1-based)
+      --per-page int       Results per page
+      --sort string        Sort fields: created_at, updated_at, block_number, confirmed_at (prefix - for descending, comma-separated)
+      --status string      Filter by transaction status (pending, submitting, submitted, confirmed, failed)
 ```
 
 ### Options inherited from parent commands

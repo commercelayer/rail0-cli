@@ -42,12 +42,24 @@ address) of the session account.
 	help for wallets
 
 .PP
+\fB--page\fP=0
+	Page number (1-based)
+
+.PP
+\fB--per-page\fP=0
+	Wallets per page
+
+.PP
 \fB--sort\fP=""
 	Sort wallets (e.g. -created_at)
 
 .PP
 \fB-s\fP, \fB--symbol\fP=""
 	Restrict nested tokens to this symbol, e.g. USDC (alias: --token)
+
+.PP
+\fB--token-active\fP=""
+	Restrict nested token holdings by active flag ('true' or 'false')
 
 
 .SH OPTIONS INHERITED FROM PARENT COMMANDS
@@ -81,4 +93,4 @@ address) of the session account.
 
 
 .SH SEE ALSO
-\fBrail0(1)\fP, \fBrail0-wallets-alias(1)\fP, \fBrail0-wallets-balances(1)\fP, \fBrail0-wallets-create(1)\fP, \fBrail0-wallets-delete(1)\fP, \fBrail0-wallets-get(1)\fP, \fBrail0-wallets-update(1)\fP
+\fBrail0(1)\fP, \fBrail0-wallets-alias(1)\fP, \fBrail0-wallets-balances(1)\fP, \fBrail0-wallets-create(1)\fP, \fBrail0-wallets-delete(1)\fP, \fBrail0-wallets-get(1)\fP, \fBrail0-wallets-tokens(1)\fP, \fBrail0-wallets-update(1)\fP

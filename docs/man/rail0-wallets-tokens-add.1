@@ -1,0 +1,68 @@
+.nh
+.TH "RAIL0" "1" "Aug 2026" "rail0 CLI" ""
+
+.SH NAME
+rail0-wallets-tokens-add - Accept a token on a wallet (re-enables a disabled holding)
+
+
+.SH SYNOPSIS
+\fBrail0 wallets tokens add  [flags]\fP
+
+
+.SH DESCRIPTION
+Accept a token, on one chain, on a wallet (by id or 0x address).
+
+.PP
+An upsert: a holding that was disabled is re-enabled rather than duplicated.
+--token is a symbol (USDC) resolved on --chain-id, or the token's 0x address.
+--default makes it the wallet's default method, demoting the previous one;
+--chain-id falls back to the configured default ('rail0 config set chain-id').
+
+
+.SH OPTIONS
+\fB--chain-id\fP=0
+	Chain of the token (default: the configured chain-id)
+
+.PP
+\fB--default\fP[=false]
+	Make it the wallet's default payment method
+
+.PP
+\fB-h\fP, \fB--help\fP[=false]
+	help for add
+
+.PP
+\fB-t\fP, \fB--token\fP=""
+	Token symbol (e.g. USDC) or 0x address (default: the configured token)
+
+
+.SH OPTIONS INHERITED FROM PARENT COMMANDS
+\fB--base-url\fP=""
+	RAIL0 gateway base URL (env: RAIL0_BASE_URL)
+
+.PP
+\fB--debug\fP[=false]
+	Print HTTP request/response details to stderr
+
+.PP
+\fB--json\fP[=false]
+	Force plain (uncolored) JSON output (useful in scripts)
+
+.PP
+\fB--pretty\fP[=false]
+	Use the key-value/table view instead of JSON (terminal only)
+
+.PP
+\fB-q\fP, \fB--quiet\fP[=false]
+	Print only the result's id/hash, one per line (useful in scripts)
+
+
+.SH EXAMPLE
+.EX
+  rail0 wallets tokens add 0xABCD… --chain-id 84532 --token USDC
+  rail0 wallets tokens add 0xABCD… --chain-id 84532 --token 0x036C… --default
+.EE
+
+
+.SH SEE ALSO
+\fBrail0-wallets-tokens(1)\fP

@@ -29,13 +29,16 @@ rail0 wallets [flags]
 ### Options
 
 ```
-      --account string   Your account id to list (default: the logged-in session account; must be your own)
-      --active string    Filter wallets by active flag ('true' or 'false')
-      --chain-id int     Restrict nested tokens to this chain id
-      --default string   Restrict nested token holdings to the default one ('true' or 'false')
-  -h, --help             help for wallets
-      --sort string      Sort wallets (e.g. -created_at)
-  -s, --symbol string    Restrict nested tokens to this symbol, e.g. USDC (alias: --token)
+      --account string        Your account id to list (default: the logged-in session account; must be your own)
+      --active string         Filter wallets by active flag ('true' or 'false')
+      --chain-id int          Restrict nested tokens to this chain id
+      --default string        Restrict nested token holdings to the default one ('true' or 'false')
+  -h, --help                  help for wallets
+      --page int              Page number (1-based)
+      --per-page int          Wallets per page
+      --sort string           Sort wallets (e.g. -created_at)
+  -s, --symbol string         Restrict nested tokens to this symbol, e.g. USDC (alias: --token)
+      --token-active string   Restrict nested token holdings by active flag ('true' or 'false')
 ```
 
 ### Options inherited from parent commands
@@ -56,5 +59,6 @@ rail0 wallets [flags]
 * [rail0 wallets create](rail0_wallets_create.md)	 - Register a new EVM wallet address on the account (SIWE proof-of-ownership)
 * [rail0 wallets delete](rail0_wallets_delete.md)	 - Deactivate a wallet — soft delete, reversible (by id or 0x address)
 * [rail0 wallets get](rail0_wallets_get.md)	 - Fetch a single wallet (by id or 0x address)
+* [rail0 wallets tokens](rail0_wallets_tokens.md)	 - Choose which tokens (and chains) a wallet accepts
 * [rail0 wallets update](rail0_wallets_update.md)	 - Update label or active status on a wallet (by id or 0x address)
 

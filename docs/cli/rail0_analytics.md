@@ -9,7 +9,7 @@ Read the account's sales analytics.
   summary     — headline figures: order count, disputed count, refund and dispute
                 rates, per-status counts, and per-token volume
   timeseries  — order counts bucketed by day, week or month
-  breakdown   — the same counts grouped by token, chain, mode or status
+  breakdown   — the same counts grouped by token, chain, mode, status or operation
 
 All three take the same filters (--mode, --status, --token, --chain-id, --from,
 --to). Requires an account: a wallet-only session gets 403 account_required, since
@@ -43,7 +43,7 @@ these are the MERCHANT's figures, not an address's.
 ### SEE ALSO
 
 * [rail0](rail0.md)	 - CLI for the RAIL0 stablecoin payment protocol
-* [rail0 analytics breakdown](rail0_analytics_breakdown.md)	 - Group the counts by token, chain, mode or status (--by is required)
+* [rail0 analytics breakdown](rail0_analytics_breakdown.md)	 - Group the counts by token, chain, mode, status or operation (--by is required)
 * [rail0 analytics summary](rail0_analytics_summary.md)	 - Headline figures: orders, disputes, refund/dispute rates, volume
 * [rail0 analytics timeseries](rail0_analytics_timeseries.md)	 - Order counts bucketed by day, week or month
 

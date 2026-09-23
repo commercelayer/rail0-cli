@@ -15,6 +15,12 @@ The bundle is base-url plus, on development and staging, chain-id and token — 
 a switch moves the default chain and token as well as the gateway. 'env <name>
 --details' prints what it ended up with.
 
+After a switch the environment-managed settings are exactly the target's: a key
+the target does not declare is REMOVED, so production (base-url alone) does not
+inherit the chain and token of the environment you came from. A switch that would
+clear something names the values and asks first; --yes skips the prompt, and
+without a terminal the switch refuses rather than hanging.
+
 A stored value is still the lowest-priority source, so --base-url or
 RAIL0_BASE_URL override it for a single command.
 
@@ -38,6 +44,7 @@ rail0 env [name] [flags]
 ```
   -d, --details   Also print each parameter's effective value and origin
   -h, --help      help for env
+  -y, --yes       Skip the confirmation prompt (required to run non-interactively)
 ```
 
 ### Options inherited from parent commands

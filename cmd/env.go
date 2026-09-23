@@ -92,21 +92,55 @@ func detectEnv() string {
 	return "custom"
 }
 
+// envManagedKeys is the union of every key any environment declares: the set a
+// switch OWNS, and therefore the only set it may clear. Settings outside it
+// (output, http-timeout) are the user's own preferences and have nothing to do
+// with which gateway they are pointed at, so a switch must leave them alone.
+// Sorted, so every listing and every warning orders them the same way.
+func envManagedKeys() []string {
+	set := map[string]struct{}{}
+	for _, e := range environments {
+		for key := range e.settings {
+			set[key] = struct{}{}
+		}
+	}
+	keys := make([]string, 0, len(set))
+	for key := range set {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+// staleAfterSwitch names the env-managed settings the config stores but the
+// target environment does not declare — the values that would otherwise SURVIVE
+// the switch.
+//
+// They survived because applying an environment only ever wrote its own keys and
+// never removed any. production declares just base-url, so moving there from
+// development left chain-id 5042002 and token USDC in place: pointed at the
+// production gateway with an Arc Testnet default still armed, inherited in
+// silence because nothing wrote it at that moment. An environment is meant to be
+// a complete answer to "what am I talking to", so after a switch the managed
+// settings must be exactly the target's — no more.
+func staleAfterSwitch(cfg *config.Config, e environment) []string {
+	var stale []string
+	for _, key := range envManagedKeys() {
+		if _, declared := e.settings[key]; declared {
+			continue
+		}
+		if v, ok := cfg.Settings[key]; ok && v != "" {
+			stale = append(stale, key)
+		}
+	}
+	return stale
+}
+
 // envParamRows returns one row per environment-managed key with its effective
 // value and origin — the detail view shared by the bare `env` listing and
 // `env current --details`. Keys are emitted in sorted order for stable output.
 func envParamRows() []map[string]any {
-	keySet := map[string]struct{}{}
-	for _, e := range environments {
-		for key := range e.settings {
-			keySet[key] = struct{}{}
-		}
-	}
-	keys := make([]string, 0, len(keySet))
-	for key := range keySet {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
+	keys := envManagedKeys()
 	rows := make([]map[string]any, 0, len(keys))
 	for _, key := range keys {
 		k, err := lookupKey(key)
@@ -138,6 +172,12 @@ them.
 The bundle is base-url plus, on development and staging, chain-id and token — so
 a switch moves the default chain and token as well as the gateway. 'env <name>
 --details' prints what it ended up with.
+
+After a switch the environment-managed settings are exactly the target's: a key
+the target does not declare is REMOVED, so production (base-url alone) does not
+inherit the chain and token of the environment you came from. A switch that would
+clear something names the values and asks first; --yes skips the prompt, and
+without a terminal the switch refuses rather than hanging.
 
 A stored value is still the lowest-priority source, so --base-url or
 RAIL0_BASE_URL override it for a single command.`,
@@ -232,17 +272,40 @@ func switchEnv(name string, details bool) error {
 	// The zero value reads as "there was no session to end", which is exactly the
 	// state a same-environment switch is in: the session it would have revoked is
 	// the one still in use.
-	var revoked sessionRevocation
-	if detectEnv() != name {
-		revoked = revokeCurrentSession()
-	}
-
+	// The config is loaded, and the clearing CONFIRMED, before anything with a
+	// side effect runs. revokeCurrentSession below ends a session on the gateway
+	// being left, which cannot be undone — so asking afterwards would mean a
+	// declined switch had already logged you out of the environment you chose to
+	// stay in.
 	cfg, err := loadConfigForWrite()
 	if err != nil {
 		return err
 	}
 	if cfg.Settings == nil {
 		cfg.Settings = map[string]string{}
+	}
+
+	// Only when there is something to lose. A prompt that appears on every switch
+	// is one people clear by reflex, and it would then be worth nothing on the
+	// switch that does discard a value — the same reason `keys add` refuses an
+	// overwrite outright instead of asking (#70).
+	cleared := staleAfterSwitch(cfg, e)
+	if len(cleared) > 0 {
+		fmt.Fprintf(os.Stderr, "Switching to %q clears settings it does not define:\n", name)
+		for _, key := range cleared {
+			fmt.Fprintf(os.Stderr, "  %s = %s\n", key, cfg.Settings[key])
+		}
+		if err := confirmDestructive("Clear them and switch?"); err != nil {
+			return err
+		}
+		for _, key := range cleared {
+			delete(cfg.Settings, key)
+		}
+	}
+
+	var revoked sessionRevocation
+	if detectEnv() != name {
+		revoked = revokeCurrentSession()
 	}
 	for key, value := range e.settings {
 		k, err := lookupKey(key)
@@ -267,7 +330,7 @@ func switchEnv(name string, details bool) error {
 	if !loggedIn {
 		fmt.Fprintln(os.Stderr, "No session for this gateway. "+loginHint)
 	}
-	return ui.RunAPI(func() (any, error) { return switchResult(name, details, revoked, loggedIn), nil })
+	return ui.RunAPI(func() (any, error) { return switchResult(name, details, revoked, loggedIn, cleared), nil })
 }
 
 // hasLiveSession reports whether the CURRENT gateway has a usable session: a
@@ -341,8 +404,13 @@ func revokeCurrentSession() sessionRevocation {
 // and origin only when details is set
 // (the -d flag). Split out from switchEnv so the gating is unit-testable
 // without persisting or capturing stdout.
-func switchResult(name string, details bool, revoked sessionRevocation, loggedIn bool) map[string]any {
+func switchResult(name string, details bool, revoked sessionRevocation, loggedIn bool, cleared []string) map[string]any {
 	out := map[string]any{"status": "switched", "env": name, "logged_in": loggedIn}
+	// In the RESULT for the same reason previous_session is: a -q/--json caller
+	// must be able to see that a stored default it was relying on is now gone.
+	if len(cleared) > 0 {
+		out["cleared"] = cleared
+	}
 	// Reported in the RESULT, not as a log line, so `-q`/`--json` callers see it
 	// too: whether the session they were using is now dead is part of what the
 	// switch did.
@@ -384,5 +452,8 @@ func init() {
 	// `env current` accept it: without it they print just status/name; with it
 	// they also list each parameter's effective value and origin.
 	envCmd.PersistentFlags().BoolVarP(&envDetails, "details", "d", false, "Also print each parameter's effective value and origin")
+	// --yes, so the clearing confirmation can be skipped and `env <name>` stays
+	// usable in a script: confirmDestructive refuses outright off a TTY without it.
+	addYesFlag(envCmd)
 	envCmd.AddCommand(envCurrentCmd)
 }

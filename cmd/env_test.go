@@ -86,10 +86,10 @@ func TestEnvSwitchDetailsGating(t *testing.T) {
 	// The switch confirmation lists parameters only with -d; bare it is just
 	// status + env name.
 	none := sessionRevocation{}
-	if _, ok := switchResult("staging", false, none, false)["settings"]; ok {
+	if _, ok := switchResult("staging", false, none, false, nil)["settings"]; ok {
 		t.Error("switch without -d must omit settings")
 	}
-	res := switchResult("staging", true, none, false)
+	res := switchResult("staging", true, none, false, nil)
 	if _, ok := res["settings"]; !ok {
 		t.Error("switch with -d must include settings")
 	}
@@ -150,7 +150,7 @@ func TestEnvSwitchReportsThePreviousSession(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			res := switchResult("staging", false, tc.revocation, false)
+			res := switchResult("staging", false, tc.revocation, false, nil)
 			if got := res["previous_session"]; got != tc.want {
 				t.Errorf("previous_session = %v, want %q", got, tc.want)
 			}
@@ -225,4 +225,99 @@ func mustKey(t *testing.T, name string) configKey {
 		t.Fatalf("lookupKey(%q): %v", name, err)
 	}
 	return k
+}
+
+// An environment is a complete answer to "what am I talking to", so after a
+// switch the env-managed settings must be exactly the target's. Applying one
+// used to only WRITE its own keys and never remove any, and production declares
+// just base-url — so arriving there from development left chain-id 5042002 and
+// token USDC armed, pointing a production gateway at an Arc Testnet default that
+// nothing had written at that moment and nothing reported.
+func TestEnvSwitchClearsSettingsTheTargetDoesNotDefine(t *testing.T) {
+	isolate(t)
+	assumeYes = true
+	t.Cleanup(func() { assumeYes = false })
+
+	if err := switchEnv("development", false); err != nil {
+		t.Fatalf("switch development: %v", err)
+	}
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if cfg.Settings["chain-id"] == "" || cfg.Settings["token"] == "" {
+		t.Fatalf("development must have written chain-id and token, got %v", cfg.Settings)
+	}
+
+	if err := switchEnv("production", false); err != nil {
+		t.Fatalf("switch production: %v", err)
+	}
+	cfg, err = config.Load()
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	for _, key := range []string{"chain-id", "token"} {
+		if v, ok := cfg.Settings[key]; ok && v != "" {
+			t.Errorf("%s survived the switch to production as %q", key, v)
+		}
+	}
+	if got := cfg.Settings["base-url"]; got != config.DefaultBaseURL {
+		t.Errorf("base-url = %q, want the production gateway", got)
+	}
+}
+
+// Nothing the target DOES declare is treated as stale, so a switch between two
+// environments that declare the same keys never prompts.
+func TestEnvSwitchBetweenLikeEnvironmentsClearsNothing(t *testing.T) {
+	isolate(t)
+
+	if err := switchEnv("development", false); err != nil {
+		t.Fatalf("switch development: %v", err)
+	}
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if stale := staleAfterSwitch(cfg, environments[1]); len(stale) > 0 {
+		t.Errorf("development -> staging must clear nothing, got %v", stale)
+	}
+}
+
+// The confirmation gates the whole switch, not just the deletion — and it is
+// asked BEFORE revokeCurrentSession, which cannot be undone. Declining must
+// therefore leave the config untouched AND the session alive: a switch you said
+// no to must not have logged you out of where you chose to stay.
+//
+// `go test` has no TTY, so confirmDestructive refuses on its own here, which is
+// the same path a script without --yes takes.
+func TestEnvSwitchDeclinedChangesNothing(t *testing.T) {
+	isolate(t)
+	assumeYes = true
+	if err := switchEnv("development", false); err != nil {
+		t.Fatalf("switch development: %v", err)
+	}
+	assumeYes = false
+
+	baseURL, _ := effectiveSetting(mustKey(t, envIdentityKey))
+	if err := token.Save(baseURL, "header.payload.signature"); err != nil {
+		t.Fatalf("save token: %v", err)
+	}
+
+	if err := switchEnv("production", false); err == nil {
+		t.Fatal("a switch that would clear settings must refuse without confirmation")
+	}
+
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if cfg.Settings["base-url"] != "http://localhost:9292" {
+		t.Errorf("the declined switch moved base-url to %q", cfg.Settings["base-url"])
+	}
+	if cfg.Settings["chain-id"] != "5042002" {
+		t.Errorf("the declined switch cleared chain-id (%q)", cfg.Settings["chain-id"])
+	}
+	if token.Load(baseURL) == "" {
+		t.Error("the declined switch revoked the session it was going to leave")
+	}
 }

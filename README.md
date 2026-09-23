@@ -719,6 +719,16 @@ mistyped webhook id silently breaks production verification.
 
 The signing key is resolved in this order: `--private-key` (`-p` / `--pk`, where `@name` pulls the key from the OS keychain) > `RAIL0_PRIVATE_KEY` env var. If none is set, the CLI prompts for the key **hidden** on a terminal (or reads one line from a piped stdin), so it never lands in the shell history or process arguments — the same masked input as `keys add`.
 
+**Checked before signing.** The gateway prepares the transaction, but the CLI checks it
+locally before your key touches it, and refuses to sign on any mismatch: it must be
+value-0, on the payment's chain, from the signing key, addressed to the payment's RAIL0
+contract, call **the RAIL0 function you asked for** (its 4-byte selector — so a `void`
+answered with `capture` calldata, or a `dispute` with `closeDispute`, is refused) on
+**this payment's id**, and — for `capture` and `refund` — move **exactly the `--amount`
+you typed**, scaled to base units locally. Like the refund authorization's check, the
+amount check fails closed: if the token's decimals cannot be resolved, the command
+refuses rather than signing unchecked.
+
 #### Addressing a payment: UUID or rail0_id
 
 Commands that take a payment argument (`get`, `transactions`, and the action commands) accept either form, passed straight through to the gateway, which resolves both:

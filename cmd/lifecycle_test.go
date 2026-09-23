@@ -46,13 +46,14 @@ func (g *lifecycleGateway) sent(methodPath string) int {
 }
 
 // unsignedFor is a transaction verify() accepts: value 0, the payment's chain, from
-// the signer, calldata carrying this payment's id.
-func unsignedFor(t *testing.T) string {
+// the signer, calldata calling op's RAIL0 function on this payment's id (with
+// amountUnits as capture/refund's amount).
+func unsignedFor(t *testing.T, op, amountUnits string) string {
 	t.Helper()
 	b, _ := json.Marshal(map[string]any{
 		"chain_id": lcChainID, "from": addressForTestKey(t),
 		"to": "0x4CCC4DdeBB8A63B9186936A8C0FA404910A4311b", "value": 0,
-		"data":  "0xdeadbeef" + strings.TrimPrefix(lcRail0ID, "0x"),
+		"data":  calldataFor(t, op, lcRail0ID, amountUnits),
 		"nonce": 1, "gas_limit": 200000, "max_priority_fee_per_gas": 1, "max_fee_per_gas": 2,
 	})
 	return string(b)
@@ -160,8 +161,9 @@ func TestCaptureReRunWithAKeyFollowsTheReplayedTransaction(t *testing.T) {
 // A first capture (no replay) still goes all the way: prepare, sign, submit once.
 func TestCaptureWithoutAReplaySubmitsOnce(t *testing.T) {
 	g := newLifecycleGateway(t)
+	seedDecimals(t, lcChainID, lcToken, 6)
 	g.prepare["capture"] = []any{map[string]any{"id": "tx-1", "operation": "capture", "status": "pending",
-		"unsigned_transaction": unsignedFor(t)}}
+		"unsigned_transaction": unsignedFor(t, "capture", "1000000")}}
 	idempotencyKey, captureAmount, capturePrivateKey = "order-42", "1.00", testKeyHex
 	t.Cleanup(func() { captureAmount, capturePrivateKey = "", "" })
 
@@ -204,8 +206,9 @@ func TestRefundReRunStopsAtPhaseOne(t *testing.T) {
 // for a fresh authorization signature (no second prepare).
 func TestRefundReRunFinishesAPendingReplay(t *testing.T) {
 	g := newLifecycleGateway(t)
+	seedDecimals(t, lcChainID, lcToken, 6)
 	g.prepare["refund"] = []any{map[string]any{"id": "tx-r", "operation": "refund", "status": "pending",
-		"unsigned_transaction": unsignedFor(t)}}
+		"unsigned_transaction": unsignedFor(t, "refund", "500000")}}
 	idempotencyKey, refundAmount, refundPrivateKey = "rf-1", "0.50", testKeyHex
 	t.Cleanup(func() { refundAmount, refundPrivateKey = "", "" })
 
@@ -245,6 +248,46 @@ func TestRefundRefusesAnAmountItCannotCheck(t *testing.T) {
 		t.Errorf("prepare sent %d time(s), want only phase 1", n)
 	}
 	if n := g.sent("POST /payments/" + lcRail0ID + "/refund"); n != 0 {
+		t.Errorf("submitted %d time(s) after a refusal", n)
+	}
+}
+
+// The capture prepare answered with capture calldata for MORE than the user typed:
+// the right function on the right payment, so only the amount word gives it away.
+// Nothing may be signed or submitted.
+func TestCaptureRefusesCalldataForAnotherAmount(t *testing.T) {
+	g := newLifecycleGateway(t)
+	seedDecimals(t, lcChainID, lcToken, 6)
+	g.prepare["capture"] = []any{map[string]any{"id": "tx-1", "operation": "capture", "status": "pending",
+		"unsigned_transaction": unsignedFor(t, "capture", "5000000")}}
+	captureAmount, capturePrivateKey = "1.00", testKeyHex
+	t.Cleanup(func() { captureAmount, capturePrivateKey = "", "" })
+
+	var err error
+	_ = captureStdout(t, func() { err = paymentsCaptureCmd.RunE(paymentsCaptureCmd, []string{lcRail0ID}) })
+	if err == nil || !strings.Contains(err.Error(), "5000000") {
+		t.Fatalf("capture calldata for another amount must be refused, got %v", err)
+	}
+	if n := g.sent("POST /payments/" + lcRail0ID + "/capture"); n != 0 {
+		t.Errorf("submitted %d time(s) after a refusal", n)
+	}
+}
+
+// A void prepare answered with capture calldata — settling the escrow to the merchant
+// instead of returning it — is refused on the selector.
+func TestVoidRefusesCaptureCalldata(t *testing.T) {
+	g := newLifecycleGateway(t)
+	g.prepare["void"] = []any{map[string]any{"id": "tx-v", "operation": "void", "status": "pending",
+		"unsigned_transaction": unsignedFor(t, "capture", "1000000")}}
+	voidPrivateKey = testKeyHex
+	t.Cleanup(func() { voidPrivateKey = "" })
+
+	var err error
+	_ = captureStdout(t, func() { err = paymentsVoidCmd.RunE(paymentsVoidCmd, []string{lcRail0ID}) })
+	if err == nil || !strings.Contains(err.Error(), "capture()") {
+		t.Fatalf("capture calldata on a void must be refused, got %v", err)
+	}
+	if n := g.sent("POST /payments/" + lcRail0ID + "/void"); n != 0 {
 		t.Errorf("submitted %d time(s) after a refusal", n)
 	}
 }

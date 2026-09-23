@@ -2,20 +2,30 @@ package cmd
 
 import (
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"math/big"
 	"strings"
 
 	rail0 "github.com/commercelayer/rail0-go"
+	ethcrypto "github.com/ethereum/go-ethereum/crypto"
 )
 
 // signingContext carries what the pre-sign checks need, taken from the work
 // ensureSignerFor already does: the payment it fetched and the address it derived
 // from the signing key. Bundling them means verifyUnsignedTx costs no extra gateway
 // call and no second key derivation. (#63)
+//
+// op and amountBaseUnits say what the transaction must DO, not just what it must act
+// on: op is the operation ensureSignerFor checked the signer for, and pins the RAIL0
+// function selector; amountBaseUnits is the user's own --amount scaled locally, set by
+// capture and refund — the two operations whose calldata carries an amount.
 type signingContext struct {
-	payment *rail0.Payment
-	signer  string
+	payment         *rail0.Payment
+	signer          string
+	op              string
+	amountBaseUnits string
 }
 
 // unsignedTx is the subset of the gateway's `unsigned_transaction` JSON that can be
@@ -84,10 +94,125 @@ func (sc *signingContext) verify(unsignedJSON string) error {
 			tx.To, sc.payment.Rail0Contract)
 	}
 
+	// The call must be the RAIL0 function the user asked for. Checked before the
+	// payment id so a swapped operation is named as such rather than as a wrong id.
+	if sc.op != "" {
+		if err := checkCalldataCall(tx.Data, sc.op, sc.amountBaseUnits); err != nil {
+			return err
+		}
+	}
+
 	if sc.payment != nil {
 		return checkCalldataPaymentID(tx.Data, string(sc.payment.Rail0Id))
 	}
 	return nil
+}
+
+// rail0PaymentTuple is RAIL0.sol's `Payment` struct as the ABI encodes it: payer,
+// payee, token, amount (uint120), authorizationExpiry and refundExpiry (uint48). The
+// struct is all static types, so the tuple is encoded INLINE — six 32-byte words right
+// after the paymentId — which is what fixes the position of the amount argument below.
+const rail0PaymentTuple = "(address,address,address,uint120,uint48,uint48)"
+
+// rail0FunctionSignatures are the eight RAIL0 entry points the CLI signs for, keyed by
+// canonicalOp. Copied from RAIL0.sol (and identical to the gateway's ContractAbi,
+// which records that no signature has changed since 1.1.0); TestRail0SelectorsMatchTheABI
+// pins the resulting selectors against the contract's compiled methodIdentifiers.
+var rail0FunctionSignatures = map[string]string{
+	"authorize":     "authorize(bytes32," + rail0PaymentTuple + ",uint8,bytes32,bytes32)",
+	"charge":        "charge(bytes32," + rail0PaymentTuple + ",uint8,bytes32,bytes32)",
+	"capture":       "capture(bytes32," + rail0PaymentTuple + ",uint256)",
+	"void":          "void(bytes32," + rail0PaymentTuple + ")",
+	"release":       "release(bytes32," + rail0PaymentTuple + ")",
+	"refund":        "refund(bytes32," + rail0PaymentTuple + ",uint256,uint8,bytes32,bytes32)",
+	"dispute":       "dispute(bytes32," + rail0PaymentTuple + ",bytes32)",
+	"close_dispute": "closeDispute(bytes32," + rail0PaymentTuple + ",bytes32)",
+}
+
+// rail0Selectors maps canonicalOp → the function's 4-byte selector as 8 lowercase hex
+// chars: the first four bytes of keccak256(signature), computed once from the table
+// above rather than hand-copied, so a signature and its selector cannot drift apart.
+var rail0Selectors = func() map[string]string {
+	out := make(map[string]string, len(rail0FunctionSignatures))
+	for op, sig := range rail0FunctionSignatures {
+		out[op] = hex.EncodeToString(ethcrypto.Keccak256([]byte(sig))[:4])
+	}
+	return out
+}()
+
+// rail0AmountWord is the calldata position (in 32-byte words after the selector) of
+// the `uint256 amount` argument of capture and refund: word 0 is the paymentId, words
+// 1-6 the inline Payment tuple, so the amount is word 7. Only these two operations
+// take an amount; every other one moves a quantity the contract derives itself.
+var rail0AmountWord = map[string]int{"capture": 7, "refund": 7}
+
+// checkCalldataCall asserts the call is the RAIL0 function for op and, for capture and
+// refund, that it moves exactly wantAmount base units.
+//
+// checkCalldataPaymentID alone bound the transaction to the right PAYMENT but not to
+// the right OPERATION: every RAIL0 function takes the paymentId first, so a hostile
+// endpoint could answer a void prepare with capture calldata (settling the escrow to
+// the merchant instead of returning it), a capture prepare with release, or a dispute
+// with closeDispute — each on the right payment, each passing that check. The
+// selector closes that, and the amount word closes the remaining capture/refund swap:
+// the right function for a different quantity than the user typed.
+//
+// Everything is FAIL-CLOSED: an operation with no known selector, or an amount-taking
+// operation with no locally derived amount to compare, refuses rather than skipping.
+// wantAmount is the user's input scaled by expectedBaseUnits — the gateway's word for
+// the amount is never the right-hand side here.
+func checkCalldataCall(data, op, wantAmount string) error {
+	key := canonicalOp(op)
+	want, ok := rail0Selectors[key]
+	if !ok {
+		return fmt.Errorf("refusing to sign: no known RAIL0 function for operation %q", op)
+	}
+	raw := strings.TrimPrefix(strings.ToLower(data), "0x")
+	const selectorLen, wordLen = 8, 64 // hex chars
+	if len(raw) < selectorLen {
+		return fmt.Errorf("refusing to sign: calldata is %d hex chars, too short to carry a function selector", len(raw))
+	}
+	if got := raw[:selectorLen]; got != want {
+		return fmt.Errorf("refusing to sign: the call is %s but you asked to %s (%s)",
+			describeSelector(got), op, rail0FunctionSignatures[key])
+	}
+
+	word, takesAmount := rail0AmountWord[key]
+	if !takesAmount {
+		return nil
+	}
+	if wantAmount == "" {
+		return fmt.Errorf("refusing to sign: cannot check the %s amount without the amount you asked for", op)
+	}
+	wantInt, ok := new(big.Int).SetString(wantAmount, 10)
+	if !ok {
+		return fmt.Errorf("refusing to sign: expected amount %q is not a base-unit integer", wantAmount)
+	}
+	start := selectorLen + word*wordLen
+	if len(raw) < start+wordLen {
+		return fmt.Errorf("refusing to sign: calldata is %d hex chars, too short to carry the %s amount", len(raw), op)
+	}
+	gotInt, ok := new(big.Int).SetString(raw[start:start+wordLen], 16)
+	if !ok {
+		return fmt.Errorf("refusing to sign: the %s amount in the calldata is not a number", op)
+	}
+	if gotInt.Cmp(wantInt) != 0 {
+		return fmt.Errorf("refusing to sign: the call would %s %s base units but you asked for %s",
+			op, gotInt, wantInt)
+	}
+	return nil
+}
+
+// describeSelector names a selector for an error message: the RAIL0 function it
+// belongs to when it is one of ours (the likely shape of a swapped operation), and
+// the bare hex otherwise.
+func describeSelector(sel string) string {
+	for op, s := range rail0Selectors {
+		if s == sel {
+			return rail0FunctionSignatures[op][:strings.IndexByte(rail0FunctionSignatures[op], '(')] + "()"
+		}
+	}
+	return "selector 0x" + sel
 }
 
 // isZeroNativeValue accepts the encodings a zero native value legitimately arrives
@@ -109,8 +234,8 @@ func isZeroNativeValue(raw json.RawMessage) bool {
 // (RAIL0.sol: authorize, charge, capture, void, release, refund, dispute,
 // closeDispute), so under ABI encoding the id always occupies bytes 4..36 of the
 // calldata — immediately after the 4-byte selector. Checking those bytes binds the
-// transaction to the payment the user actually asked to act on, with no need for the
-// contract ABI in the CLI.
+// transaction to the payment the user actually asked to act on; checkCalldataCall
+// binds it to the operation (the selector itself, and capture/refund's amount).
 //
 // This is what stands in for the unavailable `to` check. A hostile gateway's most
 // profitable swap is calldata for `approve(spender, MAX)` on the token contract,

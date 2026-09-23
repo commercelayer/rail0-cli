@@ -566,7 +566,7 @@ func ensureSignerFor(ctx context.Context, client *rail0.Client, rail0ID, signing
 	}
 	for _, a := range allowed {
 		if strings.EqualFold(signer, a) {
-			return &signingContext{payment: p, signer: signer}, nil
+			return &signingContext{payment: p, signer: signer, op: op}, nil
 		}
 	}
 	return nil, fmt.Errorf("signing key address %s can't %s this payment — expected %s (wrong key?)",
@@ -818,6 +818,12 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 			if replayedPastPending(prep) {
 				return resumeReplayed(ctx, client, rail0Id, "capture", prep)
 			}
+			// The calldata's amount is checked against what the user typed, scaled
+			// locally — fail-closed like refund's authorization value (see
+			// checkCalldataCall).
+			if sc.amountBaseUnits, err = expectedBaseUnits(ctx, sc.payment.ChainID, string(sc.payment.Token), captureAmount); err != nil {
+				return nil, err
+			}
 			if err := sc.verify(prep.UnsignedTransaction); err != nil {
 				return nil, err
 			}
@@ -1056,6 +1062,14 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 			if replayedPastPending(phase1) {
 				return resumeReplayed(ctx, client, rail0Id, "refund", phase1)
 			}
+			// `refundAmount` is what the user typed, scaled locally. It is the right-hand
+			// side of BOTH refund checks: the authorization's value and the amount the
+			// refund() calldata carries (see checkCalldataCall).
+			wantUnits, err := expectedBaseUnits(ctx, sc.payment.ChainID, string(sc.payment.Token), refundAmount)
+			if err != nil {
+				return nil, err
+			}
+			sc.amountBaseUnits = wantUnits
 			// A replayed row still `pending` already carries the unsigned tx with the
 			// authorization embedded: finish it rather than asking for a new signature.
 			if idempotencyKey != "" && phase1.ID != "" && phase1.SigningPayload == nil {
@@ -1078,11 +1092,6 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 			// This is the payload the whole guard exists for: a ReceiveWithAuthorization
 			// is honoured by the token itself, so an endpoint that answered with the
 			// payee's whole balance as `value` used to get exactly that signed.
-			// `refundAmount` is what the user typed, scaled locally.
-			wantUnits, err := expectedBaseUnits(ctx, sc.payment.ChainID, string(sc.payment.Token), refundAmount)
-			if err != nil {
-				return nil, err
-			}
 			if err := sc.verifySigningPayload(phase1.SigningPayload, wantUnits); err != nil {
 				return nil, err
 			}

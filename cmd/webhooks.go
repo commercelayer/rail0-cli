@@ -284,6 +284,9 @@ var webhooksEventsTopic string
 var webhooksEventsPaymentID string
 var webhooksEventsSince string
 var webhooksEventsUntil string
+var webhooksEventsResponseCode string
+var webhooksEventsPage int
+var webhooksEventsPerPage int
 
 var webhooksEventCallbacksCmd = &cobra.Command{
 	Use:   "event-callbacks <webhook_id>",
@@ -297,19 +300,25 @@ means the event never dispatched — check that the webhook is active and the
 topic matches), and if it is, what is the receiver returning.
 
 '--status failed' is the usual starting point, and the one to read before
-'reset-circuit'.`,
+'reset-circuit'; '--response-code 500' then tells the receiver's crashes apart
+from its rate limits. The gateway keeps 15 days of attempts; page through them
+with --page / --per-page.`,
 	Example: `  rail0 webhooks event-callbacks whk_abc123 --status failed
   rail0 webhooks event-callbacks whk_abc123 --topic payments.captured
+  rail0 webhooks event-callbacks whk_abc123 --status failed --response-code 500
   rail0 webhooks event-callbacks whk_abc123 --payment-id 0x… --since 2026-01-01T00:00:00Z`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		p := rail0.ListEventCallbacksParams{
-			Status:    webhooksEventsStatus,
-			Topic:     webhooksEventsTopic,
-			PaymentID: webhooksEventsPaymentID,
-			Since:     webhooksEventsSince,
-			Until:     webhooksEventsUntil,
-			Sort:      webhooksEventsSort,
+			Status:       webhooksEventsStatus,
+			Topic:        webhooksEventsTopic,
+			PaymentID:    webhooksEventsPaymentID,
+			ResponseCode: webhooksEventsResponseCode,
+			Since:        webhooksEventsSince,
+			Until:        webhooksEventsUntil,
+			Sort:         webhooksEventsSort,
+			Page:         webhooksEventsPage,
+			PerPage:      webhooksEventsPerPage,
 		}
 		return ui.RunAPI(func() (any, error) {
 			ctx := context.Background()
@@ -423,6 +432,10 @@ func init() {
 	webhooksEventCallbacksCmd.Flags().StringVar(&webhooksEventsStatus, "status", "", "Filter by delivery status ('delivered', 'failed')")
 	webhooksEventCallbacksCmd.Flags().StringVar(&webhooksEventsTopic, "topic", "", "Filter by event topic (e.g. payments.captured)")
 	webhooksEventCallbacksCmd.Flags().StringVar(&webhooksEventsPaymentID, "payment-id", "", "Filter by the payment the delivery is for (its id or 0x rail0 id)")
+	webhooksEventCallbacksCmd.Flags().StringVar(&webhooksEventsResponseCode, "response-code", "", "Filter by the receiver's exact HTTP response code (e.g. 500)")
+	// Without these the log stopped, silently, at the gateway's default page.
+	webhooksEventCallbacksCmd.Flags().IntVar(&webhooksEventsPage, "page", 0, "Page number (1-based)")
+	webhooksEventCallbacksCmd.Flags().IntVar(&webhooksEventsPerPage, "per-page", 0, "Attempts per page")
 	webhooksEventCallbacksCmd.Flags().StringVar(&webhooksEventsSince, "since", "", "Only deliveries at/after this ISO-8601 time")
 	webhooksEventCallbacksCmd.Flags().StringVar(&webhooksEventsUntil, "until", "", "Only deliveries at/before this ISO-8601 time")
 	webhooksEventCallbacksCmd.Flags().StringVar(&webhooksEventsSort, "sort", "", "Sort fields (e.g. -created_at)")

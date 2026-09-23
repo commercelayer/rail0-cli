@@ -140,3 +140,34 @@ func TestEventCallbackPaymentIDResolvesARail0ID(t *testing.T) {
 		t.Errorf("lookups = %d, want 1 (only the 0x id needs one)", lookups)
 	}
 }
+
+// event-callbacks used to stop, silently, at the gateway's default page, and could
+// not ask for one response code: both now reach the query.
+func TestEventCallbacksSendsPagingAndResponseCode(t *testing.T) {
+	isolate(t)
+	isolateTokenStore(t)
+	var q map[string]string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		q = map[string]string{}
+		for k := range r.URL.Query() {
+			q[k] = r.URL.Query().Get(k)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[]`))
+	}))
+	defer srv.Close()
+	t.Setenv("RAIL0_BASE_URL", srv.URL)
+	webhooksEventsResponseCode, webhooksEventsPage, webhooksEventsPerPage = "500", 2, 50
+	t.Cleanup(func() { webhooksEventsResponseCode, webhooksEventsPage, webhooksEventsPerPage = "", 0, 0 })
+
+	_ = captureStdout(t, func() {
+		if err := webhooksEventCallbacksCmd.RunE(webhooksEventCallbacksCmd, []string{"wh-1"}); err != nil {
+			t.Errorf("event-callbacks: %v", err)
+		}
+	})
+	for k, want := range map[string]string{"response_code": "500", "page": "2", "per_page": "50"} {
+		if q[k] != want {
+			t.Errorf("%s = %q, want %q (query %v)", k, q[k], want, q)
+		}
+	}
+}

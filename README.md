@@ -483,12 +483,39 @@ is a safe default there, while the production chain set is a deployment decision
 inventing one here would send a real payment to a chain nobody chose.
 
 ```sh
-rail0 env                 # list environments + parameters, marking the current one
+rail0 env                 # list the environments, marking the current one
+rail0 env -d              # ...with the parameters each one declares
 rail0 env staging         # switch to staging (writes its settings to the config file)
 rail0 env staging -d      # ...and also print the resulting parameters
 rail0 env current         # show the active environment
 rail0 env current -d      # ...with every parameter's effective value + origin
 ```
+
+After a switch the environment-managed settings are **exactly** the target's: a key
+the target does not declare is **removed**, not left behind. Applying an environment
+used to only write its own keys, so moving from `development` to `production` — which
+declares base-url alone — kept `chain-id: 5042002` and `token: USDC` armed: the
+production gateway with an Arc Testnet default still loaded, inherited in silence
+because nothing wrote it at that moment.
+
+Because that discards stored values, a switch that would clear something **names them
+and asks first**:
+
+```
+Switching to "production" clears settings it does not define:
+  chain-id = 5042002
+  token = USDC
+Clear them and switch? [y/N]:
+```
+
+The prompt appears **only** when there is something to lose — one that appeared every
+time is one you would clear by reflex. Declining changes nothing at all, including the
+session on the gateway you were leaving: the question is asked before any of it. Pass
+`--yes` in a script (without it, and with no terminal, the switch refuses rather than
+hanging), and `cleared` is reported in the result so `-q`/`--json` callers see it too.
+
+Settings outside the bundle — `output`, `http-timeout` — are your own preferences and
+a switch never touches them.
 
 Switching **ends the session on the gateway you are leaving**: its token is revoked
 (denylist) and the local copy removed, so the file left behind is worthless. Sessions are

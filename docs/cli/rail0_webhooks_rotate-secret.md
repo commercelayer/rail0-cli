@@ -15,6 +15,8 @@ short window of failures.
 Rotate on suspected exposure, and after anyone who had the secret loses
 access.
 
+With -q/--quiet the command prints just the new secret.
+
 ```
 rail0 webhooks rotate-secret <webhook_id> [flags]
 ```

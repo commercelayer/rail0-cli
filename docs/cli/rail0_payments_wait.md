@@ -6,7 +6,9 @@ Block until a payment settles (or reaches a given status)
 
 Poll a payment until it settles, then print its final state.
 
-By default it waits until no transaction is still in flight (pending/submitted).
+By default it waits until no transaction is still in flight (submitted, or signed
+and pending broadcast). A prepare that was never signed is not in flight — nothing
+will ever send it — so it does not hold the wait open.
 With --until it instead waits for a specific payment status.
 
 ```

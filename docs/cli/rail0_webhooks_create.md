@@ -14,6 +14,9 @@ The response carries the shared SECRET, and it is the only time it is shown:
 the gateway stores a hash, not the value, so it cannot be read back. Capture it
 now — 'rotate-secret' issues a new one, which is the recovery, not a lookup.
 
+With -q/--quiet the command prints the secret rather than the id, since the id can
+be looked up again ('webhooks list') and the secret cannot.
+
 Use the secret to verify the X-Rail0-Signature header on each delivery. A
 delivery whose signature you cannot verify should be treated as untrusted, not
 as a malformed request.

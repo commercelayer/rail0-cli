@@ -22,7 +22,8 @@ clear something names the values and asks first; --yes skips the prompt, and
 without a terminal the switch refuses rather than hanging.
 
 A stored value is still the lowest-priority source, so --base-url or
-RAIL0_BASE_URL override it for a single command.
+RAIL0_BASE_URL override it for a single command — and while either one points at
+a different gateway, a switch is refused: it could not take effect.
 
 ```
 rail0 env [name] [flags]

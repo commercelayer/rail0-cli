@@ -40,7 +40,7 @@ the last CONFIRMED ones and not the last submitted.
 
 .PP
 \fB--sort\fP=""
-	Sort fields (e.g. -submitted_at,operation)
+	Sort fields: created_at, updated_at, block_number, confirmed_at (prefix - for descending, comma-separated)
 
 
 .SH OPTIONS INHERITED FROM PARENT COMMANDS
@@ -67,7 +67,7 @@ the last CONFIRMED ones and not the last submitted.
 .SH EXAMPLE
 .EX
   rail0 payments transactions 0xabc123…
-  rail0 payments transactions 0xabc123… --sort -submitted_at
+  rail0 payments transactions 0xabc123… --sort -confirmed_at
 .EE
 
 

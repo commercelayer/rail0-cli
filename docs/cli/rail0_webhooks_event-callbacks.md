@@ -31,10 +31,10 @@ rail0 webhooks event-callbacks <webhook_id> [flags]
 
 ```
   -h, --help                help for event-callbacks
-      --payment-id string   Filter by the payment the delivery is for
+      --payment-id string   Filter by the payment the delivery is for (its id or 0x rail0 id)
       --since string        Only deliveries at/after this ISO-8601 time
       --sort string         Sort fields (e.g. -created_at)
-      --status string       Filter by delivery status ('pending', 'delivered', 'failed')
+      --status string       Filter by delivery status ('delivered', 'failed')
       --topic string        Filter by event topic (e.g. payments.captured)
       --until string        Only deliveries at/before this ISO-8601 time
 ```

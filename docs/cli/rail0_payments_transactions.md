@@ -25,7 +25,7 @@ rail0 payments transactions <rail0Id> [flags]
 
 ```
   rail0 payments transactions 0xabc123…
-  rail0 payments transactions 0xabc123… --sort -submitted_at
+  rail0 payments transactions 0xabc123… --sort -confirmed_at
 ```
 
 ### Options
@@ -34,7 +34,7 @@ rail0 payments transactions <rail0Id> [flags]
   -h, --help           help for transactions
       --page int       Page number (1-based)
       --per-page int   Results per page
-      --sort string    Sort fields (e.g. -submitted_at,operation)
+      --sort string    Sort fields: created_at, updated_at, block_number, confirmed_at (prefix - for descending, comma-separated)
 ```
 
 ### Options inherited from parent commands

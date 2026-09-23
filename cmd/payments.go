@@ -251,7 +251,8 @@ the last CONFIRMED ones and not the last submitted.`,
 			if err != nil {
 				return nil, err
 			}
-			return resp.Data, nil // bare array; pagination is in headers
+			// amount_human beside each raw amount, like every payment view.
+			return humanizeTransactions(ctx, client, id, resp.Data), nil // bare array; pagination is in headers
 		})
 	},
 }

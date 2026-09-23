@@ -121,6 +121,33 @@ type paymentView struct {
 	RefundExpiresIn        string `json:"refund_expires_in,omitempty"`
 }
 
+// transactionView is a transaction plus its amount in token units. The gas figures stay
+// raw: they are native currency, whose scale is the chain's, not the token's.
+type transactionView struct {
+	*rail0.Transaction
+	AmountHuman string `json:"amount_human,omitempty"`
+}
+
+// humanizeTransactions gives each transaction its amount in token units, read on the
+// scale of the payment it belongs to. A transaction carries no chain or token of its own,
+// so the payment is fetched once; if that read fails the rows are returned as they
+// came — raw base units, as before — rather than failing a listing over a companion.
+func humanizeTransactions(ctx context.Context, client *rail0.Client, paymentID string, txs []rail0.Transaction) []*transactionView {
+	chainID, token := 0, ""
+	if p, err := client.Payments.Get(ctx, paymentID); err == nil && p != nil {
+		chainID, token = p.ChainID, string(p.Token)
+	}
+	out := make([]*transactionView, len(txs))
+	for i := range txs {
+		v := &transactionView{Transaction: &txs[i]}
+		if chainID != 0 && txs[i].Amount != "" {
+			v.AmountHuman = humanAmount(ctx, txs[i].Amount, chainID, token)
+		}
+		out[i] = v
+	}
+	return out
+}
+
 // humanize wraps a payment for output. Nil in, nil out, so a caller can pass a
 // response through without a guard.
 func humanize(ctx context.Context, p *rail0.Payment) *paymentView {

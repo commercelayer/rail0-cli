@@ -357,8 +357,9 @@ rail0 env staging      # rewrites the file, valid
 
 Every payment the CLI prints — `payments get`, `payments list` (one page or `--all`),
 the lifecycle commands — carries a **human companion** next to each raw amount:
-`amount_human`, `capturable_amount_human`, `refundable_amount_human`. (Transaction and
-dispute rows still show base units only.) The two expiries
+`amount_human`, `capturable_amount_human`, `refundable_amount_human`. Transaction rows
+(`payments transactions`, `payments transaction`) carry `amount_human` too, on their
+payment's scale; their gas figures stay in the chain's native wei. The two expiries
 get `authorization_expiry_at` / `refund_expiry_at` (RFC3339) and
 `authorization_expires_in` / `refund_expires_in` ("2h 5m", or "expired") beside the raw
 epoch integers.

@@ -234,3 +234,25 @@ func TestAnalyticsBreakdownCompletesOperation(t *testing.T) {
 		t.Errorf("--by completions = %v, want operation among them", values)
 	}
 }
+
+// Transaction rows carry amount_human beside the raw amount, on the scale of the
+// payment they belong to (a transaction has no chain or token of its own).
+func TestPaymentsTransactionsHumanizeTheirAmounts(t *testing.T) {
+	g := newRecordingGateway(t)
+	seedDecimals(t, lcChainID, lcToken, 6)
+	g.respond = func(r *http.Request) any {
+		if strings.HasSuffix(r.URL.Path, "/transactions") {
+			return []any{map[string]any{"id": "tx-1", "operation": "capture", "status": "confirmed", "amount": "2500000"}}
+		}
+		return map[string]any{"id": "pay-1", "chain_id": lcChainID, "token": lcToken}
+	}
+
+	out := captureStdout(t, func() {
+		if err := paymentsTransactionsCmd.RunE(paymentsTransactionsCmd, []string{lcRail0ID}); err != nil {
+			t.Errorf("payments transactions: %v", err)
+		}
+	})
+	if !strings.Contains(out, `"amount_human": "2.5"`) || !strings.Contains(out, `"amount": "2500000"`) {
+		t.Errorf("want the raw amount and its human companion, got:\n%s", out)
+	}
+}

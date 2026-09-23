@@ -3,6 +3,8 @@ package cmd
 import (
 	"context"
 
+	rail0 "github.com/commercelayer/rail0-go"
+
 	"github.com/rail0/cli/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -32,7 +34,13 @@ Readable by either participant.`,
 	Args:    cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return ui.RunAPI(func() (any, error) {
-			return newReadClient().Payments.GetTransaction(context.Background(), args[0], args[1])
+			ctx := context.Background()
+			client := newReadClient()
+			tx, err := client.Payments.GetTransaction(ctx, args[0], args[1])
+			if err != nil {
+				return nil, err
+			}
+			return humanizeTransactions(ctx, client, args[0], []rail0.Transaction{*tx})[0], nil
 		})
 	},
 }

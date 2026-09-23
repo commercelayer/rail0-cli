@@ -9,7 +9,11 @@ Poll a payment until it settles, then print its final state.
 By default it waits until no transaction is still in flight (submitted, or signed
 and pending broadcast). A prepare that was never signed is not in flight — nothing
 will ever send it — so it does not hold the wait open.
-With --until it instead waits for a specific payment status.
+With --until it instead waits for a specific payment status, and stops with an
+error as soon as the payment can no longer reach it — a charge-mode payment never
+becomes 'captured', a captured one never becomes 'authorized' again. An
+'expired' payment is over for a capture but not for its escrow: waiting for
+'released' or 'voided' keeps going.
 
 ```
 rail0 payments wait <rail0Id> [flags]

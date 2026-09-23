@@ -15,8 +15,10 @@ import (
 // it, which reads as dead — but the gateway keeps it in CAPTURABLE_FROM /
 // REFUNDABLE_FROM for historical rows, so the picker must keep offering it too.
 func TestOpFiltersMirrorTheGatewayStateGuards(t *testing.T) {
-	// Mirrors rail0-gateway app/models/payment.rb CAPTURABLE_FROM / REFUNDABLE_FROM.
-	gatewayCapturableFrom := []string{"authorized", "partially_captured", "partially_refunded"}
+	// Mirrors rail0-gateway app/models/payment.rb CAPTURABLE_FROM / REFUNDABLE_FROM,
+	// and the AASM `void` event's sources.
+	gatewayCapturableFrom := []string{"authorized", "expired", "partially_captured", "partially_refunded"}
+	gatewayVoidableFrom := []string{"authorized", "expired"}
 	gatewayRefundableFrom := []string{"charged", "captured", "partially_captured", "partially_refunded"}
 
 	for _, tc := range []struct {
@@ -24,6 +26,9 @@ func TestOpFiltersMirrorTheGatewayStateGuards(t *testing.T) {
 		expected []string
 	}{
 		{"capture", gatewayCapturableFrom},
+		// release acts on the capturable escrow: expired is the status it exists for.
+		{"release", gatewayCapturableFrom},
+		{"void", gatewayVoidableFrom},
 		{"refund", gatewayRefundableFrom},
 		// dispute acts on the refundable set too, additionally requiring no open dispute.
 		{"dispute", gatewayRefundableFrom},

@@ -1,0 +1,69 @@
+.nh
+.TH "RAIL0" "1" "Aug 2026" "rail0 CLI" ""
+
+.SH NAME
+rail0-payments-redrive - Re-send a signed transaction whose broadcast never reached the chain (payee)
+
+
+.SH SYNOPSIS
+\fBrail0 payments redrive   [flags]\fP
+
+
+.SH DESCRIPTION
+Ask the gateway to broadcast again a transaction that was prepared and SIGNED
+but never reached the chain — a worker that died between the two, a drained queue.
+The same signed bytes go out again; nothing about the payment changes, and no new
+signature is asked for.
+
+.PP
+Only a transaction reading 'redrivable: true' qualifies (see 'payments
+transaction' or 'payments transactions'). A pending row WITHOUT a signed
+transaction is not stuck, it is unfinished: re-run the operation instead. The
+gateway also redrives on its own recovery cadence; this asks for it now.
+
+.PP
+Payee only. Add -w/--wait to block until the transaction confirms (or fails).
+
+
+.SH OPTIONS
+\fB-h\fP, \fB--help\fP[=false]
+	help for redrive
+
+.PP
+\fB--timeout\fP=15m0s
+	Max time to wait when --wait is set — the default covers the slowest chain's finality
+
+.PP
+\fB-w\fP, \fB--wait\fP[=false]
+	Block until the operation confirms on-chain (or fails)
+
+
+.SH OPTIONS INHERITED FROM PARENT COMMANDS
+\fB--base-url\fP=""
+	RAIL0 gateway base URL (env: RAIL0_BASE_URL)
+
+.PP
+\fB--debug\fP[=false]
+	Print HTTP request/response details to stderr
+
+.PP
+\fB--json\fP[=false]
+	Force plain (uncolored) JSON output (useful in scripts)
+
+.PP
+\fB--pretty\fP[=false]
+	Use the key-value/table view instead of JSON (terminal only)
+
+.PP
+\fB-q\fP, \fB--quiet\fP[=false]
+	Print only the result's id/hash, one per line (useful in scripts)
+
+
+.SH EXAMPLE
+.EX
+  rail0 payments redrive 0xabc123… 7f1c0c8e-… --wait
+.EE
+
+
+.SH SEE ALSO
+\fBrail0-payments(1)\fP

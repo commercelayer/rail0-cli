@@ -151,3 +151,41 @@ func TestPathIsWhereTheSessionIsWritten(t *testing.T) {
 		t.Errorf("Save wrote %q but Path reports %q", written, before)
 	}
 }
+
+// The modes are ENFORCED on every save: a tokens directory or file that already
+// existed world-readable (an older build, a restored backup) used to stay that way,
+// because MkdirAll and WriteFile apply their mode only when they create the path.
+// The replace is atomic, so it leaves no temp file behind.
+func TestSaveTightensExistingPermissions(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+	t.Setenv("XDG_CACHE_HOME", dir)
+
+	path := Path(gwA)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("old\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := Save(gwA, "new-token"); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	if info, _ := os.Stat(filepath.Dir(path)); info.Mode().Perm() != 0o700 {
+		t.Errorf("tokens dir mode = %o, want 700", info.Mode().Perm())
+	}
+	if info, _ := os.Stat(path); info.Mode().Perm() != 0o600 {
+		t.Errorf("token file mode = %o, want 600", info.Mode().Perm())
+	}
+	if got := Load(gwA); got != "new-token" {
+		t.Errorf("Load = %q, want the new token", got)
+	}
+	entries, _ := os.ReadDir(filepath.Dir(path))
+	if len(entries) != 1 {
+		t.Errorf("tokens dir holds %d entries, want only the token (no temp file left)", len(entries))
+	}
+}

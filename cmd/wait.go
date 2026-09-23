@@ -110,12 +110,65 @@ func withoutLegacyStatuses(all []string) []string {
 // RELEASED, which closes the payment as `released`. What is over is the waiting — no
 // capture will ever land — so a loop that treated it as "not yet" would sit out the full
 // deadline on a payment that can never settle, and exit as a timeout rather than telling
-// the operator the escrow is recoverable. terminalMismatchError says how.
+// the operator the escrow is recoverable. terminalMismatchError says how. `payments wait
+// --until` decides on statusCanReach instead, so `--until released` or `--until voided`
+// on an expired payment keeps waiting for the release/void that can still land.
 //
 // `failed` was in here too, for the same wrong reason as above — a payment never
 // carries it, so the entry could only ever be dead weight encoding a false belief.
 var terminalStatuses = map[string]bool{
 	"voided": true, "released": true, "refunded": true, "expired": true,
+}
+
+// statusSuccessors is the payment state machine as the gateway's AASM declares it
+// (Payment: sign, authorize, charge, capture, expire, void, release, refund), one
+// step at a time. `--until` uses it to stop as soon as the target is out of reach
+// rather than only on a terminal status: `--until authorized` on a payment already
+// `captured`, or `--until captured` on a charge-mode payment (which ends `charged`),
+// used to sit out the whole deadline and then report a timeout.
+//
+// One deliberate omission: the capture a chain accepts across the expiry boundary
+// (expired → captured) is left out, for the reason `expired` is in terminalStatuses —
+// it is the exception, and waiting on it would cost the full deadline in the common
+// case where nothing lands.
+var statusSuccessors = map[string][]string{
+	"unsigned":           {"signed"},
+	"signed":             {"authorized", "charged"},
+	"authorized":         {"partially_captured", "captured", "expired", "voided", "released"},
+	"partially_captured": {"partially_captured", "captured", "refunded"},
+	"partially_refunded": {"partially_captured", "captured", "refunded"},
+	"expired":            {"voided", "released"},
+	"charged":            {"refunded"},
+	"captured":           {"refunded"},
+}
+
+// statusCanReach reports whether a payment in `from` can still come to be `to`. A
+// status this map does not know (one the gateway adds later) is assumed able to reach
+// anything: the cost of that guess is a wait that runs to its deadline, where the
+// opposite guess would stop a wait that might have succeeded.
+func statusCanReach(from, to string) bool {
+	if from == to {
+		return true
+	}
+	if _, known := statusSuccessors[from]; !known && !terminalStatuses[from] {
+		return true
+	}
+	seen := map[string]bool{from: true}
+	queue := []string{from}
+	for len(queue) > 0 {
+		cur := queue[0]
+		queue = queue[1:]
+		for _, next := range statusSuccessors[cur] {
+			if next == to {
+				return true
+			}
+			if !seen[next] {
+				seen[next] = true
+				queue = append(queue, next)
+			}
+		}
+	}
+	return false
 }
 
 // stopPolling marks an error as a DECISION rather than a failed read: the poll
@@ -206,8 +259,19 @@ func replayedPastPending(tx *rail0.Transaction) bool {
 // resumeReplayed follows a replayed transaction instead of re-broadcasting it: with
 // --wait it waits on THAT transaction's id, exactly as the first attempt would have;
 // without it returns the row, whose status says where the operation stands.
+//
+// A replayed row that already FAILED is the exception, with or without --wait: the
+// outcome is final, so it is returned as the op-failed error the first attempt's
+// --wait would have produced. Returning the row printed it and exited 0, which a
+// script reads as "the capture went through". The hint names the way forward,
+// because the key is what brought this row back: the same key can only ever replay
+// it, so a retry needs a new one.
 func resumeReplayed(ctx context.Context, client *rail0.Client, rail0Id, op string, tx *rail0.Transaction) (any, error) {
 	ui.Progressf("idempotency key already used: %s transaction %s is %s — nothing re-broadcast", op, tx.ID, tx.Status)
+	if tx.Status == "failed" {
+		return nil, fmt.Errorf("%w (replayed by the idempotency key; to retry, pass a NEW --idempotency-key)",
+			opFailedError(op, tx))
+	}
 	if !waitFlag {
 		return tx, nil
 	}
@@ -310,12 +374,15 @@ func gaveUpError(timeout time.Duration, checkCmd string, lastTransient error) er
 }
 
 // terminalMismatchError is the answer to `--until captured` on a payment that
-// ended up voided/released/refunded/failed: waiting on is pointless, and the
+// ended up voided/released/refunded, or moved past the target (see statusCanReach): waiting on is pointless, and the
 // old loop spent the full two minutes before reporting a timeout — hiding a
 // definitive outcome behind a message that suggested slowness. The payment's
 // recorded failure cause is included when it has one. (#107)
 func terminalMismatchError(p *rail0.Payment, want string) error {
-	msg := fmt.Sprintf("payment is %s, which is terminal — it can no longer become %s", p.Status, want)
+	msg := fmt.Sprintf("payment is %s — it can no longer become %s", p.Status, want)
+	if terminalStatuses[p.Status] {
+		msg = fmt.Sprintf("payment is %s, which is terminal — it can no longer become %s", p.Status, want)
+	}
 	// The one terminal status that still has money to move: say so, because "terminal"
 	// otherwise reads as "the funds are settled" and here they are sitting in escrow.
 	if p.Status == "expired" {
@@ -444,7 +511,11 @@ var paymentsWaitCmd = &cobra.Command{
 By default it waits until no transaction is still in flight (submitted, or signed
 and pending broadcast). A prepare that was never signed is not in flight — nothing
 will ever send it — so it does not hold the wait open.
-With --until it instead waits for a specific payment status.`,
+With --until it instead waits for a specific payment status, and stops with an
+error as soon as the payment can no longer reach it — a charge-mode payment never
+becomes 'captured', a captured one never becomes 'authorized' again. An
+'expired' payment is over for a capture but not for its escrow: waiting for
+'released' or 'voided' keeps going.`,
 	Example: `  rail0 payments wait 0xrail0Id…
   rail0 payments wait 0xrail0Id… --until captured`,
 	Args: cobra.ExactArgs(1),
@@ -471,9 +542,14 @@ With --until it instead waits for a specific payment status.`,
 						if p.Status == waitUntil {
 							return p, true, nil
 						}
-						// Terminal and not what was asked for: stop now instead of
-						// polling out the deadline over an outcome that is settled.
-						if terminalStatuses[p.Status] {
+						// Past the point where the target is reachable: stop now
+						// instead of polling out the deadline over an outcome that is
+						// settled. statusCanReach alone decides, and already stops on
+						// voided/released/refunded (they have no successors). Checking
+						// terminalStatuses first was wrong for `expired`: terminal for
+						// a capture, but it still moves to released or voided, so
+						// `--until released` on an expired payment failed at once.
+						if !statusCanReach(p.Status, waitUntil) {
 							return nil, false, stopPolling{terminalMismatchError(p, waitUntil)}
 						}
 						return nil, false, nil

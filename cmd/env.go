@@ -265,8 +265,11 @@ func switchEnv(name string, details bool) error {
 	// `exp` (24h), for a session nobody is watching any more. Revoking puts its
 	// jti in the gateway's denylist, so the file left behind is worthless.
 	//
-	// Deliberately before cfg.Save(): revokeCurrentSession resolves the CURRENT
-	// base URL, and after the save that would be the new environment's.
+	// AFTER cfg.Save(), on the base URL captured before it. It used to run before the
+	// save because revokeCurrentSession resolved the CURRENT base URL — and then a
+	// failed save left you logged out of the environment you had not left. Now the
+	// gateway being left is captured first, the switch is saved, and only then is that
+	// gateway's session ended.
 	//
 	// Only when there IS somewhere to leave. This ran unconditionally, so switching
 	// to the environment you were already on logged you out of it: nothing was
@@ -281,7 +284,7 @@ func switchEnv(name string, details bool) error {
 	// state a same-environment switch is in: the session it would have revoked is
 	// the one still in use.
 	// The config is loaded, and the clearing CONFIRMED, before anything with a
-	// side effect runs. revokeCurrentSession below ends a session on the gateway
+	// side effect runs. revokeSession below ends a session on the gateway
 	// being left, which cannot be undone — so asking afterwards would mean a
 	// declined switch had already logged you out of the environment you chose to
 	// stay in.
@@ -311,10 +314,8 @@ func switchEnv(name string, details bool) error {
 		}
 	}
 
-	var revoked sessionRevocation
-	if detectEnv() != name {
-		revoked = revokeCurrentSession()
-	}
+	leaving := resolveBaseURL()
+	leavingSomewhere := detectEnv() != name
 	for key, value := range e.settings {
 		k, err := lookupKey(key)
 		if err != nil {
@@ -329,6 +330,10 @@ func switchEnv(name string, details bool) error {
 	}
 	if err := cfg.Save(); err != nil {
 		return err
+	}
+	var revoked sessionRevocation
+	if leavingSomewhere {
+		revoked = revokeSession(leaving)
 	}
 	// AFTER the save, so resolveBaseURL() is the environment we just moved to.
 	// Sessions are per gateway, so arriving somewhere unauthenticated is the norm
@@ -398,7 +403,11 @@ type sessionRevocation struct {
 // and the outcome is reported so the operator knows whether the old JWT is dead
 // or merely abandoned.
 func revokeCurrentSession() sessionRevocation {
-	baseURL := resolveBaseURL()
+	return revokeSession(resolveBaseURL())
+}
+
+// revokeSession is revokeCurrentSession for a named gateway — see newClientFor.
+func revokeSession(baseURL string) sessionRevocation {
 	stored := token.Load(baseURL)
 	if stored == "" {
 		return sessionRevocation{}
@@ -410,7 +419,7 @@ func revokeCurrentSession() sessionRevocation {
 	if _, err := parseJWTClaims(stored); err != nil {
 		out.Why = "the stored session had already expired"
 	} else {
-		res, err := newClient().Auth.Logout(context.Background())
+		res, err := newClientFor(baseURL).Auth.Logout(context.Background())
 		switch {
 		case err != nil:
 			out.Why = fmt.Sprintf("could not reach %s to revoke it (%s)", baseURL, humanizeError(err))

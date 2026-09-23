@@ -59,17 +59,21 @@ Requires login — a payment is readable only by its payer or payee. Run
 'rail0 auth login -p 0xKey…' first (any wallet can log in, no account needed).
 
 Status values:
-  unsigned   — created, payer signature not yet submitted
+  unsigned            — created, payer signature not yet submitted
   signed              — payer signature stored, awaiting payee action
   authorized          — funds held in escrow, capture available
   charged             — one-shot charge executed, refund available
   captured            — funds fully captured by payee
   partially_captured  — partial capture executed; remaining escrow still capturable
+  expired             — authorization window closed with nothing captured; the escrow
+                        is still on-chain, recoverable with 'release' (or 'void')
   voided              — authorization cancelled (only before any capture), funds returned to payer
   released            — full authorization released back to payer (total release, nothing captured)
   refunded            — payment fully settled by refund (escrow and refundable both drained)
   partially_refunded  — legacy; no longer produced (a partial refund leaves the status unchanged)
-  failed              — terminal failure; payment cannot proceed`,
+
+A failed on-chain attempt does not change the status: it shows on the
+transaction ('payments transactions') and in last_error_code / last_error_message.`,
 	Example: `  rail0 payments get 0xabc123…`,
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -102,6 +106,8 @@ var (
 	paymentsListMaxAmount   string
 	paymentsListCreatedFrom string
 	paymentsListCreatedTo   string
+	paymentsListOperation   string
+	paymentsListRail0ID     string
 	paymentsListPage        int
 	paymentsListPerPage     int
 	paymentsListAll         bool
@@ -114,7 +120,10 @@ var paymentsListCmd = &cobra.Command{
 Requires authentication — run 'rail0 auth login -p 0xKey…' first.
 
 Filter with --status, --mode, --payer, --payee, --token, --chain-id, --disputed,
---min-amount / --max-amount, and --created-from / --created-to (ISO-8601).
+--operation, --rail0-id, --min-amount / --max-amount, and --created-from /
+--created-to (ISO-8601). --operation keeps payments carrying at least one
+transaction of that operation — '--operation dispute' finds every payment ever
+disputed, which --disputed (an OPEN dispute) does not.
 
 --min-amount / --max-amount are DECIMALS in token units ('1.00'), like every other
 amount flag. Converting them to the base units the gateway filters on needs the
@@ -147,6 +156,8 @@ amount range only means something within one token anyway.`,
 			MaxAmount:   maxAmount,
 			CreatedFrom: paymentsListCreatedFrom,
 			CreatedTo:   paymentsListCreatedTo,
+			Operation:   paymentsListOperation,
+			Rail0ID:     paymentsListRail0ID,
 			Page:        paymentsListPage,
 			PerPage:     paymentsListPerPage,
 		}
@@ -163,7 +174,10 @@ amount range only means something within one token anyway.`,
 			if err != nil {
 				return nil, err
 			}
-			return resp.Data, nil // bare array; page/total live in resp.Meta
+			// Humanized like --all and `payments get`: one page used to come back raw
+			// (base units, no *_human fields), so the same command changed shape with a
+			// flag that should only change how many rows it fetches.
+			return humanizeAll(ctx, resp.Data), nil // bare array; page/total live in resp.Meta
 		})
 	},
 }
@@ -202,9 +216,11 @@ func fetchAllPayments(ctx context.Context, client *rail0.Client, p rail0.ListPay
 // ── payments transactions ─────────────────────────────────────────────────────
 
 var (
-	paymentsTransactionsSort    string
-	paymentsTransactionsPage    int
-	paymentsTransactionsPerPage int
+	paymentsTransactionsSort      string
+	paymentsTransactionsOperation string
+	paymentsTransactionsStatus    string
+	paymentsTransactionsPage      int
+	paymentsTransactionsPerPage   int
 )
 
 var paymentsTransactionsCmd = &cobra.Command{
@@ -224,18 +240,23 @@ A payment can hold several rows for the same operation (a retried broadcast, or
 successive partial captures), which is why the balances a payment reports are
 the last CONFIRMED ones and not the last submitted.`,
 	Example: `  rail0 payments transactions 0xabc123…
-  rail0 payments transactions 0xabc123… --sort -confirmed_at`,
+  rail0 payments transactions 0xabc123… --sort -confirmed_at
+  rail0 payments transactions 0xabc123… --operation capture --status failed`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return ui.RunAPI(func() (any, error) {
 			ctx := context.Background()
 			client := newReadClient()
 			id := args[0]
-			p := rail0.ListTransactionsParams{Sort: paymentsTransactionsSort, Page: paymentsTransactionsPage, PerPage: paymentsTransactionsPerPage}
+			p := rail0.ListTransactionsParams{
+				Sort: paymentsTransactionsSort, Operation: paymentsTransactionsOperation, Status: paymentsTransactionsStatus,
+				Page: paymentsTransactionsPage, PerPage: paymentsTransactionsPerPage,
+			}
 			resp, err := client.Payments.Transactions(ctx, id, p)
 			if err != nil {
 				return nil, err
 			}
-			return resp.Data, nil // bare array; pagination is in headers
+			// amount_human beside each raw amount, like every payment view.
+			return humanizeTransactions(ctx, client, id, resp.Data), nil // bare array; pagination is in headers
 		})
 	},
 }
@@ -306,19 +327,49 @@ sent from an address to itself.`,
 			}
 		}
 		return ui.RunAPIWithMessage("Creating payment…", func() (any, error) {
+			// Resolved BEFORE the create, so an amount that cannot be checked is
+			// refused without leaving an unsigned payment behind.
+			wantUnits, err := expectedBaseUnits(ctx, req.ChainID, string(req.Token), req.Amount)
+			if err != nil {
+				return nil, err
+			}
 			created, err := client.Payments.Create(ctx, req, idemKey)
 			if err != nil {
 				return nil, err
 			}
-			// Check the authorization against what was ASKED FOR before signing it.
-			// Everything on the right-hand side here came from the user (the flags
-			// they typed) or from the key itself, not from the response being
-			// checked — see verifySigningPayload.
+			// Check the payment AND its authorization against what was ASKED FOR
+			// before signing. Everything on the right-hand side here came from the
+			// user (the flags they typed) or from the key itself, not from the
+			// response being checked — see checkCreatedPayment and
+			// verifySigningPayload. `to` is the one exception, a consistency check
+			// against the created record, as `payments sign` does.
+			if err := checkCreatedPayment(created, req, wantUnits); err != nil {
+				return nil, err
+			}
+			// A re-run with the same --idempotency-key after a create that DID go
+			// through: the gateway replays the original payment (200), which is
+			// already signed, so it carries no signing_payload — there is nothing left
+			// to sign, and reporting that as a missing payload made a successful
+			// retry exit non-zero. Say what happened and return the payment, like
+			// resumeReplayed does for the on-chain operations. A replay still
+			// `unsigned` with no payload is different: the payment needs a signature
+			// and the gateway could not build what it must be signed over.
+			if created.SigningPayload == nil {
+				if created.Status != "" && created.Status != "unsigned" {
+					ui.Progressf("idempotency key already used: payment %s is %s — nothing re-signed",
+						created.Rail0Id, created.Status)
+					return humanize(ctx, created), nil
+				}
+				return nil, fmt.Errorf(
+					"payment %s is unsigned but the gateway did not include its signing_payload — retry with 'rail0 payments sign %[1]s'",
+					created.Rail0Id)
+			}
 			if err := verifySigningPayload(created.SigningPayload, payloadExpectation{
 				signer:         signer,
 				chainID:        req.ChainID,
 				token:          string(req.Token),
-				valueBaseUnits: expectedBaseUnits(ctx, req.ChainID, string(req.Token), req.Amount),
+				valueBaseUnits: wantUnits,
+				to:             string(created.Rail0Contract),
 			}); err != nil {
 				return nil, err
 			}
@@ -399,6 +450,7 @@ recovered signer is the payment's payer.`,
 				chainID:        payment.ChainID,
 				token:          string(payment.Token),
 				valueBaseUnits: payment.Amount,
+				to:             string(payment.Rail0Contract),
 			}); err != nil {
 				return nil, err
 			}
@@ -542,7 +594,7 @@ func ensureSignerFor(ctx context.Context, client *rail0.Client, rail0ID, signing
 	}
 	for _, a := range allowed {
 		if strings.EqualFold(signer, a) {
-			return &signingContext{payment: p, signer: signer}, nil
+			return &signingContext{payment: p, signer: signer, op: op}, nil
 		}
 	}
 	return nil, fmt.Errorf("signing key address %s can't %s this payment — expected %s (wrong key?)",
@@ -794,6 +846,12 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 			if replayedPastPending(prep) {
 				return resumeReplayed(ctx, client, rail0Id, "capture", prep)
 			}
+			// The calldata's amount is checked against what the user typed, scaled
+			// locally — fail-closed like refund's authorization value (see
+			// checkCalldataCall).
+			if sc.amountBaseUnits, err = expectedBaseUnits(ctx, sc.payment.ChainID, string(sc.payment.Token), captureAmount); err != nil {
+				return nil, err
+			}
 			if err := sc.verify(prep.UnsignedTransaction); err != nil {
 				return nil, err
 			}
@@ -818,11 +876,12 @@ var paymentsVoidCmd = &cobra.Command{
 	Short: "Void a payment (prepare, sign, and broadcast)",
 	Long: `Prepare the transaction that calls void() on the RAIL0 contract.
 
-The payment must be in 'authorized' status with NOTHING captured yet: void is
+The payment must be 'authorized' or 'expired' with NOTHING captured yet: void is
 forbidden once any (even partial) capture has occurred (the contract reverts
 AlreadyCaptured) — recover the uncaptured remainder via 'release' instead. Void
 cancels the authorization and returns the full escrowed balance to the payer.
-Only callable before authorizationExpiry, by the payee.
+It has no time limit: the contract's void carries no expiry check, so an expired,
+untouched authorization can still be voided. Only the payee can call it.
 
 The API returns 202 immediately: broadcasting is not settling. Add -w/--wait to
 block until the operation confirms on-chain (or fails) and exit non-zero if it
@@ -1032,6 +1091,14 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 			if replayedPastPending(phase1) {
 				return resumeReplayed(ctx, client, rail0Id, "refund", phase1)
 			}
+			// `refundAmount` is what the user typed, scaled locally. It is the right-hand
+			// side of BOTH refund checks: the authorization's value and the amount the
+			// refund() calldata carries (see checkCalldataCall).
+			wantUnits, err := expectedBaseUnits(ctx, sc.payment.ChainID, string(sc.payment.Token), refundAmount)
+			if err != nil {
+				return nil, err
+			}
+			sc.amountBaseUnits = wantUnits
 			// A replayed row still `pending` already carries the unsigned tx with the
 			// authorization embedded: finish it rather than asking for a new signature.
 			if idempotencyKey != "" && phase1.ID != "" && phase1.SigningPayload == nil {
@@ -1054,9 +1121,7 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 			// This is the payload the whole guard exists for: a ReceiveWithAuthorization
 			// is honoured by the token itself, so an endpoint that answered with the
 			// payee's whole balance as `value` used to get exactly that signed.
-			// `refundAmount` is what the user typed, scaled locally.
-			if err := sc.verifySigningPayload(phase1.SigningPayload,
-				expectedBaseUnits(ctx, sc.payment.ChainID, string(sc.payment.Token), refundAmount)); err != nil {
+			if err := sc.verifySigningPayload(phase1.SigningPayload, wantUnits); err != nil {
 				return nil, err
 			}
 			// Sign the EIP-3009 ReceiveWithAuthorization payload (payee key).
@@ -1299,6 +1364,10 @@ func init() {
 		"Maximum amount as a decimal in token units (inclusive); needs --chain-id and --token")
 	paymentsListCmd.Flags().StringVar(&paymentsListCreatedFrom, "created-from", "", "Only payments created at/after this ISO-8601 time")
 	paymentsListCmd.Flags().StringVar(&paymentsListCreatedTo, "created-to", "", "Only payments created at/before this ISO-8601 time")
+	paymentsListCmd.Flags().StringVar(&paymentsListOperation, "operation", "",
+		"Only payments with at least one transaction of this operation (e.g. dispute, refund)")
+	paymentsListCmd.Flags().StringVar(&paymentsListRail0ID, "rail0-id", "", "Filter by the logical on-chain payment id (0x…)")
+	_ = paymentsListCmd.RegisterFlagCompletionFunc("operation", fixedCompletions(transactionOperations...))
 	paymentsListCmd.Flags().IntVar(&paymentsListPage, "page", 0, "Page number (1-based)")
 	paymentsListCmd.Flags().IntVar(&paymentsListPerPage, "per-page", 0, "Results per page")
 	paymentsListCmd.Flags().BoolVar(&paymentsListAll, "all", false, "Fetch every page (ignores --page)")
@@ -1310,6 +1379,12 @@ func init() {
 
 	// payments transactions
 	paymentsTransactionsCmd.Flags().StringVar(&paymentsTransactionsSort, "sort", "", "Sort fields: created_at, updated_at, block_number, confirmed_at (prefix - for descending, comma-separated)")
+	paymentsTransactionsCmd.Flags().StringVar(&paymentsTransactionsOperation, "operation", "",
+		"Filter by operation ("+strings.Join(transactionOperations, ", ")+")")
+	paymentsTransactionsCmd.Flags().StringVar(&paymentsTransactionsStatus, "status", "",
+		"Filter by transaction status ("+strings.Join(transactionStatuses, ", ")+")")
+	_ = paymentsTransactionsCmd.RegisterFlagCompletionFunc("operation", fixedCompletions(transactionOperations...))
+	_ = paymentsTransactionsCmd.RegisterFlagCompletionFunc("status", fixedCompletions(transactionStatuses...))
 	paymentsTransactionsCmd.Flags().IntVar(&paymentsTransactionsPage, "page", 0, "Page number (1-based)")
 	paymentsTransactionsCmd.Flags().IntVar(&paymentsTransactionsPerPage, "per-page", 0, "Results per page")
 	paymentsCmd.AddCommand(paymentsTransactionsCmd)

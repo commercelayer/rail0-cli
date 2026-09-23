@@ -35,10 +35,15 @@ var opFilters = map[string]opFilter{
 	// authorize/charge both act on a signed payment, but only in their own mode.
 	"authorize": {statuses: []string{"signed"}, mode: "authorize"},
 	"charge":    {statuses: []string{"signed"}, mode: "charge"},
-	"capture":   {statuses: []string{"authorized", "partially_captured", "partially_refunded"}},
-	"void":      {statuses: []string{"authorized"}},
-	"release":   {statuses: []string{"authorized"}},
-	"refund":    {statuses: []string{"charged", "captured", "partially_captured", "partially_refunded"}},
+	// capture and release both act on CAPTURABLE_FROM, which includes `expired`: a
+	// capture the chain accepts across the boundary, and — above all — the release
+	// that status exists for. Release offered only `authorized`, whose window is
+	// usually still OPEN, and hid both `expired` and a partial capture's stranded
+	// escrow. void mirrors its own AASM source, authorized or expired.
+	"capture": {statuses: []string{"authorized", "expired", "partially_captured", "partially_refunded"}},
+	"void":    {statuses: []string{"authorized", "expired"}},
+	"release": {statuses: []string{"authorized", "expired", "partially_captured", "partially_refunded"}},
+	"refund":  {statuses: []string{"charged", "captured", "partially_captured", "partially_refunded"}},
 	// dispute opens a dispute (only when none is open); close resolves the open one.
 	"dispute":       {statuses: []string{"charged", "captured", "partially_captured", "partially_refunded"}, disputed: boolPointer(false)},
 	"close dispute": {disputed: boolPointer(true)},

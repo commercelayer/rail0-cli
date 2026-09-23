@@ -78,13 +78,24 @@ func TestCheckBaseURLRejectsAPlaintextFlag(t *testing.T) {
 // of its own repair tools.
 func TestCheckBaseURLExemptsTheLocalOnlyCommands(t *testing.T) {
 	t.Setenv("RAIL0_BASE_URL", "http://evil.example.com")
-	for _, name := range []string{"config", "env", "keys", "aliases"} {
+	for _, name := range []string{"config", "env", "keys", "aliases", "version", "token", "init"} {
 		cmd, _, err := rootCmd.Find([]string{name})
 		if err != nil {
 			t.Fatalf("command %q not found in the tree: %v", name, err)
 		}
 		if err := checkBaseURL(cmd); err != nil {
 			t.Errorf("checkBaseURL blocked %q, which never contacts the gateway: %v", name, err)
+		}
+	}
+}
+
+// TAB completion runs through cobra's hidden __complete command, which cobra adds at
+// Execute time. A bad base URL used to make every completion return its error.
+func TestCheckBaseURLLeavesShellCompletionAlone(t *testing.T) {
+	t.Setenv("RAIL0_BASE_URL", "http://evil.example.com")
+	for _, name := range []string{cobra.ShellCompRequestCmd, cobra.ShellCompNoDescRequestCmd} {
+		if err := checkBaseURL(&cobra.Command{Use: name}); err != nil {
+			t.Errorf("checkBaseURL blocked %q: %v", name, err)
 		}
 	}
 }

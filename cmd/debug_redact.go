@@ -21,7 +21,9 @@ import (
 //
 // `unsigned_transaction` and `signing_payload` are deliberately NOT here: they are
 // what the user is about to sign, carry no secret, and are the single most useful
-// thing to see when debugging a rejected operation.
+// thing to see when debugging a rejected operation. With one exception, handled by
+// redactRefundCalldata: a refund's unsigned transaction embeds the payee's EIP-3009
+// v/r/s in its calldata.
 var redactedLogKeys = map[string]bool{
 	"signature":          true,
 	"signed_transaction": true,
@@ -64,6 +66,7 @@ func redactBody(body any) any {
 func redactValue(v any) any {
 	switch t := v.(type) {
 	case map[string]any:
+		redactRefundCalldata(t)
 		for k, val := range t {
 			if redactedLogKeys[strings.ToLower(k)] && shouldRedact(k, val) {
 				t[k] = redactedPlaceholder(val)
@@ -103,4 +106,39 @@ func redactedPlaceholder(val any) string {
 		return fmt.Sprintf("[redacted: %d chars]", len(s))
 	}
 	return "[redacted]"
+}
+
+// redactRefundCalldata hides the calldata of a REFUND's unsigned transaction.
+//
+// Phase 2 of a refund builds refund() with the payee's ReceiveWithAuthorization
+// signature as arguments, so `unsigned_transaction.data` carries the very v/r/s the
+// `signature` key is redacted to protect — the same bytes, one field over. The
+// exposure is small (only the RAIL0 contract can redeem that authorization) but it
+// is rule 8 all the same. Every other field of the transaction stays visible, and
+// so does the calldata of every other operation, which holds no signature.
+//
+// The gateway sends the transaction as a JSON-encoded STRING (the SDK keeps it that
+// way, to sign it verbatim), so it is decoded, redacted and re-encoded; a value it
+// cannot decode is replaced whole rather than logged on a guess.
+func redactRefundCalldata(m map[string]any) {
+	if op, _ := m["operation"].(string); op != "refund" {
+		return
+	}
+	switch tx := m["unsigned_transaction"].(type) {
+	case map[string]any:
+		if data, ok := tx["data"]; ok {
+			tx["data"] = redactedPlaceholder(data)
+		}
+	case string:
+		var decoded map[string]any
+		if err := json.Unmarshal([]byte(tx), &decoded); err != nil {
+			m["unsigned_transaction"] = redactedPlaceholder(tx)
+			return
+		}
+		if data, ok := decoded["data"]; ok {
+			decoded["data"] = redactedPlaceholder(data)
+		}
+		b, _ := json.Marshal(decoded)
+		m["unsigned_transaction"] = string(b)
+	}
 }

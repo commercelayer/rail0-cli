@@ -1,0 +1,75 @@
+.nh
+.TH "RAIL0" "1" "Aug 2026" "rail0 CLI" ""
+
+.SH NAME
+rail0-auth-revoke-all - End EVERY session of an address, on every machine (for a key you no longer trust)
+
+
+.SH SYNOPSIS
+\fBrail0 auth revoke-all [flags]\fP
+
+
+.SH DESCRIPTION
+Revoke every session the gateway has issued to an address — the ones on this
+machine, on other machines, and any a thief is holding.
+
+.PP
+\&'auth logout' cannot do this: it revokes ONE token, the one stored here. This is
+per ADDRESS. The gateway records a cutoff instant, and every session of the
+address issued before it is refused from then on, including this machine's.
+
+.PP
+It is authorized by a fresh signature of the address's KEY, not by the session:
+whoever reacts to a leaked key holds the wallet, not the stolen token. The signed
+message says "Sign out of RAIL0 everywhere", so a login signature cannot be
+replayed to trigger it. The key is resolved like every signing command (-p as
+0x hex, @name for a keychain key, or RAIL0_PRIVATE_KEY).
+
+.PP
+Afterwards, sign in again with 'rail0 auth login'. If you suspect the key itself
+leaked, this ends the sessions but does not make the key safe: move the funds
+and stop using it.
+
+
+.SH OPTIONS
+\fB-h\fP, \fB--help\fP[=false]
+	help for revoke-all
+
+.PP
+\fB-p\fP, \fB--private-key\fP=""
+	Key OF the address whose sessions to end: 0x hex, @name for an OS-keychain key, or RAIL0_PRIVATE_KEY
+
+.PP
+\fB-y\fP, \fB--yes\fP[=false]
+	Skip the confirmation prompt (required to run non-interactively)
+
+
+.SH OPTIONS INHERITED FROM PARENT COMMANDS
+\fB--base-url\fP=""
+	RAIL0 gateway base URL (env: RAIL0_BASE_URL)
+
+.PP
+\fB--debug\fP[=false]
+	Print HTTP request/response details to stderr
+
+.PP
+\fB--json\fP[=false]
+	Force plain (uncolored) JSON output (useful in scripts)
+
+.PP
+\fB--pretty\fP[=false]
+	Use the key-value/table view instead of JSON (terminal only)
+
+.PP
+\fB-q\fP, \fB--quiet\fP[=false]
+	Print only the result's id/hash, one per line (useful in scripts)
+
+
+.SH EXAMPLE
+.EX
+  rail0 auth revoke-all -p @merchant-key
+.EE
+
+
+.SH SEE ALSO
+\fBrail0-auth(1)\fP

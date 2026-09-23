@@ -422,3 +422,42 @@ func TestCreateRefusesAPaymentOtherThanRequested(t *testing.T) {
 		})
 	}
 }
+
+// A re-run with the same --idempotency-key after a create that went through: the
+// gateway replays the already-signed payment, with no signing_payload. That is the
+// retry succeeding — it must exit 0 with the payment, and deposit nothing.
+func TestCreateReRunWithAKeyReturnsTheSignedPayment(t *testing.T) {
+	g := newCreateGateway(t)
+	g.status = http.StatusOK
+	g.created["status"] = "signed"
+	delete(g.created, "signing_payload")
+	signCreateIdempotencyKey = "order-42"
+
+	var err error
+	out := captureStdout(t, func() { err = paymentsCreateCmd.RunE(paymentsCreateCmd, nil) })
+	if err != nil {
+		t.Fatalf("a replayed, already-signed create must succeed, got %v", err)
+	}
+	if !strings.Contains(out, `"signed"`) || !strings.Contains(out, lcRail0ID) {
+		t.Errorf("the result must be the replayed payment, got:\n%s", out)
+	}
+	if n := g.sent("PUT /payments/pay-new/sign"); n != 0 {
+		t.Errorf("deposited a signature %d time(s) on an already-signed payment", n)
+	}
+}
+
+// Still `unsigned` with no payload is NOT a replay to report as done: the payment
+// needs a signature the gateway could not say what to sign over.
+func TestCreateWithoutAPayloadOnAnUnsignedPaymentFails(t *testing.T) {
+	g := newCreateGateway(t)
+	delete(g.created, "signing_payload")
+
+	var err error
+	_ = captureStdout(t, func() { err = paymentsCreateCmd.RunE(paymentsCreateCmd, nil) })
+	if err == nil || !strings.Contains(err.Error(), "signing_payload") || !strings.Contains(err.Error(), "payments sign") {
+		t.Fatalf("an unsigned payment with no payload must fail and point at 'payments sign', got %v", err)
+	}
+	if n := g.sent("PUT /payments/pay-new/sign"); n != 0 {
+		t.Errorf("deposited a signature %d time(s) with nothing to sign", n)
+	}
+}

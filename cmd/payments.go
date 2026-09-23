@@ -342,6 +342,24 @@ sent from an address to itself.`,
 			if err := checkCreatedPayment(created, req, wantUnits); err != nil {
 				return nil, err
 			}
+			// A re-run with the same --idempotency-key after a create that DID go
+			// through: the gateway replays the original payment (200), which is
+			// already signed, so it carries no signing_payload — there is nothing left
+			// to sign, and reporting that as a missing payload made a successful
+			// retry exit non-zero. Say what happened and return the payment, like
+			// resumeReplayed does for the on-chain operations. A replay still
+			// `unsigned` with no payload is different: the payment needs a signature
+			// and the gateway could not build what it must be signed over.
+			if created.SigningPayload == nil {
+				if created.Status != "" && created.Status != "unsigned" {
+					ui.Progressf("idempotency key already used: payment %s is %s — nothing re-signed",
+						created.Rail0Id, created.Status)
+					return humanize(ctx, created), nil
+				}
+				return nil, fmt.Errorf(
+					"payment %s is unsigned but the gateway did not include its signing_payload — retry with 'rail0 payments sign %[1]s'",
+					created.Rail0Id)
+			}
 			if err := verifySigningPayload(created.SigningPayload, payloadExpectation{
 				signer:         signer,
 				chainID:        req.ChainID,

@@ -645,7 +645,9 @@ rail0 payments create -F @buyer -T @merchant -t USDC -a 10.50 -c 5042002 -p @buy
 > **Replay safety.** Each `payments create` sends a fresh `Idempotency-Key`, so a
 > command retried after a lost response (a timeout, a 429) cannot mint a second
 > payment — the gateway returns the first one. Pass `--idempotency-key` to reuse a
-> key of your own across processes.
+> key of your own across processes. Re-running with a key whose create already went
+> through prints a note and returns that payment (exit 0) — it is already signed, so
+> nothing is signed again; one replayed still `unsigned` is finished by signing it.
 
 > **Checked before signing.** Before the payer's key signs anything, the CLI checks
 > the payment the gateway created against the request you built: `payer`, `payee`,

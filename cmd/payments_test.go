@@ -182,22 +182,3 @@ func TestPaymentsListHumanizesASinglePage(t *testing.T) {
 		t.Errorf("a single page must carry amount_human, got:\n%s", out)
 	}
 }
-
-// captureStdout runs fn with os.Stdout redirected and returns what it printed.
-func captureStdout(t *testing.T, fn func()) string {
-	t.Helper()
-	old := os.Stdout
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	os.Stdout = w
-	defer func() { os.Stdout = old }()
-	fn()
-	_ = w.Close()
-	b, err := io.ReadAll(r)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return string(b)
-}

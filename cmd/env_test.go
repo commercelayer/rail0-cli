@@ -365,3 +365,24 @@ func TestEnvSwitchRefusesWhileTheBaseURLIsOverridden(t *testing.T) {
 		t.Errorf("switch to the environment the override names: %v", err)
 	}
 }
+
+// The --base-url FLAG outranks the file just as RAIL0_BASE_URL does, so it must
+// refuse a switch that could not take effect — and say which override to remove.
+func TestEnvSwitchRefusesWhileTheBaseURLFlagIsSet(t *testing.T) {
+	isolate(t)
+	baseURL = "https://rail0-gateway-staging.fly.dev"
+	t.Cleanup(func() { baseURL = "" })
+
+	err := switchEnv("development", false)
+	if err == nil || !strings.Contains(err.Error(), "--base-url") {
+		t.Fatalf("switch under --base-url: err = %v, want a refusal naming the flag", err)
+	}
+	if cfg, _ := config.Load(); cfg.Settings["base-url"] != "" {
+		t.Errorf("a refused switch must not write the config, got %q", cfg.Settings["base-url"])
+	}
+	// The same URL, spelled with a trailing slash and upper case, names the target.
+	baseURL = "HTTPS://rail0-gateway-staging.fly.dev/"
+	if err := switchEnv("staging", false); err != nil {
+		t.Errorf("an override naming the target (normalised) must be allowed: %v", err)
+	}
+}

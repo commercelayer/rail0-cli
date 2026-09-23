@@ -1205,7 +1205,7 @@ rail0 payments get 0xabc123…
 | `released` | Full authorization released back to payer (total release, nothing captured) |
 | `refunded` | Payment fully settled by refund (both escrow and refundable drained) |
 | `partially_refunded` | Legacy — no longer produced; a partial refund now leaves the status unchanged |
-| `expired` | Authorization window closed with nothing captured — the escrow is still on-chain and `release` recovers it |
+| `expired` | Authorization window closed with nothing captured — the escrow is still on-chain and `release` (or `void`) recovers it |
 
 There is no `failed` payment **status**: `failed` belongs to a **transaction**. A
 payment whose transaction reverts keeps the status it already held — the gateway
@@ -1341,7 +1341,7 @@ rail0 payments capture <rail0Id> -a 0.50 -p @merchant-key
 
 #### `payments void <rail0Id>`
 
-Prepare the `void()` transaction — cancels authorization and returns escrowed funds to payer. Only callable before `authorizationExpiry`, by the payee.
+Prepare the `void()` transaction — cancels authorization and returns escrowed funds to payer. Callable on an `authorized` or `expired` payment with nothing captured yet, by the payee; the contract's `void` has no expiry check, so an expired, untouched authorization can still be voided.
 
 ```sh
 rail0 payments void <rail0Id> -p @merchant-key

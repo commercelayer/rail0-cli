@@ -6,11 +6,12 @@ Void a payment (prepare, sign, and broadcast)
 
 Prepare the transaction that calls void() on the RAIL0 contract.
 
-The payment must be in 'authorized' status with NOTHING captured yet: void is
+The payment must be 'authorized' or 'expired' with NOTHING captured yet: void is
 forbidden once any (even partial) capture has occurred (the contract reverts
 AlreadyCaptured) — recover the uncaptured remainder via 'release' instead. Void
 cancels the authorization and returns the full escrowed balance to the payer.
-Only callable before authorizationExpiry, by the payee.
+It has no time limit: the contract's void carries no expiry check, so an expired,
+untouched authorization can still be voided. Only the payee can call it.
 
 The API returns 202 immediately: broadcasting is not settling. Add -w/--wait to
 block until the operation confirms on-chain (or fails) and exit non-zero if it

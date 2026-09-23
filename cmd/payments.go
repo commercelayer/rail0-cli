@@ -59,17 +59,21 @@ Requires login — a payment is readable only by its payer or payee. Run
 'rail0 auth login -p 0xKey…' first (any wallet can log in, no account needed).
 
 Status values:
-  unsigned   — created, payer signature not yet submitted
+  unsigned            — created, payer signature not yet submitted
   signed              — payer signature stored, awaiting payee action
   authorized          — funds held in escrow, capture available
   charged             — one-shot charge executed, refund available
   captured            — funds fully captured by payee
   partially_captured  — partial capture executed; remaining escrow still capturable
+  expired             — authorization window closed with nothing captured; the escrow
+                        is still on-chain, recoverable with 'release' (or 'void')
   voided              — authorization cancelled (only before any capture), funds returned to payer
   released            — full authorization released back to payer (total release, nothing captured)
   refunded            — payment fully settled by refund (escrow and refundable both drained)
   partially_refunded  — legacy; no longer produced (a partial refund leaves the status unchanged)
-  failed              — terminal failure; payment cannot proceed`,
+
+A failed on-chain attempt does not change the status: it shows on the
+transaction ('payments transactions') and in last_error_code / last_error_message.`,
 	Example: `  rail0 payments get 0xabc123…`,
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -872,11 +876,12 @@ var paymentsVoidCmd = &cobra.Command{
 	Short: "Void a payment (prepare, sign, and broadcast)",
 	Long: `Prepare the transaction that calls void() on the RAIL0 contract.
 
-The payment must be in 'authorized' status with NOTHING captured yet: void is
+The payment must be 'authorized' or 'expired' with NOTHING captured yet: void is
 forbidden once any (even partial) capture has occurred (the contract reverts
 AlreadyCaptured) — recover the uncaptured remainder via 'release' instead. Void
 cancels the authorization and returns the full escrowed balance to the payer.
-Only callable before authorizationExpiry, by the payee.
+It has no time limit: the contract's void carries no expiry check, so an expired,
+untouched authorization can still be voided. Only the payee can call it.
 
 The API returns 202 immediately: broadcasting is not settling. Add -w/--wait to
 block until the operation confirms on-chain (or fails) and exit non-zero if it

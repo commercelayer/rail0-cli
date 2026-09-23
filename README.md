@@ -641,8 +641,10 @@ rail0 payments create -F @buyer -T @merchant -t USDC -a 10.50 -c 5042002 -p @buy
 > address). `payments create` handles this: it signs in with the payer's key (the
 > same `-p` key it signs the payload with) when there's no valid session for that
 > address — so no separate `rail0 auth login` is needed, and the session's address
-> matches `--from`. If a session for a *different* address is already stored, that
-> one is left alone: the sign-in serves this command only, and the CLI says so.
+> matches `--from`. A stored session for the same address that would expire before the
+> command finishes (a minute, plus the `--timeout` budget with `--wait`) is renewed and
+> saved. If a session for a *different* address is already stored, that one is left
+> alone: the sign-in serves this command only, and the CLI says so.
 
 > **Replay safety.** Each `payments create` sends a fresh `Idempotency-Key`, so a
 > command retried after a lost response (a timeout, a 429) cannot mint a second

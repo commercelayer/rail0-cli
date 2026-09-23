@@ -210,3 +210,47 @@ func addressForTestKey(t *testing.T) string {
 // saveTokenForTest seeds the isolated token cache. Wraps token.Save so the import
 // stays in one place.
 func saveTokenForTest(jwt string) error { return token.Save(resolveBaseURL(), jwt) }
+
+// The SAME address's session, too close to expiry to reuse, is renewed: the fresh
+// token replaces it in the store, so the next command reuses it instead of signing in
+// again. It used to be treated as another address's session — "for this command
+// only", nothing saved — so every command near expiry re-signed in. A DIFFERENT
+// address's session is still left in place (#95).
+func TestEnsureSessionRenewsTheSameAddressesExpiringSession(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		sub       string
+		wantSaved bool
+	}{
+		{"same address, about to expire", "", true},
+		{"another address", "0x9999999999999999999999999999999999999999", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			isolateTokenStore(t)
+			g, srv := newFakeGateway(t)
+			t.Setenv("RAIL0_BASE_URL", srv.URL)
+			addr := addressForTestKey(t)
+			sub := tc.sub
+			if sub == "" {
+				sub = addr
+			}
+			stored := makeJWT(t, map[string]any{"sub": sub, "exp": time.Now().Add(20 * time.Second).Unix()})
+			if tc.sub != "" {
+				stored = makeJWT(t, map[string]any{"sub": sub, "exp": time.Now().Add(time.Hour).Unix()})
+			}
+			if err := saveTokenForTest(stored); err != nil {
+				t.Fatalf("seed token: %v", err)
+			}
+			if err := ensureSession(context.Background(), newClient(), testKeyHex, addr); err != nil {
+				t.Fatalf("ensureSession: %v", err)
+			}
+			got := token.Load(resolveBaseURL())
+			if tc.wantSaved && got != g.jwt {
+				t.Errorf("the renewed session was not saved: stored %q, want the fresh JWT", got)
+			}
+			if !tc.wantSaved && got != stored {
+				t.Errorf("another address's session was evicted: stored %q", got)
+			}
+		})
+	}
+}

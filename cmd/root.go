@@ -259,21 +259,6 @@ func applyOutputMode() {
 	ui.SetQuiet(mode == "quiet")
 }
 
-// ensureSession guarantees a valid SIWE session whose address matches `addr`
-// before a write to /payments. The gateway now gates every /payments endpoint on
-// a session, and `create` additionally requires the payer to BE the authenticated
-// address — so this signs in with the caller's key (the same key the command
-// signs the payload with, hence the session address == addr) when the stored
-// token is missing, expired, or for a different address. A no-op when already
-// logged in as `addr`. The token is saved so follow-up reads (e.g. payments get)
-// reuse the session.
-//
-// It signs in through the CALLER'S client, which is the whole point of taking one.
-// It used to log in on a throwaway `rail0.NewClient(...)`, so Auth.Login stashed the
-// JWT on that client and then discarded it: on a fresh machine with no cached token,
-// the command printed "Signed in as 0x…" and the very next request on the real client
-// — still built with no token — came back 401 "run 'rail0 auth login' first". Logging
-// in here mutates the client the command actually uses. (#59)
 // sessionReuseMargin is how long a cached session must still have to live before a
 // signing command reuses it rather than signing in afresh.
 //
@@ -298,6 +283,22 @@ func sessionOutlives(claims map[string]any, margin time.Duration) bool {
 	return time.Unix(int64(exp), 0).After(time.Now().Add(margin))
 }
 
+// ensureSession guarantees a valid SIWE session whose address matches `addr`
+// before a write to /payments. The gateway now gates every /payments endpoint on
+// a session, and `create` additionally requires the payer to BE the authenticated
+// address — so this signs in with the caller's key (the same key the command
+// signs the payload with, hence the session address == addr) when the stored
+// token is missing, expired, too close to expiry (sessionReuseMargin), or for a
+// different address. A no-op when already logged in as `addr`. The token is saved
+// so follow-up reads (e.g. payments get) reuse the session — replacing an expiring
+// one for the same address, but never another address's (see below).
+//
+// It signs in through the CALLER'S client, which is the whole point of taking one.
+// It used to log in on a throwaway `rail0.NewClient(...)`, so Auth.Login stashed the
+// JWT on that client and then discarded it: on a fresh machine with no cached token,
+// the command printed "Signed in as 0x…" and the very next request on the real client
+// — still built with no token — came back 401 "run 'rail0 auth login' first". Logging
+// in here mutates the client the command actually uses. (#59)
 func ensureSession(ctx context.Context, client *rail0.Client, keyHex, addr string) error {
 	baseURL := resolveBaseURL()
 	// Whether a DIFFERENT live session is already stored decides if we may
@@ -308,10 +309,17 @@ func ensureSession(ctx context.Context, client *rail0.Client, keyHex, addr strin
 		// session must OUTLIVE the command about to use it — see sessionReuseMargin.
 		if claims, err := parseJWTClaims(t); err == nil {
 			sub, _ := claims["sub"].(string)
-			if strings.EqualFold(sub, addr) && sessionOutlives(claims, sessionReuseMargin()) {
+			sameAddress := strings.EqualFold(sub, addr)
+			if sameAddress && sessionOutlives(claims, sessionReuseMargin()) {
 				return nil
 			}
-			otherSessionStored = true
+			// Only a session for ANOTHER address is protected from eviction. The
+			// same address's session, merely too close to expiry, is this machine's
+			// session being renewed: replacing it is the point. Treating it as
+			// "other" signed in afresh on every -w command near expiry, printed "for
+			// this command only", and never saved the new token — so the next
+			// command did it all again, until the stored one finally lapsed.
+			otherSessionStored = !sameAddress
 		}
 	}
 	privKey, err := rail0.HexToPrivateKey(keyHex)

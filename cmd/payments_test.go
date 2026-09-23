@@ -4,6 +4,7 @@ import (
 	"io"
 	"os"
 	"reflect"
+	"strings"
 	"testing"
 
 	rail0 "github.com/commercelayer/rail0-go"
@@ -110,6 +111,27 @@ func TestSigningKeyOrPrompt_PromptAlias(t *testing.T) {
 
 	if got, err := signingKeyOrPrompt(""); err != nil || got != testKeyHex {
 		t.Fatalf("prompt @name: got %q err %v", got, err)
+	}
+}
+
+// A key that was SUPPLIED but does not resolve is an error, never a cue to prompt:
+// with a piped stdin the prompt used to take the next line as the private key, and
+// the "unknown key" that explained the failure was thrown away.
+func TestSigningKeyOrPrompt_UnknownKeyErrorsInsteadOfPrompting(t *testing.T) {
+	keyring.MockInit()
+	t.Setenv("RAIL0_PRIVATE_KEY", "")
+	old := os.Stdin
+	r, w, _ := os.Pipe()
+	os.Stdin = r
+	t.Cleanup(func() { os.Stdin = old })
+	go func() { io.WriteString(w, testKeyHex+"\n"); w.Close() }()
+
+	got, err := signingKeyOrPrompt("@doesnotexist")
+	if err == nil {
+		t.Fatalf("an unknown @name must fail, got key %q (read from stdin)", got)
+	}
+	if !strings.Contains(err.Error(), "doesnotexist") {
+		t.Errorf("error must name the key that was not found, got %v", err)
 	}
 }
 

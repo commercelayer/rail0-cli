@@ -487,9 +487,14 @@ func resolveSigningKey(explicitKey string) (string, error) {
 // history and the process arguments while letting the signing commands run
 // interactively. The RunE handlers use this; resolveSigningKey stays pure (and
 // unit-testable) as the non-interactive core.
+//
+// It prompts ONLY when no key was supplied at all. A key that WAS supplied but does
+// not resolve — `-p @mercahnt`, a keychain that cannot be read — is an error to
+// report, not a cue to ask: falling through to the prompt hid the real cause and, with
+// a piped stdin, took whatever line came next as the private key.
 func signingKeyOrPrompt(explicitKey string) (string, error) {
-	if key, err := resolveSigningKey(explicitKey); err == nil {
-		return key, nil
+	if explicitKey != "" || os.Getenv("RAIL0_PRIVATE_KEY") != "" {
+		return resolveSigningKey(explicitKey)
 	}
 	key, err := promptSecret("Private key (0x-prefixed hex, or @name for a saved key; hidden)")
 	if err != nil {

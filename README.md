@@ -805,7 +805,9 @@ rail0 wallets --default true --sort -created_at
 | `--symbol` | `-s` | Restrict the nested tokens to this symbol, e.g. `USDC` (wallets still listed) |
 | `--active` | — | Filter the wallets by active flag (`true` or `false`) |
 | `--default` | — | Restrict the nested token holdings to the default one (`true` or `false`) |
+| `--token-active` | — | Restrict the nested token holdings by active flag (`true` or `false`) |
 | `--sort` | — | Sort wallets, e.g. `-created_at` |
+| `--page` / `--per-page` | — | Page through the wallets (the gateway's default page is 25) |
 
 #### `wallets get <wallet>`
 
@@ -886,6 +888,31 @@ rail0 wallets balances 0xABCD… --chain-id 84532 --symbol USDC
 |------|-------|-------------|
 | `--chain-id` | | Restrict to one chain id |
 | `--symbol` | `-s` | Restrict tokens to this symbol (e.g. USDC) |
+
+#### `wallets tokens` — what a wallet accepts
+
+A wallet's **token holdings** — the (chain, token) pairs it accepts — are what
+[`payment-methods`](#payment-methods) offers buyers and what payment creation checks: a
+wallet with no active holding cannot be paid. So registering a wallet is only half the
+setup; this is the other half.
+
+```sh
+rail0 wallets tokens add 0xABCD… --chain-id 84532 --token USDC --default
+rail0 wallets tokens disable 0xABCD… USDC --chain-id 84532    # alias: remove
+rail0 wallets tokens enable 0xABCD… USDC --chain-id 84532
+```
+
+- `add` is an upsert: a disabled holding is re-enabled, never duplicated. `--token` is a
+  symbol resolved on `--chain-id`, or the token's `0x` address; both fall back to the
+  configured `chain-id` / `token`.
+- `enable` / `disable` take `<token>` as a symbol, an address, or the `token_id` shown by
+  `rail0 wallets`, matched against the holdings the wallet actually has. When the wallet
+  holds one symbol on several chains, `--chain-id` picks the chain; the CLI never guesses.
+- A wallet with active holdings has exactly **one default**, the method buyers see first.
+  The first holding takes it; `add … --default` moves it. The default cannot be disabled
+  (`422 default_payment_method`), so move it first.
+- Disabling is soft and reversible, and asks first (`--yes` skips the prompt). Payments
+  already created with that token are unaffected.
 
 #### `wallets alias <address> <name>`
 

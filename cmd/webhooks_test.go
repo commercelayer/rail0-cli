@@ -71,6 +71,7 @@ func TestEveryDestructiveCommandHasTheYesFlag(t *testing.T) {
 		webhooksDeleteCmd:       {"webhooks", "delete"},
 		webhooksRotateSecretCmd: {"webhooks", "rotate-secret"},
 		walletsDeleteCmd:        {"wallets", "delete"},
+		walletTokensDisableCmd:  {"wallets", "tokens", "disable"},
 		keysRemoveCmd:           {"keys", "rm"},
 	}
 	for cmd, path := range destructive {

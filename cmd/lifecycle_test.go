@@ -221,3 +221,30 @@ func TestRefundReRunFinishesAPendingReplay(t *testing.T) {
 		t.Errorf("submitted %d time(s), want exactly 1", n)
 	}
 }
+
+// The refund authorization's amount check fails CLOSED: an amount finer than the
+// token's decimals used to skip the value check and sign whatever came back. Now the
+// command refuses after phase 1, and nothing further is prepared or submitted.
+func TestRefundRefusesAnAmountItCannotCheck(t *testing.T) {
+	g := newLifecycleGateway(t)
+	seedDecimals(t, lcChainID, lcToken, 6)
+	g.prepare["refund"] = []any{map[string]any{"signing_payload": map[string]any{
+		"primaryType": "ReceiveWithAuthorization",
+		"domain":      map[string]any{"chainId": lcChainID, "verifyingContract": lcToken},
+		"message":     map[string]any{"from": addressForTestKey(t), "value": "999999999"},
+	}}}
+	refundAmount, refundPrivateKey = "0.0000001", testKeyHex
+	t.Cleanup(func() { refundAmount, refundPrivateKey = "", "" })
+
+	var err error
+	_ = captureStdout(t, func() { err = paymentsRefundCmd.RunE(paymentsRefundCmd, []string{lcRail0ID}) })
+	if err == nil {
+		t.Fatal("a refund amount finer than the token's decimals must be refused")
+	}
+	if n := g.sent("POST /payments/" + lcRail0ID + "/refund/prepare"); n != 1 {
+		t.Errorf("prepare sent %d time(s), want only phase 1", n)
+	}
+	if n := g.sent("POST /payments/" + lcRail0ID + "/refund"); n != 0 {
+		t.Errorf("submitted %d time(s) after a refusal", n)
+	}
+}

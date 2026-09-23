@@ -376,3 +376,26 @@ func TestStatusCanReach(t *testing.T) {
 		t.Errorf("a non-terminal mismatch must not claim terminality: %q", msg)
 	}
 }
+
+// `payments wait --until authorized` on a payment already captured stops at the first
+// poll with the reason, instead of sitting out the whole deadline and reporting a
+// timeout.
+func TestPaymentsWaitUntilStopsOnAnUnreachableTarget(t *testing.T) {
+	g := newLifecycleGateway(t) // serves the payment as `captured`
+	fastPolls(t)
+	waitUntil, waitTimeout = "authorized", time.Minute
+	t.Cleanup(func() { waitUntil, waitTimeout = "", defaultWaitTimeout })
+
+	started := time.Now()
+	var err error
+	_ = captureStdout(t, func() { err = paymentsWaitCmd.RunE(paymentsWaitCmd, []string{lcRail0ID}) })
+	if err == nil || !strings.Contains(err.Error(), "can no longer become authorized") {
+		t.Fatalf("err = %v, want the unreachable-target stop", err)
+	}
+	if time.Since(started) > 5*time.Second {
+		t.Errorf("took %s: the wait must stop at the first poll", time.Since(started))
+	}
+	if n := g.sent("GET /payments/" + lcRail0ID); n != 1 {
+		t.Errorf("polled %d times, want 1", n)
+	}
+}

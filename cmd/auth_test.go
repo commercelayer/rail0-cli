@@ -57,3 +57,29 @@ func TestTokenSaveFailureNoticeNeverContainsTheToken(t *testing.T) {
 		}
 	}
 }
+
+// `auth logout` reports its outcome as a result, not as text on stdout, so --json and
+// -q callers can read it — with the same none/revoked/abandoned vocabulary `env`
+// uses for previous_session.
+func TestLogoutResult(t *testing.T) {
+	cases := []struct {
+		revoked sessionRevocation
+		want    string
+	}{
+		{sessionRevocation{}, "none"},
+		{sessionRevocation{Had: true, Revoked: true}, "revoked"},
+		{sessionRevocation{Had: true, Why: "gateway unreachable"}, "abandoned"},
+	}
+	for _, c := range cases {
+		got := logoutResult("https://gw.test", c.revoked)
+		if got["session"] != c.want {
+			t.Errorf("%+v: session = %v, want %s", c.revoked, got["session"], c.want)
+		}
+		if got["base_url"] != "https://gw.test" {
+			t.Errorf("base_url = %v", got["base_url"])
+		}
+	}
+	if d := logoutResult("x", sessionRevocation{Had: true, Why: "gateway unreachable"})["session_detail"]; d != "gateway unreachable" {
+		t.Errorf("an abandoned session must say why, got %v", d)
+	}
+}

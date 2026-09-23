@@ -204,22 +204,35 @@ is a normal reason to log out), and the outcome says which of the two happened.`
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		baseURL := resolveBaseURL()
-		if token.Load(baseURL) == "" {
-			fmt.Println("No stored session for", baseURL)
-			return nil
-		}
 		revoked := revokeCurrentSession()
-		switch {
-		case revoked.Revoked:
-			fmt.Println("Logged out — the token was revoked on the gateway.")
-		default:
-			// Exit 0 on purpose: the local credential IS gone, which is what the
-			// command was asked to do. The warning is what the operator acts on.
-			fmt.Println("Logged out locally.")
+		// Exit 0 even when the revocation failed, on purpose: the local credential IS
+		// gone, which is what the command was asked to do. The warning (stderr) is
+		// what the operator acts on; the result carries the same verdict for a
+		// script, with the vocabulary `env` uses for previous_session.
+		if revoked.Had && !revoked.Revoked {
 			fmt.Fprintf(os.Stderr, "warning: the token was NOT revoked — %s\n", revoked.Why)
 		}
-		return nil
+		// A result rather than fmt.Println: plain text on stdout broke --json and -q
+		// callers, and was the one command whose outcome a script could not read.
+		return ui.RunAPI(func() (any, error) { return logoutResult(baseURL, revoked), nil })
 	},
+}
+
+// logoutResult renders what `auth logout` did: session "none" (nothing was stored),
+// "revoked" (the gateway denylisted it), or "abandoned" (removed locally only, with
+// the reason).
+func logoutResult(baseURL string, revoked sessionRevocation) map[string]any {
+	out := map[string]any{"base_url": baseURL}
+	switch {
+	case !revoked.Had:
+		out["session"] = "none"
+	case revoked.Revoked:
+		out["session"] = "revoked"
+	default:
+		out["session"] = "abandoned"
+		out["session_detail"] = revoked.Why
+	}
+	return out
 }
 
 // ── init ──────────────────────────────────────────────────────────────────────

@@ -759,10 +759,14 @@ rail0 auth status
 
 #### `auth logout`
 
-Remove the cached JWT.
+Revoke the session on the gateway and remove the cached JWT. The result says what
+happened: `session` is `none` (nothing was stored), `revoked`, or `abandoned` (removed
+locally but not revoked — `session_detail` says why), the same vocabulary `env` uses
+for `previous_session`.
 
 ```sh
 rail0 auth logout
+rail0 auth logout --json | jq -r .session
 ```
 
 #### `token`

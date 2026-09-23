@@ -378,7 +378,8 @@ directly: `id=$(rail0 payments create … -q)`.
 Exit codes distinguish the failure class: `0` success, `3` unauthorized, `4`
 forbidden, `5` not found, `6` conflict, `7` rejected (422), `8` gateway error
 (5xx), `9` network, `10` rate-limited (429), `130` cancelled by the user, `1`
-otherwise.
+otherwise — including a `--wait` that ran out of time, even when its last poll hit a
+network error: the operation may still be in flight, so it never exits `9`.
 
 `10` is the one class where re-running the identical command later is the correct
 response, which is why it is not folded into the generic failure.

@@ -1,6 +1,6 @@
 ## rail0 keys
 
-Manage signing keys in the OS keychain (lists names when run bare)
+Manage signing keys in the OS keychain
 
 ### Synopsis
 
@@ -8,22 +8,22 @@ Save signing keys in the OS keychain and reference them as "@name" on the
 --private-key flag (e.g. 'rail0 payments create -p @payer'), instead of pasting
 a raw key or exporting RAIL0_PRIVATE_KEY.
 
-The secret never touches the config file or your shell history — only the key
-names are tracked locally so they can be listed. Backends: macOS Keychain,
-Windows Credential Manager, Linux Secret Service. On a system without one (e.g.
-headless Linux) these commands return an error; use --private-key /
+The secret never touches the config file or your shell history. Backends: macOS
+Keychain, Windows Credential Manager, Linux Secret Service. On a system without
+one (e.g. headless Linux) these commands return an error; use --private-key /
 RAIL0_PRIVATE_KEY there.
 
-```
-rail0 keys [flags]
-```
+There is no listing of saved keys, by design: a keychain cannot be enumerated,
+so a list could only report a copy of the names kept alongside the config — and
+that copy drifts. Ask about one key at a time with 'rail0 keys address <name>',
+which reads the keychain itself and cannot go stale.
 
 ### Examples
 
 ```
   rail0 keys add payer
   rail0 payments create -p @payer …
-  rail0 keys
+  rail0 keys address payer
   rail0 keys rm payer
 ```
 

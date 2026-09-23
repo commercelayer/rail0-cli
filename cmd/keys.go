@@ -10,7 +10,6 @@ import (
 
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/x/term"
-	"github.com/rail0/cli/internal/config"
 	"github.com/rail0/cli/internal/ui"
 	"github.com/spf13/cobra"
 	"github.com/zalando/go-keyring"
@@ -20,38 +19,37 @@ import (
 // OS keychain; each key is one entry keyed by its name.
 const keyringService = "rail0-cli"
 
-// keysCmd lists the saved key names when run bare, and holds the add/rm/address
-// verbs. Secrets live in the OS keychain (macOS Keychain, Windows Credential
-// Manager, Linux Secret Service); only the names are tracked in the config so
-// they can be listed and referenced as "@name" on the --private-key flag.
+// keysCmd groups the add/rm/address verbs. It deliberately does NOT list the
+// saved keys: an OS keychain cannot be enumerated, so any listing could only
+// replay the name index in the config file — a copy, which drifts. Delete the
+// config, or copy one between machines, and that listing confidently reports
+// keys the keychain does not have, or omits ones it does. A list that can be
+// wrong is worse than no list, because nothing about its output says which
+// kind of answer you are looking at.
+//
+// So the only way to ask about a key is to name it: `keys address <name>` hits
+// the keychain directly and either derives the address or says the key is not
+// there. It cannot be stale, because there is no copy in the path. (#139)
 var keysCmd = &cobra.Command{
 	Use:   "keys",
-	Short: "Manage signing keys in the OS keychain (lists names when run bare)",
+	Short: "Manage signing keys in the OS keychain",
 	Long: `Save signing keys in the OS keychain and reference them as "@name" on the
 --private-key flag (e.g. 'rail0 payments create -p @payer'), instead of pasting
 a raw key or exporting RAIL0_PRIVATE_KEY.
 
-The secret never touches the config file or your shell history — only the key
-names are tracked locally so they can be listed. Backends: macOS Keychain,
-Windows Credential Manager, Linux Secret Service. On a system without one (e.g.
-headless Linux) these commands return an error; use --private-key /
-RAIL0_PRIVATE_KEY there.`,
+The secret never touches the config file or your shell history. Backends: macOS
+Keychain, Windows Credential Manager, Linux Secret Service. On a system without
+one (e.g. headless Linux) these commands return an error; use --private-key /
+RAIL0_PRIVATE_KEY there.
+
+There is no listing of saved keys, by design: a keychain cannot be enumerated,
+so a list could only report a copy of the names kept alongside the config — and
+that copy drifts. Ask about one key at a time with 'rail0 keys address <name>',
+which reads the keychain itself and cannot go stale.`,
 	Example: `  rail0 keys add payer
   rail0 payments create -p @payer …
-  rail0 keys
+  rail0 keys address payer
   rail0 keys rm payer`,
-	Args: cobra.NoArgs,
-	RunE: func(_ *cobra.Command, _ []string) error {
-		cfg, err := config.Load()
-		if err != nil {
-			return err
-		}
-		rows := make([]map[string]any, 0, len(cfg.Keys))
-		for _, name := range cfg.Keys {
-			rows = append(rows, map[string]any{"key": name})
-		}
-		return ui.RunAPI(func() (any, error) { return rows, nil })
-	},
 }
 
 var keysAddCmd = &cobra.Command{

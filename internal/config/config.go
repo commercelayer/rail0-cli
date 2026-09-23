@@ -23,10 +23,17 @@ type Config struct {
 	// Aliases is the address book: name → 0x address, referenced as "@name" on
 	// address flags (--from / --to).
 	Aliases map[string]string `yaml:"aliases,omitempty"`
-	// Keys indexes the private-key names saved in the OS keychain, referenced as
+	// Keys records the private-key names saved in the OS keychain, referenced as
 	// "@name" on the --private-key flag. Only the NAMES live here — the secrets
-	// stay in the keychain (CLAUDE.md rule 8). It's an index because the keychain
-	// backend can't enumerate entries, so it lets `keys` list what's stored.
+	// stay in the keychain (CLAUDE.md rule 8).
+	//
+	// It is a HINT FOR SHELL COMPLETION, not an inventory, and nothing presents
+	// it as one. A keychain cannot be enumerated, so this list is a copy that
+	// the keychain never confirms: delete this file, or carry it to another
+	// machine, and it names keys that are not there, or misses keys that are.
+	// `keys` therefore has no listing — `keys address <name>` asks the keychain
+	// itself — and the only cost of a stale entry here is a wrong suggestion at
+	// the TAB key. Do not reintroduce a reader that treats it as truth. (#139)
 	Keys []string `yaml:"keys,omitempty"`
 	// Settings holds persisted CLI defaults (e.g. "base-url"), managed by the
 	// `config` command. Resolution precedence in the commands is

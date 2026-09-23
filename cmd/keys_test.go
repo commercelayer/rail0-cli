@@ -15,13 +15,24 @@ const (
 )
 
 func TestKeysCommandTree(t *testing.T) {
-	if keysCmd.RunE == nil {
-		t.Error("keys should list when run bare (nil RunE)")
-	}
 	for _, verb := range []string{"add", "rm", "address"} {
 		if sub, _, err := keysCmd.Find([]string{verb}); err != nil || sub == nil || sub.Name() != verb {
 			t.Errorf("keys %s: not found (%v)", verb, err)
 		}
+	}
+}
+
+// `keys` must not list. The listing it used to print came from the name index
+// in the config file, which is a copy the keychain never confirms — so it
+// cheerfully reported keys that had been removed elsewhere, and hid keys the
+// keychain held after the index was lost. Replacing it with nothing is the
+// point: `keys address <name>` reads the keychain and cannot be stale. A nil
+// RunE makes cobra print the help instead, so the bare command still answers
+// "what can I do here?" — it just no longer answers "what do I have?", which
+// is the question it could not answer honestly. (#139)
+func TestKeysDoesNotListWhenRunBare(t *testing.T) {
+	if keysCmd.RunE != nil || keysCmd.Run != nil {
+		t.Error("keys must have no bare action: a listing can only replay a stale index")
 	}
 }
 

@@ -324,3 +324,25 @@ func contains(list []string, want string) bool {
 	}
 	return false
 }
+
+// A `pending` row holds the wait open only when it is signed and waiting for its
+// broadcast (redrivable). An abandoned prepare — never signed — will never move, and
+// counting it made `payments wait` sit out its deadline over nothing.
+func TestAnyInFlightIgnoresAnAbandonedPrepare(t *testing.T) {
+	cases := []struct {
+		name string
+		txs  []rail0.Transaction
+		want bool
+	}{
+		{"abandoned prepare", []rail0.Transaction{{Status: "pending"}, {Status: "confirmed"}}, false},
+		{"signed, awaiting broadcast", []rail0.Transaction{{Status: "pending", Redrivable: true}}, true},
+		{"submitting", []rail0.Transaction{{Status: "submitting"}}, true},
+		{"submitted", []rail0.Transaction{{Status: "confirmed"}, {Status: "submitted"}}, true},
+		{"all settled", []rail0.Transaction{{Status: "confirmed"}, {Status: "failed"}}, false},
+	}
+	for _, c := range cases {
+		if got := anyInFlight(c.txs); got != c.want {
+			t.Errorf("%s: anyInFlight = %v, want %v", c.name, got, c.want)
+		}
+	}
+}

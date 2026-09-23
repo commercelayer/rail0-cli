@@ -412,12 +412,23 @@ func pickWaitTarget(txs []rail0.Transaction, txID string) *rail0.Transaction {
 	return nil
 }
 
-// anyInFlight reports whether any transaction is still in a non-terminal state.
+// anyInFlight reports whether any transaction is still on its way to the chain.
+//
+// `pending` counts only when it is `redrivable` — signed, held by the gateway, its
+// broadcast merely not yet sent. A `pending` row WITHOUT a signed transaction is a
+// prepare nobody finished (a verify refusal, a sign error, a failed submit, Ctrl-C):
+// nothing will ever move it, the gateway only purges it once the payment's window
+// closes, and counting it made `payments wait <id>` sit out its whole deadline and
+// then report an operation "still in flight" that was never sent.
 func anyInFlight(txs []rail0.Transaction) bool {
 	for _, t := range txs {
 		switch t.Status {
-		case "pending", "submitting", "submitted":
+		case "submitting", "submitted":
 			return true
+		case "pending":
+			if t.Redrivable {
+				return true
+			}
 		}
 	}
 	return false
@@ -430,7 +441,9 @@ var paymentsWaitCmd = &cobra.Command{
 	Short: "Block until a payment settles (or reaches a given status)",
 	Long: `Poll a payment until it settles, then print its final state.
 
-By default it waits until no transaction is still in flight (pending/submitted).
+By default it waits until no transaction is still in flight (submitted, or signed
+and pending broadcast). A prepare that was never signed is not in flight — nothing
+will ever send it — so it does not hold the wait open.
 With --until it instead waits for a specific payment status.`,
 	Example: `  rail0 payments wait 0xrail0Id…
   rail0 payments wait 0xrail0Id… --until captured`,

@@ -157,6 +157,45 @@ func TestEnsureSessionReusesAMatchingCachedToken(t *testing.T) {
 	}
 }
 
+// A matching session with seconds left is NOT reused: the 401 would land partway
+// through prepare → sign → submit → wait, possibly after the broadcast. With --wait the
+// session must also outlive the whole wait budget, since the polls use it.
+func TestEnsureSessionSignsInAgainWhenTheCachedSessionIsAboutToExpire(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		left    time.Duration
+		wait    bool
+		reLogin bool
+	}{
+		{"20s left", 20 * time.Second, false, true},
+		{"an hour left", time.Hour, false, false},
+		{"10m left, --wait with a 15m budget", 10 * time.Minute, true, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			isolateTokenStore(t)
+			g, srv := newFakeGateway(t)
+			t.Setenv("RAIL0_BASE_URL", srv.URL)
+			waitFlag, waitTimeout = tc.wait, defaultWaitTimeout
+			t.Cleanup(func() { waitFlag = false })
+
+			addr := addressForTestKey(t)
+			cached := makeJWT(t, map[string]any{"sub": addr, "exp": time.Now().Add(tc.left).Unix()})
+			if err := saveTokenForTest(cached); err != nil {
+				t.Fatalf("seed cached token: %v", err)
+			}
+			if err := ensureSession(context.Background(), newClient(), testKeyHex, addr); err != nil {
+				t.Fatalf("ensureSession: %v", err)
+			}
+			g.mu.Lock()
+			_, loggedIn := g.auths["/auth"]
+			g.mu.Unlock()
+			if loggedIn != tc.reLogin {
+				t.Errorf("signed in again = %v, want %v", loggedIn, tc.reLogin)
+			}
+		})
+	}
+}
+
 // addressForTestKey derives the address of testKeyHex, so the tests assert against
 // the same value ensureSession compares the JWT's `sub` to.
 func addressForTestKey(t *testing.T) string {

@@ -231,17 +231,41 @@ func applyOutputMode() {
 // the command printed "Signed in as 0x…" and the very next request on the real client
 // — still built with no token — came back 401 "run 'rail0 auth login' first". Logging
 // in here mutates the client the command actually uses. (#59)
+// sessionReuseMargin is how long a cached session must still have to live before a
+// signing command reuses it rather than signing in afresh.
+//
+// Merely "not expired yet" was the test, so a token with seconds left was reused and
+// the 401 could arrive partway through prepare → sign → submit → wait — after the
+// broadcast, turning an operation that went out into an error. A fresh sign-in costs
+// one signature with a key the command already holds, so the margin is generous: a
+// minute for the round-trips, plus the whole --wait budget when the command will
+// poll, since those reads use the same session.
+func sessionReuseMargin() time.Duration {
+	margin := time.Minute
+	if waitFlag {
+		margin += waitTimeout
+	}
+	return margin
+}
+
+// sessionOutlives reports whether the claims' exp is more than margin away. Callers
+// pass claims parseJWTClaims accepted, so exp is known to be numeric.
+func sessionOutlives(claims map[string]any, margin time.Duration) bool {
+	exp, _ := claims["exp"].(float64)
+	return time.Unix(int64(exp), 0).After(time.Now().Add(margin))
+}
+
 func ensureSession(ctx context.Context, client *rail0.Client, keyHex, addr string) error {
 	baseURL := resolveBaseURL()
 	// Whether a DIFFERENT live session is already stored decides if we may
 	// persist this one — see the token.Save call below (#95).
 	otherSessionStored := false
 	if t := token.Load(baseURL); t != "" {
-		// No expiry re-check here: parseJWTClaims returns an error for an expired
-		// token, so a nil error already means the session is live. (#71)
+		// parseJWTClaims already rejects an expired token (#71); on top of that the
+		// session must OUTLIVE the command about to use it — see sessionReuseMargin.
 		if claims, err := parseJWTClaims(t); err == nil {
 			sub, _ := claims["sub"].(string)
-			if strings.EqualFold(sub, addr) {
+			if strings.EqualFold(sub, addr) && sessionOutlives(claims, sessionReuseMargin()) {
 				return nil
 			}
 			otherSessionStored = true

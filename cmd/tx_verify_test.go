@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -336,5 +337,47 @@ func TestSigningContextVerifySigningPayloadUsesThePayment(t *testing.T) {
 	hostile := testPayload(func(sp *rail0.SigningPayload) { sp.Message.Value = "50000000000" })
 	if err := sc.verifySigningPayload(hostile, "1000000"); err == nil {
 		t.Error("expected a refusal for an inflated value")
+	}
+}
+
+const testRail0Contract = "0x2222222222222222222222222222222222222222"
+
+// The transaction and the authorization must both be addressed to the payment's own
+// RAIL0 contract when the record names one; an unknown contract skips the check.
+func TestVerifyChecksTheRail0Contract(t *testing.T) {
+	sc := testContext()
+	sc.payment.Rail0Contract = rail0.Address(strings.ToUpper(testRail0Contract))
+	if err := sc.verify(unsignedJSON(t, nil)); err != nil {
+		t.Fatalf("rejected a transaction to the payment's contract: %v", err)
+	}
+	other := unsignedJSON(t, map[string]any{"to": "0x3333333333333333333333333333333333333333"})
+	if err := sc.verify(other); err == nil || !strings.Contains(err.Error(), "RAIL0 contract") {
+		t.Errorf("a transaction to another address must be refused, got %v", err)
+	}
+
+	sc.payment.Token = rail0.Address(testPayloadToken)
+	if err := sc.verifySigningPayload(testPayload(nil), "1000000"); err != nil {
+		t.Fatalf("rejected an authorization paying the payment's contract: %v", err)
+	}
+	elsewhere := testPayload(func(sp *rail0.SigningPayload) { sp.Message.To = "0x3333333333333333333333333333333333333333" })
+	if err := sc.verifySigningPayload(elsewhere, "1000000"); err == nil {
+		t.Error("an authorization paying another address must be refused")
+	}
+}
+
+// The amount check fails CLOSED: an unresolvable token or an amount finer than the
+// token's decimals used to return "", which skipped the value check entirely.
+func TestExpectedBaseUnitsFailsClosed(t *testing.T) {
+	ctx := context.Background()
+	seedDecimals(t, testChainID, testPayloadToken, 6)
+
+	if got, err := expectedBaseUnits(ctx, testChainID, testPayloadToken, "1.5"); err != nil || got != "1500000" {
+		t.Fatalf("1.5 at 6 decimals: got %q err %v, want 1500000", got, err)
+	}
+	if _, err := expectedBaseUnits(ctx, testChainID, testPayloadToken, "1.0000001"); err == nil {
+		t.Error("an amount finer than the token's decimals must be refused, not skipped")
+	}
+	if _, err := expectedBaseUnits(ctx, testChainID, "0x9999999999999999999999999999999999999999", "1"); err == nil {
+		t.Error("a token whose decimals are unknown must be refused, not skipped")
 	}
 }

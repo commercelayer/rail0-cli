@@ -42,12 +42,11 @@ type unsignedTx struct {
 //
 // Every check here runs on data already in hand, so this adds no network round-trip.
 //
-// What it does NOT check, and why: the issue also asks that `to` equal the chain's
-// RAIL0 contract. The CLI cannot do that — the contract address is exposed only on
-// /sync/blockchains, which is HMAC-protected for the indexer; the public GET /chains
-// returns Blockchain::Restricted, which has no contract address, and the catalog the
-// CLI caches holds TOKENS, not contracts. Binding the calldata to this payment (see
-// checkCalldataPaymentID) closes the dangerous form of that hole in the meantime.
+// `to` is compared with the payment's own rail0_contract. That is a consistency check,
+// not an independent one — the address comes from the same gateway, and no public
+// endpoint publishes the contract set on its own — so binding the calldata to this
+// payment (see checkCalldataPaymentID) remains what closes the dangerous form of a
+// swapped transaction.
 func (sc *signingContext) verify(unsignedJSON string) error {
 	var tx unsignedTx
 	if err := json.Unmarshal([]byte(unsignedJSON), &tx); err != nil {
@@ -74,6 +73,15 @@ func (sc *signingContext) verify(unsignedJSON string) error {
 	if sc.signer != "" && tx.From != "" && !strings.EqualFold(tx.From, sc.signer) {
 		return fmt.Errorf("refusing to sign: transaction is prepared from %s but the signing key is %s",
 			tx.From, sc.signer)
+	}
+
+	// The call must go to THIS payment's RAIL0 contract. Only a consistency check —
+	// the address comes from the same gateway as the transaction — but it costs
+	// nothing and catches a response stitched together from two different payments.
+	if sc.payment != nil && sc.payment.Rail0Contract != "" && tx.To != "" &&
+		!strings.EqualFold(tx.To, string(sc.payment.Rail0Contract)) {
+		return fmt.Errorf("refusing to sign: transaction is addressed to %s but this payment's RAIL0 contract is %s",
+			tx.To, sc.payment.Rail0Contract)
 	}
 
 	if sc.payment != nil {
@@ -144,6 +152,9 @@ type payloadExpectation struct {
 	// Exact amount in TOKEN BASE UNITS. "" = unknown (e.g. the token's decimals
 	// could not be resolved, so the human amount cannot be scaled locally).
 	valueBaseUnits string
+	// Recipient the authorization must pay: the payment's RAIL0 contract, taken
+	// from the payment record. "" = unknown.
+	to string
 }
 
 // verifySigningPayload is signingContext.verify's counterpart for the EIP-712
@@ -165,14 +176,12 @@ type payloadExpectation struct {
 // contradict what the caller asked for. Every value compared is already in hand, so
 // there is no extra round-trip — same property as verify().
 //
-// What it does NOT check, and why: message.to, which for both RAIL0 flows is the
-// RAIL0 contract. The CLI cannot know that address — it is exposed only on
-// /sync/blockchains, which is HMAC-protected for the indexer, and the catalog the
-// CLI caches holds tokens, not contracts (the same limitation verify() documents).
-// So the residual exposure is an authorization for the RIGHT token, on the RIGHT
-// chain, from the RIGHT signer, for EXACTLY the amount the user typed, payable to an
-// address of the endpoint's choosing. That is a bounded loss of the intended amount
-// instead of an unbounded drain of the balance.
+// message.to, which for both RAIL0 flows is the RAIL0 contract, is compared only
+// with the payment record's rail0_contract when one is known — the same gateway's
+// word, so not independent (the same limitation verify() documents). The residual
+// exposure is therefore an authorization for the RIGHT token, on the RIGHT chain,
+// from the RIGHT signer, for EXACTLY the amount the user typed. That is a bounded
+// loss of the intended amount instead of an unbounded drain of the balance.
 //
 // One caveat worth stating: valueBaseUnits is derived by scaling the user's decimal
 // amount with the token's decimals, and those decimals come from the catalog — i.e.
@@ -210,6 +219,13 @@ func verifySigningPayload(sp *rail0.SigningPayload, want payloadExpectation) err
 			sp.Domain.VerifyingContract, want.token)
 	}
 
+	// A consistency check against the payment record, like verify's `to` check.
+	if want.to != "" && !strings.EqualFold(string(sp.Message.To), want.to) {
+		return fmt.Errorf(
+			"refusing to sign: the authorization pays %s but this payment's RAIL0 contract is %s",
+			sp.Message.To, want.to)
+	}
+
 	// Exact, not a ceiling: the gateway signs for the full amount of the operation,
 	// so anything else is a mismatch rather than a partial authorization.
 	if want.valueBaseUnits != "" && string(sp.Message.Value) != want.valueBaseUnits {
@@ -228,6 +244,7 @@ func (sc *signingContext) verifySigningPayload(sp *rail0.SigningPayload, valueBa
 	if sc.payment != nil {
 		want.chainID = sc.payment.ChainID
 		want.token = string(sc.payment.Token)
+		want.to = string(sc.payment.Rail0Contract)
 	}
 	return verifySigningPayload(sp, want)
 }
@@ -239,20 +256,24 @@ func (sc *signingContext) verifySigningPayload(sp *rail0.SigningPayload, valueBa
 // rather than reading the amount back off the gateway's response — comparing a
 // gateway value against another gateway value would assert nothing.
 //
-// Returns "" when the decimals cannot be resolved (an unknown or retired token, or a
-// catalog read that failed), so the caller skips the value check instead of comparing
-// against a guessed scale.
-func expectedBaseUnits(ctx context.Context, chainID int, token, humanAmount string) string {
+// FAILS CLOSED. It used to return "" when the decimals could not be resolved (an
+// unknown or retired token, a catalog read that failed) or the amount had more
+// decimals than the token, and "" told verifySigningPayload to SKIP the value check —
+// the one check the whole guard exists for. So a flaky catalog, or `-a 1.0000001` on
+// USDC, had the authorization signed for whatever value the endpoint returned. The
+// callers now refuse to sign instead.
+func expectedBaseUnits(ctx context.Context, chainID int, token, humanAmount string) (string, error) {
 	if humanAmount == "" || token == "" || chainID == 0 {
-		return ""
+		return "", fmt.Errorf("refusing to sign: cannot check the authorization's amount without an amount, token and chain")
 	}
 	decimals, ok := tokenDecimals(ctx, chainID, token)
 	if !ok {
-		return ""
+		return "", fmt.Errorf("refusing to sign: the decimals of token %s on chain %d could not be resolved, "+
+			"so the authorization's amount cannot be checked — see 'rail0 tokens --chain-id %d'", token, chainID, chainID)
 	}
 	units, err := rail0.ToBaseUnits(humanAmount, decimals)
 	if err != nil {
-		return ""
+		return "", fmt.Errorf("amount %q: %w", humanAmount, err)
 	}
-	return units
+	return units, nil
 }

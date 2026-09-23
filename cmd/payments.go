@@ -306,6 +306,12 @@ sent from an address to itself.`,
 			}
 		}
 		return ui.RunAPIWithMessage("Creating payment…", func() (any, error) {
+			// Resolved BEFORE the create, so an amount that cannot be checked is
+			// refused without leaving an unsigned payment behind.
+			wantUnits, err := expectedBaseUnits(ctx, req.ChainID, string(req.Token), req.Amount)
+			if err != nil {
+				return nil, err
+			}
 			created, err := client.Payments.Create(ctx, req, idemKey)
 			if err != nil {
 				return nil, err
@@ -318,7 +324,7 @@ sent from an address to itself.`,
 				signer:         signer,
 				chainID:        req.ChainID,
 				token:          string(req.Token),
-				valueBaseUnits: expectedBaseUnits(ctx, req.ChainID, string(req.Token), req.Amount),
+				valueBaseUnits: wantUnits,
 			}); err != nil {
 				return nil, err
 			}
@@ -399,6 +405,7 @@ recovered signer is the payment's payer.`,
 				chainID:        payment.ChainID,
 				token:          string(payment.Token),
 				valueBaseUnits: payment.Amount,
+				to:             string(payment.Rail0Contract),
 			}); err != nil {
 				return nil, err
 			}
@@ -1055,8 +1062,11 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 			// is honoured by the token itself, so an endpoint that answered with the
 			// payee's whole balance as `value` used to get exactly that signed.
 			// `refundAmount` is what the user typed, scaled locally.
-			if err := sc.verifySigningPayload(phase1.SigningPayload,
-				expectedBaseUnits(ctx, sc.payment.ChainID, string(sc.payment.Token), refundAmount)); err != nil {
+			wantUnits, err := expectedBaseUnits(ctx, sc.payment.ChainID, string(sc.payment.Token), refundAmount)
+			if err != nil {
+				return nil, err
+			}
+			if err := sc.verifySigningPayload(phase1.SigningPayload, wantUnits); err != nil {
 				return nil, err
 			}
 			// Sign the EIP-3009 ReceiveWithAuthorization payload (payee key).

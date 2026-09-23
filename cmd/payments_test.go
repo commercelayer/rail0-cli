@@ -1,7 +1,10 @@
 package cmd
 
 import (
+	"encoding/json"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"reflect"
 	"strings"
@@ -151,4 +154,50 @@ func TestSigningCommandsHaveNoPrepareFlag(t *testing.T) {
 			t.Errorf("payments %s: --private-key flag missing", name)
 		}
 	}
+}
+
+// One page of `payments list` carries the same human companions as --all and
+// `payments get`: a flag that only changes how many rows are fetched must not change
+// the shape of each row.
+func TestPaymentsListHumanizesASinglePage(t *testing.T) {
+	isolate(t)
+	isolateTokenStore(t)
+	seedDecimals(t, 5042002, testToken, 6)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode([]map[string]any{{
+			"id": "p-1", "rail0_id": "0xabc", "status": "authorized",
+			"chain_id": 5042002, "token": testToken, "amount": "4050000",
+		}})
+	}))
+	defer srv.Close()
+	t.Setenv("RAIL0_BASE_URL", srv.URL)
+
+	out := captureStdout(t, func() {
+		if err := paymentsListCmd.RunE(paymentsListCmd, nil); err != nil {
+			t.Errorf("payments list: %v", err)
+		}
+	})
+	if !strings.Contains(out, `"amount_human": "4.05"`) {
+		t.Errorf("a single page must carry amount_human, got:\n%s", out)
+	}
+}
+
+// captureStdout runs fn with os.Stdout redirected and returns what it printed.
+func captureStdout(t *testing.T, fn func()) string {
+	t.Helper()
+	old := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stdout = w
+	defer func() { os.Stdout = old }()
+	fn()
+	_ = w.Close()
+	b, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
 }

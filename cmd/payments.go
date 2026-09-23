@@ -163,7 +163,10 @@ amount range only means something within one token anyway.`,
 			if err != nil {
 				return nil, err
 			}
-			return resp.Data, nil // bare array; page/total live in resp.Meta
+			// Humanized like --all and `payments get`: one page used to come back raw
+			// (base units, no *_human fields), so the same command changed shape with a
+			// flag that should only change how many rows it fetches.
+			return humanizeAll(ctx, resp.Data), nil // bare array; page/total live in resp.Meta
 		})
 	},
 }

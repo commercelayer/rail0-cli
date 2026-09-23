@@ -3,7 +3,7 @@
 #
 #   git tag v1.2.0 && git push origin v1.2.0
 #
-# rail0-cli depends on rail0-go through `replace github.com/rail0/go-sdk =>
+# rail0-cli depends on rail0-go through `replace github.com/commercelayer/rail0-go =>
 # ../rail0-go` (go.mod). rail0-go is PRIVATE, and the default GITHUB_TOKEN only
 # grants access to this repo, so the sibling checkout needs a dedicated token:
 #

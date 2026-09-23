@@ -7,7 +7,7 @@
 # tokens` had gained a whole Long description and an `--active` flag that never reached
 # docs/cli or docs/man. (#68)
 #
-# rail0-cli depends on rail0-go through `replace github.com/rail0/go-sdk =>
+# rail0-cli depends on rail0-go through `replace github.com/commercelayer/rail0-go =>
 # ../rail0-go` (go.mod). rail0-go is PRIVATE and the default GITHUB_TOKEN only grants
 # access to this repo, so the sibling checkout needs the same dedicated token the
 # release workflow uses:

@@ -252,8 +252,18 @@ func submittedTransactionID(res any) string {
 // the re-run the help recommends after a timed-out --wait failed every time, with a
 // message about a wrong id. A replayed row that is STILL pending (the first attempt
 // never got as far as the submit) is not caught here: finishing it is correct.
+//
+// Except a pending row that is `redrivable`: the gateway already HOLDS its signed
+// transaction — the first attempt's submit landed and the broadcast is under way (or
+// was lost, which is what redrive is for). A re-run seconds after the first one gets
+// exactly that row; signing it again queued behind the gateway's broadcast lock and
+// answered 404 once the row had moved on. It is past the caller's part, so it is
+// followed like any other replay.
 func replayedPastPending(tx *rail0.Transaction) bool {
-	return idempotencyKey != "" && tx != nil && tx.ID != "" && tx.Status != "" && tx.Status != "pending"
+	if idempotencyKey == "" || tx == nil || tx.ID == "" || tx.Status == "" {
+		return false
+	}
+	return tx.Status != "pending" || tx.Redrivable
 }
 
 // resumeReplayed follows a replayed transaction instead of re-broadcasting it: with

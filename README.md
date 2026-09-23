@@ -1167,7 +1167,7 @@ A payment can hold several rows for the same operation (a retried broadcast, or 
 
 ```sh
 rail0 payments transactions 0xabc123…
-rail0 payments transactions 0xabc123… --sort -submitted_at
+rail0 payments transactions 0xabc123… --sort -confirmed_at
 ```
 
 ---

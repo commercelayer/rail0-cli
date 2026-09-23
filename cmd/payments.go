@@ -124,7 +124,7 @@ amount range only means something within one token anyway.`,
   rail0 payments list --sort -created_at
   rail0 payments list --status authorized --mode charge
   rail0 payments list --chain-id 5042002 --disputed
-  rail0 payments list --token 0x3600… --min-amount 1000000 --created-from 2026-01-01T00:00:00Z`,
+  rail0 payments list --chain-id 5042002 --token 0x3600… --min-amount 1.00 --created-from 2026-01-01T00:00:00Z`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := context.Background()
@@ -224,7 +224,7 @@ A payment can hold several rows for the same operation (a retried broadcast, or
 successive partial captures), which is why the balances a payment reports are
 the last CONFIRMED ones and not the last submitted.`,
 	Example: `  rail0 payments transactions 0xabc123…
-  rail0 payments transactions 0xabc123… --sort -submitted_at`,
+  rail0 payments transactions 0xabc123… --sort -confirmed_at`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return ui.RunAPI(func() (any, error) {
 			ctx := context.Background()
@@ -1309,7 +1309,7 @@ func init() {
 	paymentsCmd.AddCommand(paymentsListCmd)
 
 	// payments transactions
-	paymentsTransactionsCmd.Flags().StringVar(&paymentsTransactionsSort, "sort", "", "Sort fields (e.g. -submitted_at,operation)")
+	paymentsTransactionsCmd.Flags().StringVar(&paymentsTransactionsSort, "sort", "", "Sort fields: created_at, updated_at, block_number, confirmed_at (prefix - for descending, comma-separated)")
 	paymentsTransactionsCmd.Flags().IntVar(&paymentsTransactionsPage, "page", 0, "Page number (1-based)")
 	paymentsTransactionsCmd.Flags().IntVar(&paymentsTransactionsPerPage, "per-page", 0, "Results per page")
 	paymentsCmd.AddCommand(paymentsTransactionsCmd)

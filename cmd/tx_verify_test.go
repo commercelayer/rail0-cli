@@ -529,3 +529,39 @@ func TestCheckCalldataCallFailsClosed(t *testing.T) {
 		t.Errorf("empty calldata must be refused as too short, got %v", err)
 	}
 }
+
+// ── checkCreatedPayment ──────────────────────────────────────────────────────
+
+func TestCheckCreatedPayment(t *testing.T) {
+	req := rail0.CreatePaymentRequest{
+		ChainID: testChainID, Mode: "authorize", Amount: "1.50", Token: testPayloadToken,
+		Payer: testSigner, Payee: testRail0Contract,
+	}
+	good := func() *rail0.Payment {
+		return &rail0.Payment{
+			ChainID: testChainID, Mode: "authorize", Amount: "1500000",
+			Token: rail0.Address(strings.ToUpper(testPayloadToken)), Payer: testSigner,
+			Payee: rail0.Address(strings.ToUpper(testRail0Contract)),
+		}
+	}
+	if err := checkCreatedPayment(good(), req, "1500000"); err != nil {
+		t.Fatalf("rejected the payment asked for (checksum-cased addresses): %v", err)
+	}
+	for name, mutate := range map[string]func(*rail0.Payment){
+		"chain_id": func(p *rail0.Payment) { p.ChainID = 1 },
+		"payer":    func(p *rail0.Payment) { p.Payer = testAttacker },
+		"payee":    func(p *rail0.Payment) { p.Payee = testAttacker },
+		"token":    func(p *rail0.Payment) { p.Token = testAttacker },
+		"mode":     func(p *rail0.Payment) { p.Mode = "charge" },
+		"amount":   func(p *rail0.Payment) { p.Amount = "1500001" },
+		// Absent is a mismatch, not a skip.
+		"payee ": func(p *rail0.Payment) { p.Payee = "" },
+	} {
+		p := good()
+		mutate(p)
+		err := checkCreatedPayment(p, req, "1500000")
+		if err == nil || !strings.Contains(err.Error(), strings.TrimSpace(name)) {
+			t.Errorf("%s: want a refusal naming the field, got %v", name, err)
+		}
+	}
+}

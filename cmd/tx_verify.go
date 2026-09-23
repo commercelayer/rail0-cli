@@ -301,12 +301,29 @@ type payloadExpectation struct {
 // contradict what the caller asked for. Every value compared is already in hand, so
 // there is no extra round-trip — same property as verify().
 //
-// message.to, which for both RAIL0 flows is the RAIL0 contract, is compared only
-// with the payment record's rail0_contract when one is known — the same gateway's
-// word, so not independent (the same limitation verify() documents). The residual
-// exposure is therefore an authorization for the RIGHT token, on the RIGHT chain,
-// from the RIGHT signer, for EXACTLY the amount the user typed. That is a bounded
-// loss of the intended amount instead of an unbounded drain of the balance.
+// What this does NOT establish, stated so nobody reads more into it:
+//
+//   - message.to, which for both RAIL0 flows is the RAIL0 contract, is compared only
+//     with the payment record's rail0_contract — the same gateway's word, so not
+//     independent (the limitation verify() documents). An authorization addressed to
+//     a contract the endpoint controls is spendable by that contract for its value.
+//   - message.nonce is NOT recomputed. For authorize/charge it is
+//     keccak256(abi.encode(prefix, rail0_id, configHash)), and configHash is the
+//     RAIL0-domain EIP-712 hash of the payment terms (payer, payee, token, amount,
+//     both expiries) — so it is what binds the signature to THESE terms on-chain.
+//     Recomputing it needs the deployment's VERSION() for the domain, and no payment
+//     response carries it; GET /blockchains serves it as `contract.version`, but the
+//     gateway's OpenAPI schema declares that property outside `properties`, so the
+//     SDK's generated Blockchain type has no field for it. Until that is fixed a
+//     nonce for different terms (another payee) is not detectable here. `payments
+//     create` narrows this by checking the created payment's own terms against the
+//     request (checkCreatedPayment), which catches a gateway that records the wrong
+//     payment, but not one that records the right payment and serves a nonce for
+//     another.
+//
+// The bounded residual is therefore an authorization for the RIGHT token, on the
+// RIGHT chain, from the RIGHT signer, for EXACTLY the amount the user typed — a loss
+// of at most the intended amount instead of an unbounded drain of the balance.
 //
 // One caveat worth stating: valueBaseUnits is derived by scaling the user's decimal
 // amount with the token's decimals, and those decimals come from the catalog — i.e.
@@ -359,6 +376,41 @@ func verifySigningPayload(sp *rail0.SigningPayload, want payloadExpectation) err
 			sp.Message.Value, want.valueBaseUnits)
 	}
 
+	return nil
+}
+
+// checkCreatedPayment asserts the payment `payments create` got back is the one it
+// asked for, BEFORE the payer signs its authorization.
+//
+// verifySigningPayload holds the authorization to the request's signer, chain, token
+// and amount, but the payment record itself went unchecked — and the record is what
+// the payee then authorizes against: its payee is who the escrow settles to, its mode
+// decides whether funds are held or forwarded at once. A gateway that created the
+// payment with another payee, or as a charge when an authorize was asked for, had
+// the payer sign for it. Every right-hand side here is the request the user built
+// (flags or payment file), or the amount scaled locally from it, never the response.
+//
+// Addresses compare case-insensitively (the gateway may return checksummed ones);
+// the amount compares in base units, exactly. An absent field in the response is a
+// mismatch, not a skip: every one of these is always present on a created payment.
+func checkCreatedPayment(created *rail0.Payment, req rail0.CreatePaymentRequest, wantUnits string) error {
+	mismatch := func(field, got, want string) error {
+		return fmt.Errorf("refusing to sign: the gateway created a payment with %s %q but you asked for %q", field, got, want)
+	}
+	switch {
+	case created.ChainID != req.ChainID:
+		return mismatch("chain_id", fmt.Sprint(created.ChainID), fmt.Sprint(req.ChainID))
+	case !strings.EqualFold(string(created.Payer), string(req.Payer)):
+		return mismatch("payer", string(created.Payer), string(req.Payer))
+	case !strings.EqualFold(string(created.Payee), string(req.Payee)):
+		return mismatch("payee", string(created.Payee), string(req.Payee))
+	case !strings.EqualFold(string(created.Token), string(req.Token)):
+		return mismatch("token", string(created.Token), string(req.Token))
+	case created.Mode != req.Mode:
+		return mismatch("mode", created.Mode, req.Mode)
+	case created.Amount != wantUnits:
+		return mismatch("amount (base units)", created.Amount, wantUnits)
+	}
 	return nil
 }
 

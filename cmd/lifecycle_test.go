@@ -11,10 +11,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	rail0 "github.com/commercelayer/rail0-go"
 )
 
 const (
@@ -289,5 +292,133 @@ func TestVoidRefusesCaptureCalldata(t *testing.T) {
 	}
 	if n := g.sent("POST /payments/" + lcRail0ID + "/void"); n != 0 {
 		t.Errorf("submitted %d time(s) after a refusal", n)
+	}
+}
+
+// ── payments create ──────────────────────────────────────────────────────────
+
+const (
+	lcCreatePayee    = "0x7777777777777777777777777777777777777777"
+	lcCreateContract = "0x4CCC4DdeBB8A63B9186936A8C0FA404910A4311b"
+)
+
+// createGateway is a fake gateway for `payments create`: POST /payments answers with
+// `created` (the test edits it to play a hostile or replaying gateway), and PUT
+// …/sign records that a signature was deposited.
+type createGateway struct {
+	mu       sync.Mutex
+	status   int
+	created  map[string]any
+	requests []string
+}
+
+func (g *createGateway) sent(methodPath string) int {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	n := 0
+	for _, r := range g.requests {
+		if r == methodPath {
+			n++
+		}
+	}
+	return n
+}
+
+// newCreateGateway serves a well-formed create for 1.00 of lcToken (6 decimals) from
+// the test key to lcCreatePayee, with a signing payload verifySigningPayload accepts,
+// and points `payments create` at it through a payment file.
+func newCreateGateway(t *testing.T) *createGateway {
+	t.Helper()
+	isolate(t)
+	isolateTokenStore(t)
+	t.Setenv("RAIL0_PRIVATE_KEY", "")
+	seedDecimals(t, lcChainID, lcToken, 6)
+	payer := addressForTestKey(t)
+	sp := payload(rail0.PrimaryTypeReceive)
+	sp.Domain.ChainId = lcChainID
+	sp.Domain.VerifyingContract = rail0.Address(lcToken)
+	sp.Message.From = rail0.Address(payer)
+	sp.Message.To = rail0.Address(lcCreateContract)
+	sp.Message.Value = "1000000"
+	g := &createGateway{status: http.StatusCreated, created: map[string]any{
+		"id": "pay-new", "rail0_id": lcRail0ID, "status": "unsigned", "chain_id": lcChainID,
+		"mode": "authorize", "token": lcToken, "amount": "1000000", "payer": payer,
+		"payee": lcCreatePayee, "rail0_contract": lcCreateContract, "signing_payload": sp,
+	}}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		g.mu.Lock()
+		g.requests = append(g.requests, r.Method+" "+r.URL.Path)
+		g.mu.Unlock()
+		_, _ = io.Copy(io.Discard, r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/payments":
+			g.mu.Lock()
+			body := g.created
+			g.mu.Unlock()
+			w.WriteHeader(g.status)
+			_ = json.NewEncoder(w).Encode(body)
+		case r.Method == http.MethodPut && strings.HasSuffix(r.URL.Path, "/sign"):
+			_ = json.NewEncoder(w).Encode(map[string]any{"id": "pay-new", "rail0_id": lcRail0ID, "status": "signed"})
+		default:
+			_, _ = w.Write([]byte(`[]`))
+		}
+	}))
+	t.Cleanup(srv.Close)
+	t.Setenv("RAIL0_BASE_URL", srv.URL)
+	if err := saveTokenForTest(makeJWT(t, map[string]any{"sub": payer, "exp": time.Now().Add(time.Hour).Unix()})); err != nil {
+		t.Fatalf("seed session: %v", err)
+	}
+	file := filepath.Join(t.TempDir(), "payment.json")
+	body, _ := json.Marshal(map[string]any{
+		"chain_id": lcChainID, "mode": "authorize", "amount": "1.00", "token": lcToken,
+		"payer": payer, "payee": lcCreatePayee, "description": "order 42",
+	})
+	if err := os.WriteFile(file, body, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	prev := signCreateFlags
+	signCreateFlags = createPaymentFlags{paymentFile: file}
+	signPrivateKey = testKeyHex
+	t.Cleanup(func() { signCreateFlags, signPrivateKey, signCreateIdempotencyKey = prev, "", "" })
+	return g
+}
+
+// The happy path is undisturbed: created, checked, signed, deposited once.
+func TestCreateSignsAPaymentMatchingTheRequest(t *testing.T) {
+	g := newCreateGateway(t)
+	_ = captureStdout(t, func() {
+		if err := paymentsCreateCmd.RunE(paymentsCreateCmd, nil); err != nil {
+			t.Fatalf("create: %v", err)
+		}
+	})
+	if n := g.sent("PUT /payments/pay-new/sign"); n != 1 {
+		t.Errorf("signature deposited %d time(s), want 1", n)
+	}
+}
+
+// A gateway that records a DIFFERENT payment than the one asked for — another payee,
+// another mode, a larger amount — must not get the payer's signature for it.
+func TestCreateRefusesAPaymentOtherThanRequested(t *testing.T) {
+	for field, value := range map[string]any{
+		"payee":    testAttacker,
+		"payer":    testAttacker,
+		"mode":     "charge",
+		"amount":   "9000000",
+		"token":    testPayloadToken,
+		"chain_id": 1,
+	} {
+		t.Run(field, func(t *testing.T) {
+			g := newCreateGateway(t)
+			g.created[field] = value
+			var err error
+			_ = captureStdout(t, func() { err = paymentsCreateCmd.RunE(paymentsCreateCmd, nil) })
+			if err == nil || !strings.Contains(err.Error(), "refusing to sign") || !strings.Contains(err.Error(), field) {
+				t.Fatalf("a created payment with another %s must be refused by name, got %v", field, err)
+			}
+			if n := g.sent("PUT /payments/pay-new/sign"); n != 0 {
+				t.Errorf("signed %d time(s) after a refusal", n)
+			}
+		})
 	}
 }

@@ -647,6 +647,15 @@ rail0 payments create -F @buyer -T @merchant -t USDC -a 10.50 -c 5042002 -p @buy
 > payment — the gateway returns the first one. Pass `--idempotency-key` to reuse a
 > key of your own across processes.
 
+> **Checked before signing.** Before the payer's key signs anything, the CLI checks
+> the payment the gateway created against the request you built: `payer`, `payee`,
+> `token` (addresses compared case-insensitively), `mode`, `chain_id`, and `amount` in
+> base units (your `--amount` scaled locally). The EIP-3009 authorization must be from
+> the signing key, on that chain and token, addressed to the payment's RAIL0 contract,
+> for exactly that amount. Any mismatch refuses to sign. Not yet checked: the
+> authorization's `nonce`, which binds it to the payment terms on-chain — recomputing it
+> needs the contract version, which the SDK cannot read from `GET /blockchains` yet.
+
 **If the signature step fails** (a dropped connection, a rate limit, the wrong
 key), the payment exists at `unsigned` with no signature. Don't create it again —
 deposit the signature on the existing one:

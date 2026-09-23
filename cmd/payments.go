@@ -333,15 +333,21 @@ sent from an address to itself.`,
 			if err != nil {
 				return nil, err
 			}
-			// Check the authorization against what was ASKED FOR before signing it.
-			// Everything on the right-hand side here came from the user (the flags
-			// they typed) or from the key itself, not from the response being
-			// checked — see verifySigningPayload.
+			// Check the payment AND its authorization against what was ASKED FOR
+			// before signing. Everything on the right-hand side here came from the
+			// user (the flags they typed) or from the key itself, not from the
+			// response being checked — see checkCreatedPayment and
+			// verifySigningPayload. `to` is the one exception, a consistency check
+			// against the created record, as `payments sign` does.
+			if err := checkCreatedPayment(created, req, wantUnits); err != nil {
+				return nil, err
+			}
 			if err := verifySigningPayload(created.SigningPayload, payloadExpectation{
 				signer:         signer,
 				chainID:        req.ChainID,
 				token:          string(req.Token),
 				valueBaseUnits: wantUnits,
+				to:             string(created.Rail0Contract),
 			}); err != nil {
 				return nil, err
 			}

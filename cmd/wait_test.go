@@ -346,3 +346,33 @@ func TestAnyInFlightIgnoresAnAbandonedPrepare(t *testing.T) {
 		}
 	}
 }
+
+// --until stops as soon as the target is out of reach, not only on a terminal status.
+func TestStatusCanReach(t *testing.T) {
+	cases := []struct {
+		from, to string
+		want     bool
+	}{
+		{"signed", "captured", true},
+		{"authorized", "refunded", true},
+		{"partially_captured", "captured", true},
+		{"expired", "released", true},
+		{"unsigned", "charged", true},
+		// the two scenarios that used to cost the whole deadline
+		{"captured", "authorized", false},
+		{"charged", "captured", false},
+		{"voided", "captured", false},
+		{"expired", "captured", false},
+		// a status the CLI does not know yet keeps the wait going
+		{"some_future_status", "captured", true},
+	}
+	for _, c := range cases {
+		if got := statusCanReach(c.from, c.to); got != c.want {
+			t.Errorf("statusCanReach(%q, %q) = %v, want %v", c.from, c.to, got, c.want)
+		}
+	}
+	msg := terminalMismatchError(&rail0.Payment{Status: "charged"}, "captured").Error()
+	if strings.Contains(msg, "terminal") || !strings.Contains(msg, "can no longer become captured") {
+		t.Errorf("a non-terminal mismatch must not claim terminality: %q", msg)
+	}
+}

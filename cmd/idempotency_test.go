@@ -59,6 +59,11 @@ func TestReplayedPastPending(t *testing.T) {
 			t.Errorf("status %q: replayedPastPending = %v, want %v", status, got, want)
 		}
 	}
+	// Pending but already signed and held by the gateway: the first attempt's submit
+	// landed, so a re-run must follow it, not sign it again (which answered 404).
+	if !replayedPastPending(&rail0.Transaction{ID: "tx-1", Status: "pending", Redrivable: true}) {
+		t.Error("a redrivable pending row is past the caller's part and must be followed")
+	}
 	// A refund phase-1 answer carries no row: never a replay.
 	if replayedPastPending(&rail0.Transaction{SigningPayload: &rail0.SigningPayload{}}) {
 		t.Error("a signing payload is not a replayed transaction")

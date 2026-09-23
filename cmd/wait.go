@@ -285,10 +285,19 @@ func interruptedError(checkCmd string) error {
 	return fmt.Errorf("%w while waiting — the operation is still in flight; check it with '%s'", ErrAborted, checkCmd)
 }
 
+// ErrWaitGaveUp marks a wait that ran out of time. It is a DECISION about the wait,
+// not a transport failure, and it must be recognisable as such: the message quotes the
+// last transient read error, and humanizeError/exitCode used to string-match that text
+// ("connection refused", "deadline exceeded") — replacing "may still be in flight" with
+// "can't reach the gateway" and exiting 9, the code a script reads as "nothing
+// happened, safe to retry". Retrying a capture that was in flight is the one wrong
+// answer, so both now return this error untouched and exit 1.
+var ErrWaitGaveUp = errors.New("stopped waiting")
+
 // gaveUpError names the deadline, refuses to imply the operation failed, and
 // carries the last transport error when the wait spent itself on blips.
 func gaveUpError(timeout time.Duration, checkCmd string, lastTransient error) error {
-	msg := fmt.Sprintf("stopped waiting after %s — the operation may still be in flight; check it with '%s'", timeout, checkCmd)
+	msg := fmt.Sprintf(" after %s — the operation may still be in flight; check it with '%s'", timeout, checkCmd)
 	// Name the usual cause, because the usual cause is not a problem: the gateway is
 	// notified only once the chain calls the block settled, which on a slow chain is
 	// minutes rather than seconds. Without this the message reads as "something is
@@ -297,7 +306,7 @@ func gaveUpError(timeout time.Duration, checkCmd string, lastTransient error) er
 	if lastTransient != nil {
 		msg += fmt.Sprintf(" (last read error: %v)", lastTransient)
 	}
-	return errors.New(msg)
+	return fmt.Errorf("%w%s", ErrWaitGaveUp, msg)
 }
 
 // terminalMismatchError is the answer to `--until captured` on a payment that

@@ -188,3 +188,21 @@ func TestExitCode429IsDistinct(t *testing.T) {
 		}
 	}
 }
+
+// A give-up that spent itself on transport blips quotes the last one. That text must
+// not turn the give-up into a network error: "may still be in flight" would become
+// "can't reach the gateway", and exit 9 reads to a script as "nothing happened, retry".
+func TestAGaveUpWaitIsNeverReportedAsANetworkError(t *testing.T) {
+	for _, blip := range []error{
+		errors.New("dial tcp 127.0.0.1:9292: connect: connection refused"),
+		errors.New("context deadline exceeded"),
+	} {
+		err := gaveUpError(time.Minute, "rail0 payments wait 0xabc", blip)
+		if got := humanizeError(err); !strings.Contains(got.Error(), "may still be in flight") {
+			t.Errorf("humanizeError rewrote the give-up (last error %q): %v", blip, got)
+		}
+		if code := exitCode(err); code != 1 {
+			t.Errorf("exit code for a give-up quoting %q = %d, want 1", blip, code)
+		}
+	}
+}

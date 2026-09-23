@@ -53,11 +53,14 @@ func tokenFilePath(baseURL string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	sum := sha256.Sum256([]byte(normalizeBaseURL(baseURL)))
+	sum := sha256.Sum256([]byte(NormalizeBaseURL(baseURL)))
 	return filepath.Join(dir, "tokens", hex.EncodeToString(sum[:8])), nil
 }
 
-func normalizeBaseURL(baseURL string) string {
+// NormalizeBaseURL is the one notion of "the same gateway": case, surrounding
+// space and trailing slashes do not change which session a URL names. Exported so
+// every comparison of base URLs agrees with the one the session store makes.
+func NormalizeBaseURL(baseURL string) string {
 	return strings.ToLower(strings.TrimRight(strings.TrimSpace(baseURL), "/"))
 }
 

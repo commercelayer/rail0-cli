@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/rail0/cli/internal/config"
@@ -319,5 +320,48 @@ func TestEnvSwitchDeclinedChangesNothing(t *testing.T) {
 	}
 	if token.Load(baseURL) == "" {
 		t.Error("the declined switch revoked the session it was going to leave")
+	}
+}
+
+// The session store treats `http://localhost:9292/` and `http://localhost:9292` as
+// one gateway; detectEnv must too, or switching to the environment you are already
+// on reads as "leaving custom" and revokes the session still in use.
+func TestEnvDetectIgnoresATrailingSlashAndCase(t *testing.T) {
+	isolate(t)
+	dev, _ := lookupEnv("development")
+	cfg := &config.Config{Settings: map[string]string{"base-url": dev.settings["base-url"] + "/"}}
+	if err := cfg.Save(); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	if env := detectEnv(); env != "development" {
+		t.Errorf("detectEnv with a trailing slash = %q, want development", env)
+	}
+}
+
+// With RAIL0_BASE_URL set the switch cannot take effect — the variable outranks the
+// file — so it must be refused before anything runs, instead of revoking the session
+// of the gateway every later command keeps using.
+func TestEnvSwitchRefusesWhileTheBaseURLIsOverridden(t *testing.T) {
+	isolate(t)
+	t.Setenv("RAIL0_BASE_URL", "https://rail0-gateway-staging.fly.dev")
+	if err := saveTokenForTest("header.payload.sig"); err != nil {
+		t.Fatalf("seed token: %v", err)
+	}
+
+	err := switchEnv("development", false)
+	if err == nil || !strings.Contains(err.Error(), "RAIL0_BASE_URL") {
+		t.Fatalf("switch under an override: err = %v, want a refusal naming RAIL0_BASE_URL", err)
+	}
+	if token.Load("https://rail0-gateway-staging.fly.dev") == "" {
+		t.Error("the refused switch deleted the session of the gateway still in use")
+	}
+	cfg, _ := config.Load()
+	if cfg.Settings["base-url"] != "" {
+		t.Errorf("a refused switch must not write the config, got %q", cfg.Settings["base-url"])
+	}
+
+	// An override that already points at the target changes nothing: allowed.
+	if err := switchEnv("staging", false); err != nil {
+		t.Errorf("switch to the environment the override names: %v", err)
 	}
 }

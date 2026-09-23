@@ -499,6 +499,12 @@ rail0 env current         # show the active environment
 rail0 env current -d      # ...with every parameter's effective value + origin
 ```
 
+A switch writes the config file, so it is **refused** while `--base-url` or
+`RAIL0_BASE_URL` points somewhere else: either one outranks the file, and the switch
+would change nothing the commands use. Unset the override, then switch. Base URLs are
+compared the way sessions are stored, so a trailing `/` or a different case does not
+make the current gateway look like a different one.
+
 After a switch the environment-managed settings are **exactly** the target's: a key
 the target does not declare is **removed**, not left behind. Applying an environment
 used to only write its own keys, so moving from `development` to `production` — which

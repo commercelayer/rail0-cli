@@ -84,8 +84,12 @@ func detectEnv() string {
 		return "custom"
 	}
 	got, _ := effectiveSetting(k)
+	// Compared as the session store compares them: `http://localhost:9292/` used to
+	// read as "custom", so switching to development revoked and deleted the live
+	// session of the very gateway the switch kept using.
+	got = token.NormalizeBaseURL(got)
 	for _, e := range environments {
-		if e.settings[envIdentityKey] == got {
+		if token.NormalizeBaseURL(e.settings[envIdentityKey]) == got {
 			return e.name
 		}
 	}
@@ -180,7 +184,8 @@ clear something names the values and asks first; --yes skips the prompt, and
 without a terminal the switch refuses rather than hanging.
 
 A stored value is still the lowest-priority source, so --base-url or
-RAIL0_BASE_URL override it for a single command.`,
+RAIL0_BASE_URL override it for a single command — and while either one points at
+a different gateway, a switch is refused: it could not take effect.`,
 	Example: `  rail0 env                 # list the environments, marking the current one
   rail0 env -d              # ...with the parameters each one declares
   rail0 env staging         # switch to staging
@@ -249,6 +254,9 @@ func environmentRows(details bool) []map[string]any {
 func switchEnv(name string, details bool) error {
 	e, err := lookupEnv(name)
 	if err != nil {
+		return err
+	}
+	if err := refuseOverriddenSwitch(e); err != nil {
 		return err
 	}
 	// BEFORE the base URL moves: end the session on the gateway we are LEAVING.
@@ -331,6 +339,29 @@ func switchEnv(name string, details bool) error {
 		fmt.Fprintln(os.Stderr, "No session for this gateway. "+loginHint)
 	}
 	return ui.RunAPI(func() (any, error) { return switchResult(name, details, revoked, loggedIn, cleared), nil })
+}
+
+// refuseOverriddenSwitch stops a switch that could not take effect. `env` writes the
+// config FILE, but --base-url and RAIL0_BASE_URL outrank the file, so with either set
+// the switch changed nothing the commands use — while detectEnv, which resolves the
+// effective URL, still revoked and deleted the session of the overriding gateway: the
+// one every later command kept talking to. Refused before any side effect, naming the
+// override to remove. An override that already points at the target is harmless.
+func refuseOverriddenSwitch(e environment) error {
+	k, err := lookupKey(envIdentityKey)
+	if err != nil {
+		return err
+	}
+	value, origin := effectiveSetting(k)
+	if origin == "config file" || origin == "default" {
+		return nil
+	}
+	if token.NormalizeBaseURL(value) == token.NormalizeBaseURL(e.settings[envIdentityKey]) {
+		return nil
+	}
+	return fmt.Errorf("cannot switch to %q: %s is set by %s, which overrides the config file — "+
+		"the switch would change nothing the commands use; remove the override and retry",
+		e.name, envIdentityKey, origin)
 }
 
 // hasLiveSession reports whether the CURRENT gateway has a usable session: a

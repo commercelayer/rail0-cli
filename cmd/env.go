@@ -130,13 +130,19 @@ var envCmd = &cobra.Command{
 	Short: "Switch the active environment (development/staging/production) in one shot",
 	Long: `Switch a bundle of CLI settings at once by selecting an environment.
 
-Run bare to list the environments and their parameters, with the current one
-marked. Pass a name to switch: it writes that environment's settings (today just
-base-url) to the config file, so every command uses them.
+Run bare to list the selectable environments, with the current one marked; add
+--details to also print the parameters each one declares. Pass a name to switch:
+it writes that environment's settings to the config file, so every command uses
+them.
+
+The bundle is base-url plus, on development and staging, chain-id and token — so
+a switch moves the default chain and token as well as the gateway. 'env <name>
+--details' prints what it ended up with.
 
 A stored value is still the lowest-priority source, so --base-url or
 RAIL0_BASE_URL override it for a single command.`,
-	Example: `  rail0 env                 # list environments, marking the current one
+	Example: `  rail0 env                 # list the environments, marking the current one
+  rail0 env -d              # ...with the parameters each one declares
   rail0 env staging         # switch to staging
   rail0 env staging -d      # ...and also print the resulting parameters
   rail0 env current         # show the active environment
@@ -156,25 +162,43 @@ RAIL0_BASE_URL override it for a single command.`,
 	},
 	RunE: func(_ *cobra.Command, args []string) error {
 		if len(args) == 0 {
-			return listEnvironments()
+			return listEnvironments(envDetails)
 		}
 		return switchEnv(args[0], envDetails)
 	},
 }
 
-// listEnvironments renders every environment with its declared parameters and a
-// `current` flag marking the active one.
-func listEnvironments() error {
+// listEnvironments names the selectable environments and marks the active one,
+// adding each one's declared parameters only under --details.
+//
+// The bare listing used to dump every environment's full settings map, which
+// made -d mean nothing here while it meant "add the parameters" on both `env
+// <name>` and `env current`. A persistent flag that changes two of the three
+// commands it is attached to is worse than no flag: the reader cannot tell
+// whether the detail they are looking at is the flag's doing or the command's.
+// Answering "which environments can I pick?" is what the bare form is for.
+func listEnvironments(details bool) error {
+	rows := environmentRows(details)
+	return ui.RunAPI(func() (any, error) { return rows, nil })
+}
+
+// environmentRows builds the listing. Pure and separate from the rendering for
+// the same reason switchResult and envParamRows are: the -d gating is what the
+// test pins, and it should not have to capture stdout to do it.
+func environmentRows(details bool) []map[string]any {
 	current := detectEnv()
 	rows := make([]map[string]any, 0, len(environments))
 	for _, e := range environments {
-		rows = append(rows, map[string]any{
-			"env":      e.name,
-			"settings": e.settings,
-			"current":  e.name == current,
-		})
+		row := map[string]any{
+			"env":     e.name,
+			"current": e.name == current,
+		}
+		if details {
+			row["settings"] = e.settings
+		}
+		rows = append(rows, row)
 	}
-	return ui.RunAPI(func() (any, error) { return rows, nil })
+	return rows
 }
 
 // switchEnv applies an environment's settings to the config file. Each value is

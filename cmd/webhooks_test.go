@@ -1,9 +1,14 @@
 package cmd
 
 import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
+	rail0 "github.com/commercelayer/rail0-go"
 	"github.com/spf13/cobra"
 )
 
@@ -101,5 +106,35 @@ func TestDestructiveWebhookCommandsRefuseWithoutATTY(t *testing.T) {
 		if !strings.Contains(err.Error(), "refusing to run without confirmation") {
 			t.Errorf("%s: failed for the wrong reason (want the confirmation gate): %v", tc.name, err)
 		}
+	}
+}
+
+// A delivery row stores the payment's UUID, so the 0x rail0 id every other command
+// takes must be resolved before it reaches the filter — sent as-is it failed the whole
+// query. A UUID passes through without a lookup.
+func TestEventCallbackPaymentIDResolvesARail0ID(t *testing.T) {
+	var lookups int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		lookups++
+		if r.URL.Path != "/payments/0xabc" {
+			t.Errorf("unexpected request %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"id": "7f1c0c8e-uuid", "rail0_id": "0xabc"})
+	}))
+	defer srv.Close()
+	client := rail0.NewClient(rail0.ClientOptions{BaseURL: srv.URL})
+
+	got, err := eventCallbackPaymentID(context.Background(), client, "0xabc")
+	if err != nil || got != "7f1c0c8e-uuid" {
+		t.Fatalf("0x id: got %q err %v, want the payment's UUID", got, err)
+	}
+	for _, passthrough := range []string{"", "7f1c0c8e-uuid"} {
+		if got, err := eventCallbackPaymentID(context.Background(), client, passthrough); err != nil || got != passthrough {
+			t.Errorf("%q: got %q err %v, want it untouched", passthrough, got, err)
+		}
+	}
+	if lookups != 1 {
+		t.Errorf("lookups = %d, want 1 (only the 0x id needs one)", lookups)
 	}
 }

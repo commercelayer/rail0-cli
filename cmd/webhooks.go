@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	rail0 "github.com/commercelayer/rail0-go"
 	"github.com/rail0/cli/internal/ui"
@@ -311,13 +312,37 @@ topic matches), and if it is, what is the receiver returning.
 			Sort:      webhooksEventsSort,
 		}
 		return ui.RunAPI(func() (any, error) {
-			resp, err := newReadClient().Webhooks.EventCallbacks(context.Background(), args[0], p)
+			ctx := context.Background()
+			client := newReadClient()
+			paymentID, err := eventCallbackPaymentID(ctx, client, p.PaymentID)
+			if err != nil {
+				return nil, err
+			}
+			p.PaymentID = paymentID
+			resp, err := client.Webhooks.EventCallbacks(ctx, args[0], p)
 			if err != nil {
 				return nil, err
 			}
 			return resp.Data, nil // bare array; pagination is in headers
 		})
 	},
+}
+
+// eventCallbackPaymentID turns --payment-id into what the gateway filters on: the
+// payment's UUID. A delivery row stores that id, and the gateway compares the value
+// against a uuid column as-is, so the 0x rail0 id — the one every other command takes,
+// and the one this command's own example showed — failed the whole query instead of
+// matching. A 0x id is resolved through the payment itself; anything else passes
+// through untouched.
+func eventCallbackPaymentID(ctx context.Context, client *rail0.Client, id string) (string, error) {
+	if !strings.HasPrefix(id, "0x") {
+		return id, nil
+	}
+	payment, err := client.Payments.Get(ctx, id)
+	if err != nil {
+		return "", fmt.Errorf("resolve --payment-id %s: %w", shortID(id), err)
+	}
+	return payment.ID, nil
 }
 
 // ── webhooks delete ──────────────────────────────────────────────────────────────
@@ -395,9 +420,9 @@ func init() {
 	webhooksCmd.AddCommand(webhooksRotateSecretCmd)
 	webhooksCmd.AddCommand(webhooksResetCircuitCmd)
 
-	webhooksEventCallbacksCmd.Flags().StringVar(&webhooksEventsStatus, "status", "", "Filter by delivery status ('pending', 'delivered', 'failed')")
+	webhooksEventCallbacksCmd.Flags().StringVar(&webhooksEventsStatus, "status", "", "Filter by delivery status ('delivered', 'failed')")
 	webhooksEventCallbacksCmd.Flags().StringVar(&webhooksEventsTopic, "topic", "", "Filter by event topic (e.g. payments.captured)")
-	webhooksEventCallbacksCmd.Flags().StringVar(&webhooksEventsPaymentID, "payment-id", "", "Filter by the payment the delivery is for")
+	webhooksEventCallbacksCmd.Flags().StringVar(&webhooksEventsPaymentID, "payment-id", "", "Filter by the payment the delivery is for (its id or 0x rail0 id)")
 	webhooksEventCallbacksCmd.Flags().StringVar(&webhooksEventsSince, "since", "", "Only deliveries at/after this ISO-8601 time")
 	webhooksEventCallbacksCmd.Flags().StringVar(&webhooksEventsUntil, "until", "", "Only deliveries at/before this ISO-8601 time")
 	webhooksEventCallbacksCmd.Flags().StringVar(&webhooksEventsSort, "sort", "", "Sort fields (e.g. -created_at)")

@@ -1,7 +1,11 @@
 package cmd
 
 import (
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/rail0/cli/internal/config"
 	"github.com/rail0/cli/internal/token"
@@ -319,5 +323,100 @@ func TestEnvSwitchDeclinedChangesNothing(t *testing.T) {
 	}
 	if token.Load(baseURL) == "" {
 		t.Error("the declined switch revoked the session it was going to leave")
+	}
+}
+
+// The session store treats `http://localhost:9292/` and `http://localhost:9292` as
+// one gateway; detectEnv must too, or switching to the environment you are already
+// on reads as "leaving custom" and revokes the session still in use.
+func TestEnvDetectIgnoresATrailingSlashAndCase(t *testing.T) {
+	isolate(t)
+	dev, _ := lookupEnv("development")
+	cfg := &config.Config{Settings: map[string]string{"base-url": dev.settings["base-url"] + "/"}}
+	if err := cfg.Save(); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	if env := detectEnv(); env != "development" {
+		t.Errorf("detectEnv with a trailing slash = %q, want development", env)
+	}
+}
+
+// With RAIL0_BASE_URL set the switch cannot take effect — the variable outranks the
+// file — so it must be refused before anything runs, instead of revoking the session
+// of the gateway every later command keeps using.
+func TestEnvSwitchRefusesWhileTheBaseURLIsOverridden(t *testing.T) {
+	isolate(t)
+	t.Setenv("RAIL0_BASE_URL", "https://rail0-gateway-staging.fly.dev")
+	if err := saveTokenForTest("header.payload.sig"); err != nil {
+		t.Fatalf("seed token: %v", err)
+	}
+
+	err := switchEnv("development", false)
+	if err == nil || !strings.Contains(err.Error(), "RAIL0_BASE_URL") {
+		t.Fatalf("switch under an override: err = %v, want a refusal naming RAIL0_BASE_URL", err)
+	}
+	if token.Load("https://rail0-gateway-staging.fly.dev") == "" {
+		t.Error("the refused switch deleted the session of the gateway still in use")
+	}
+	cfg, _ := config.Load()
+	if cfg.Settings["base-url"] != "" {
+		t.Errorf("a refused switch must not write the config, got %q", cfg.Settings["base-url"])
+	}
+
+	// An override that already points at the target changes nothing: allowed.
+	if err := switchEnv("staging", false); err != nil {
+		t.Errorf("switch to the environment the override names: %v", err)
+	}
+}
+
+// The --base-url FLAG outranks the file just as RAIL0_BASE_URL does, so it must
+// refuse a switch that could not take effect — and say which override to remove.
+func TestEnvSwitchRefusesWhileTheBaseURLFlagIsSet(t *testing.T) {
+	isolate(t)
+	baseURL = "https://rail0-gateway-staging.fly.dev"
+	t.Cleanup(func() { baseURL = "" })
+
+	err := switchEnv("development", false)
+	if err == nil || !strings.Contains(err.Error(), "--base-url") {
+		t.Fatalf("switch under --base-url: err = %v, want a refusal naming the flag", err)
+	}
+	if cfg, _ := config.Load(); cfg.Settings["base-url"] != "" {
+		t.Errorf("a refused switch must not write the config, got %q", cfg.Settings["base-url"])
+	}
+	// The same URL, spelled with a trailing slash and upper case, names the target.
+	baseURL = "HTTPS://rail0-gateway-staging.fly.dev/"
+	if err := switchEnv("staging", false); err != nil {
+		t.Errorf("an override naming the target (normalised) must be allowed: %v", err)
+	}
+}
+
+// A switch whose config save FAILS must leave the session of the gateway you are still
+// on alone. It used to revoke first and save second, so a failed save logged you out of
+// the environment you had not left.
+func TestEnvSwitchThatCannotSaveKeepsTheSession(t *testing.T) {
+	isolate(t)
+	isolateTokenStore(t)
+	if os.Geteuid() == 0 {
+		t.Skip("root writes a read-only directory")
+	}
+	staging := "https://rail0-gateway-staging.fly.dev"
+	if err := (&config.Config{Settings: map[string]string{"base-url": staging}}).Save(); err != nil {
+		t.Fatal(err)
+	}
+	if err := token.Save(staging, makeJWT(t, map[string]any{"sub": "0xme", "exp": time.Now().Add(time.Hour).Unix()})); err != nil {
+		t.Fatal(err)
+	}
+	path, _ := config.Path()
+	dir := filepath.Dir(path)
+	if err := os.Chmod(dir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+
+	if err := switchEnv("development", false); err == nil {
+		t.Fatal("the switch must fail when the config cannot be written")
+	}
+	if token.Load(staging) == "" {
+		t.Error("a switch that did not happen revoked the session of the gateway still in use")
 	}
 }

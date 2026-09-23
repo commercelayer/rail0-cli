@@ -18,6 +18,11 @@ func humanizeError(err error) error {
 	if err == nil {
 		return nil
 	}
+	// A give-up quotes the last transport error it saw; that text must not be
+	// mistaken for the error itself. See ErrWaitGaveUp.
+	if errors.Is(err, ErrWaitGaveUp) {
+		return err
+	}
 	base := resolveBaseURL()
 
 	// API responded with a non-2xx — map the common statuses to a hint.
@@ -145,6 +150,7 @@ var errorHints = map[string]string{
 	"already_disputed":             "a dispute is already open — close it with 'rail0 payments dispute close <id>' first",
 	"not_disputed":                 "there is no open dispute to close",
 	"nothing_to_dispute":           "a dispute needs a merchant-held (refundable) balance",
+	"not_redrivable":               "only a pending transaction the gateway holds SIGNED can be redriven — check 'redrivable' in 'rail0 payments transaction <id> <transaction_id>'; an unsigned one needs the operation re-run",
 	"transaction_not_overwritable": "a transaction for this operation is already in flight — wait for it with 'rail0 payments wait <id>'",
 	"signer_mismatch":              "the signing key doesn't match the payment's payer/payee — use the right wallet's key",
 	// The SIWE BINDING failures, split out of signer_mismatch (gateway #216). These
@@ -235,12 +241,17 @@ const ExitCodeRateLimited = 10
 // exitCode maps an error to a distinct process exit status so scripts can branch
 // on the class of failure: 3 auth, 4 forbidden, 5 not-found, 6 conflict,
 // 7 rejected (422), 8 upstream (5xx), 9 network, 10 rate-limited,
-// 130 user-cancelled, 1 otherwise.
+// 130 user-cancelled, 1 otherwise (including a --wait that gave up).
 func exitCode(err error) int {
 	// Checked before the API/transport classification: a cancellation is not a
 	// failure of the request, and may not even have made one.
 	if errors.Is(err, ErrAborted) {
 		return ExitCodeAborted
+	}
+	// Not a network failure, whatever read error the message quotes: the operation
+	// may be in flight, so this must never read as "safe to retry" (9).
+	if errors.Is(err, ErrWaitGaveUp) {
+		return 1
 	}
 
 	var apiErr *rail0.APIError

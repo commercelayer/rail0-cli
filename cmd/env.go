@@ -84,8 +84,12 @@ func detectEnv() string {
 		return "custom"
 	}
 	got, _ := effectiveSetting(k)
+	// Compared as the session store compares them: `http://localhost:9292/` used to
+	// read as "custom", so switching to development revoked and deleted the live
+	// session of the very gateway the switch kept using.
+	got = token.NormalizeBaseURL(got)
 	for _, e := range environments {
-		if e.settings[envIdentityKey] == got {
+		if token.NormalizeBaseURL(e.settings[envIdentityKey]) == got {
 			return e.name
 		}
 	}
@@ -180,7 +184,8 @@ clear something names the values and asks first; --yes skips the prompt, and
 without a terminal the switch refuses rather than hanging.
 
 A stored value is still the lowest-priority source, so --base-url or
-RAIL0_BASE_URL override it for a single command.`,
+RAIL0_BASE_URL override it for a single command — and while either one points at
+a different gateway, a switch is refused: it could not take effect.`,
 	Example: `  rail0 env                 # list the environments, marking the current one
   rail0 env -d              # ...with the parameters each one declares
   rail0 env staging         # switch to staging
@@ -251,14 +256,20 @@ func switchEnv(name string, details bool) error {
 	if err != nil {
 		return err
 	}
+	if err := refuseOverriddenSwitch(e); err != nil {
+		return err
+	}
 	// BEFORE the base URL moves: end the session on the gateway we are LEAVING.
 	// Tokens are stored per gateway, so a switch used to simply orphan the old
 	// one — a bearer credential left on disk, valid on that gateway until its
 	// `exp` (24h), for a session nobody is watching any more. Revoking puts its
 	// jti in the gateway's denylist, so the file left behind is worthless.
 	//
-	// Deliberately before cfg.Save(): revokeCurrentSession resolves the CURRENT
-	// base URL, and after the save that would be the new environment's.
+	// AFTER cfg.Save(), on the base URL captured before it. It used to run before the
+	// save because revokeCurrentSession resolved the CURRENT base URL — and then a
+	// failed save left you logged out of the environment you had not left. Now the
+	// gateway being left is captured first, the switch is saved, and only then is that
+	// gateway's session ended.
 	//
 	// Only when there IS somewhere to leave. This ran unconditionally, so switching
 	// to the environment you were already on logged you out of it: nothing was
@@ -273,7 +284,7 @@ func switchEnv(name string, details bool) error {
 	// state a same-environment switch is in: the session it would have revoked is
 	// the one still in use.
 	// The config is loaded, and the clearing CONFIRMED, before anything with a
-	// side effect runs. revokeCurrentSession below ends a session on the gateway
+	// side effect runs. revokeSession below ends a session on the gateway
 	// being left, which cannot be undone — so asking afterwards would mean a
 	// declined switch had already logged you out of the environment you chose to
 	// stay in.
@@ -303,10 +314,8 @@ func switchEnv(name string, details bool) error {
 		}
 	}
 
-	var revoked sessionRevocation
-	if detectEnv() != name {
-		revoked = revokeCurrentSession()
-	}
+	leaving := resolveBaseURL()
+	leavingSomewhere := detectEnv() != name
 	for key, value := range e.settings {
 		k, err := lookupKey(key)
 		if err != nil {
@@ -322,6 +331,10 @@ func switchEnv(name string, details bool) error {
 	if err := cfg.Save(); err != nil {
 		return err
 	}
+	var revoked sessionRevocation
+	if leavingSomewhere {
+		revoked = revokeSession(leaving)
+	}
 	// AFTER the save, so resolveBaseURL() is the environment we just moved to.
 	// Sessions are per gateway, so arriving somewhere unauthenticated is the norm
 	// after a switch — and it used to be completely silent: the next command failed
@@ -331,6 +344,29 @@ func switchEnv(name string, details bool) error {
 		fmt.Fprintln(os.Stderr, "No session for this gateway. "+loginHint)
 	}
 	return ui.RunAPI(func() (any, error) { return switchResult(name, details, revoked, loggedIn, cleared), nil })
+}
+
+// refuseOverriddenSwitch stops a switch that could not take effect. `env` writes the
+// config FILE, but --base-url and RAIL0_BASE_URL outrank the file, so with either set
+// the switch changed nothing the commands use — while detectEnv, which resolves the
+// effective URL, still revoked and deleted the session of the overriding gateway: the
+// one every later command kept talking to. Refused before any side effect, naming the
+// override to remove. An override that already points at the target is harmless.
+func refuseOverriddenSwitch(e environment) error {
+	k, err := lookupKey(envIdentityKey)
+	if err != nil {
+		return err
+	}
+	value, origin := effectiveSetting(k)
+	if origin == "config file" || origin == "default" {
+		return nil
+	}
+	if token.NormalizeBaseURL(value) == token.NormalizeBaseURL(e.settings[envIdentityKey]) {
+		return nil
+	}
+	return fmt.Errorf("cannot switch to %q: %s is set by %s, which overrides the config file — "+
+		"the switch would change nothing the commands use; remove the override and retry",
+		e.name, envIdentityKey, origin)
 }
 
 // hasLiveSession reports whether the CURRENT gateway has a usable session: a
@@ -367,7 +403,11 @@ type sessionRevocation struct {
 // and the outcome is reported so the operator knows whether the old JWT is dead
 // or merely abandoned.
 func revokeCurrentSession() sessionRevocation {
-	baseURL := resolveBaseURL()
+	return revokeSession(resolveBaseURL())
+}
+
+// revokeSession is revokeCurrentSession for a named gateway — see newClientFor.
+func revokeSession(baseURL string) sessionRevocation {
 	stored := token.Load(baseURL)
 	if stored == "" {
 		return sessionRevocation{}
@@ -379,7 +419,7 @@ func revokeCurrentSession() sessionRevocation {
 	if _, err := parseJWTClaims(stored); err != nil {
 		out.Why = "the stored session had already expired"
 	} else {
-		res, err := newClient().Auth.Logout(context.Background())
+		res, err := newClientFor(baseURL).Auth.Logout(context.Background())
 		switch {
 		case err != nil:
 			out.Why = fmt.Sprintf("could not reach %s to revoke it (%s)", baseURL, humanizeError(err))

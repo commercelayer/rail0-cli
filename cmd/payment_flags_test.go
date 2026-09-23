@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	rail0 "github.com/commercelayer/rail0-go"
+	"github.com/rail0/cli/internal/config"
 )
 
 // The interactive create form must prompt only for the required fields not
@@ -205,6 +206,33 @@ func TestBuildRejectsSelfPayment(t *testing.T) {
 	f = createPaymentFlags{paymentFile: write(self, other)}
 	if _, err := f.build(); err != nil {
 		t.Fatalf("unexpected error for distinct payer/payee: %v", err)
+	}
+}
+
+// An @alias in a payment file passes validation, so it must also be RESOLVED: the
+// request used to go out with the literal "@buyer", and the signer check then said
+// the key "does not match the payer @buyer" — which reads like a wrong key.
+func TestBuildResolvesAliasesInAPaymentFile(t *testing.T) {
+	isolate(t)
+	buyer := "0x" + strings.Repeat("ab", 20)
+	merchant := "0x" + strings.Repeat("cd", 20)
+	cfg := &config.Config{Aliases: map[string]string{"buyer": buyer, "merchant": merchant}}
+	if err := cfg.Save(); err != nil {
+		t.Fatalf("save aliases: %v", err)
+	}
+	p := filepath.Join(t.TempDir(), "pay.json")
+	body := `{"chain_id":5042002,"mode":"authorize","amount":"1.00",` +
+		`"token":"0x3600000000000000000000000000000000000000","payer":"@buyer","payee":"@merchant"}`
+	if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	req, err := (&createPaymentFlags{paymentFile: p}).build()
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	if string(req.Payer) != buyer || string(req.Payee) != merchant {
+		t.Errorf("payer/payee = %s/%s, want the aliases resolved to %s/%s", req.Payer, req.Payee, buyer, merchant)
 	}
 }
 

@@ -50,8 +50,45 @@ Use 'rail0 <command> --help' for detailed usage of any command.`,
 }
 
 func Execute() {
+	rejectUnknownSubcommands(rootCmd)
 	if err := rootCmd.Execute(); err != nil {
 		ui.FatalCode(humanizeError(err), exitCode(err))
+	}
+}
+
+// rejectUnknownSubcommands makes every pure group command (`auth`, `webhooks`, `keys`,
+// …: subcommands, no action of its own) fail on an argument it does not recognise.
+//
+// cobra reports an unknown command only at the ROOT. Below it, a group with no Run
+// just prints its help and exits 0, so `rail0 webhooks lsit` or `rail0 auth logn`
+// "succeeded" — and a script with a typo carried on as if the step had run. The bare
+// group still prints its help and exits 0; only a stray argument is an error, with
+// cobra's own did-you-mean suggestions.
+//
+// Applied at Execute rather than in each file's init so a group added later is
+// covered without remembering to, and so the generated reference (bin/docs, which
+// walks the tree without executing it) keeps describing the groups as groups.
+func rejectUnknownSubcommands(cmd *cobra.Command) {
+	for _, sub := range cmd.Commands() {
+		rejectUnknownSubcommands(sub)
+	}
+	if cmd == cmd.Root() || !cmd.HasSubCommands() || cmd.Run != nil || cmd.RunE != nil {
+		return
+	}
+	// cobra defaults the distance only for the root's own lookup; a group left at 0
+	// would suggest nothing but exact matches.
+	if cmd.SuggestionsMinimumDistance <= 0 {
+		cmd.SuggestionsMinimumDistance = 2
+	}
+	cmd.RunE = func(c *cobra.Command, args []string) error {
+		if len(args) == 0 {
+			return c.Help()
+		}
+		msg := fmt.Sprintf("unknown command %q for %q", args[0], c.CommandPath())
+		if suggestions := c.SuggestionsFor(args[0]); len(suggestions) > 0 {
+			msg += "\n\nDid you mean this?\n\t" + strings.Join(suggestions, "\n\t")
+		}
+		return fmt.Errorf("%s\n\nRun '%s --help' for usage", msg, c.CommandPath())
 	}
 }
 
@@ -117,7 +154,13 @@ func assignGroup(id string, cmds ...*cobra.Command) {
 // A static header cannot be replaced that way, and seeding one from a STALE cached
 // token was worse than seeding nothing — it kept being sent. (#59)
 func newClient() *rail0.Client {
-	baseURL := resolveBaseURL()
+	return newClientFor(resolveBaseURL())
+}
+
+// newClientFor is newClient for a named gateway rather than the current one — for the
+// one call that must reach a gateway the configuration has already moved away from:
+// revoking the session `env` just left.
+func newClientFor(baseURL string) *rail0.Client {
 	opts := rail0.ClientOptions{
 		BaseURL: baseURL,
 		Token:   token.Load(baseURL),
@@ -216,14 +259,39 @@ func applyOutputMode() {
 	ui.SetQuiet(mode == "quiet")
 }
 
+// sessionReuseMargin is how long a cached session must still have to live before a
+// signing command reuses it rather than signing in afresh.
+//
+// Merely "not expired yet" was the test, so a token with seconds left was reused and
+// the 401 could arrive partway through prepare → sign → submit → wait — after the
+// broadcast, turning an operation that went out into an error. A fresh sign-in costs
+// one signature with a key the command already holds, so the margin is generous: a
+// minute for the round-trips, plus the whole --wait budget when the command will
+// poll, since those reads use the same session.
+func sessionReuseMargin() time.Duration {
+	margin := time.Minute
+	if waitFlag {
+		margin += waitTimeout
+	}
+	return margin
+}
+
+// sessionOutlives reports whether the claims' exp is more than margin away. Callers
+// pass claims parseJWTClaims accepted, so exp is known to be numeric.
+func sessionOutlives(claims map[string]any, margin time.Duration) bool {
+	exp, _ := claims["exp"].(float64)
+	return time.Unix(int64(exp), 0).After(time.Now().Add(margin))
+}
+
 // ensureSession guarantees a valid SIWE session whose address matches `addr`
 // before a write to /payments. The gateway now gates every /payments endpoint on
 // a session, and `create` additionally requires the payer to BE the authenticated
 // address — so this signs in with the caller's key (the same key the command
 // signs the payload with, hence the session address == addr) when the stored
-// token is missing, expired, or for a different address. A no-op when already
-// logged in as `addr`. The token is saved so follow-up reads (e.g. payments get)
-// reuse the session.
+// token is missing, expired, too close to expiry (sessionReuseMargin), or for a
+// different address. A no-op when already logged in as `addr`. The token is saved
+// so follow-up reads (e.g. payments get) reuse the session — replacing an expiring
+// one for the same address, but never another address's (see below).
 //
 // It signs in through the CALLER'S client, which is the whole point of taking one.
 // It used to log in on a throwaway `rail0.NewClient(...)`, so Auth.Login stashed the
@@ -237,14 +305,21 @@ func ensureSession(ctx context.Context, client *rail0.Client, keyHex, addr strin
 	// persist this one — see the token.Save call below (#95).
 	otherSessionStored := false
 	if t := token.Load(baseURL); t != "" {
-		// No expiry re-check here: parseJWTClaims returns an error for an expired
-		// token, so a nil error already means the session is live. (#71)
+		// parseJWTClaims already rejects an expired token (#71); on top of that the
+		// session must OUTLIVE the command about to use it — see sessionReuseMargin.
 		if claims, err := parseJWTClaims(t); err == nil {
 			sub, _ := claims["sub"].(string)
-			if strings.EqualFold(sub, addr) {
+			sameAddress := strings.EqualFold(sub, addr)
+			if sameAddress && sessionOutlives(claims, sessionReuseMargin()) {
 				return nil
 			}
-			otherSessionStored = true
+			// Only a session for ANOTHER address is protected from eviction. The
+			// same address's session, merely too close to expiry, is this machine's
+			// session being renewed: replacing it is the point. Treating it as
+			// "other" signed in afresh on every -w command near expiry, printed "for
+			// this command only", and never saved the new token — so the next
+			// command did it all again, until the stored one finally lapsed.
+			otherSessionStored = !sameAddress
 		}
 	}
 	privKey, err := rail0.HexToPrivateKey(keyHex)
@@ -331,9 +406,15 @@ func resolveBaseURL() string {
 // development`), so failing them on the very value they exist to fix would lock the
 // CLI out of its own recovery path. Verified against the newClient() call sites —
 // none of these trees has one.
+//
+// `version` and `token` read nothing but local state. `init` is the guided repair
+// path itself: the only gateway it talks to is the one its env step just validated.
+// cobra's hidden `__complete` / `__completeNoDesc` serve TAB completion, which a bad
+// base URL used to break outright — every completion returned the validation error.
 var localOnlyCommands = map[string]bool{
 	"config": true, "env": true, "keys": true, "aliases": true,
-	"help": true, "completion": true,
+	"help": true, "completion": true, "version": true, "token": true, "init": true,
+	cobra.ShellCompRequestCmd: true, cobra.ShellCompNoDescRequestCmd: true,
 }
 
 // topLevelName returns the first-level command `cmd` sits under — "payments" for

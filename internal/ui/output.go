@@ -183,6 +183,15 @@ func printQuiet(v any) error {
 			}
 			return nil
 		}
+		// A one-time secret outranks every id. `webhooks create` and `rotate-secret`
+		// return the shared secret exactly once — the gateway keeps only a hash — so
+		// printing the id alone threw away the one value no command can show again,
+		// and after a rotation the old secret is already dead. The id is recoverable
+		// (`webhooks list`); the secret is not.
+		if secret, ok := m["shared_secret"].(string); ok && secret != "" {
+			fmt.Println(secret)
+			return nil
+		}
 		if id := quietID(m); id != "" {
 			fmt.Println(id)
 			return nil

@@ -120,3 +120,24 @@ func TestRedactBodyHandlesNil(t *testing.T) {
 		t.Errorf("redactBody(nil) = %v, want nil", got)
 	}
 }
+
+// A refund's unsigned transaction carries the payee's EIP-3009 v/r/s in its
+// calldata — the bytes `signature` is redacted to protect. That calldata is hidden;
+// every other field, and every other operation's calldata, stays visible.
+func TestRedactBodyHidesARefundsCalldataOnly(t *testing.T) {
+	const calldata = "0x7d3c1f2a00000000000000000000000000000000000000000000000000000000beef1b"
+	unsigned := `{"chain_id":84532,"to":"0x2222222222222222222222222222222222222222","data":"` + calldata + `"}`
+
+	refund := asJSON(t, redactBody(rail0.Transaction{ID: "tx-1", Operation: "refund", UnsignedTransaction: unsigned}))
+	if strings.Contains(refund, calldata) {
+		t.Errorf("the refund calldata reached the log: %s", refund)
+	}
+	if !strings.Contains(refund, "84532") || !strings.Contains(refund, "0x2222222222222222222222222222222222222222") {
+		t.Errorf("the rest of the refund transaction must stay visible: %s", refund)
+	}
+
+	capture := asJSON(t, redactBody(rail0.Transaction{ID: "tx-2", Operation: "capture", UnsignedTransaction: unsigned}))
+	if !strings.Contains(capture, calldata) {
+		t.Errorf("a capture's calldata holds no signature and must stay visible: %s", capture)
+	}
+}

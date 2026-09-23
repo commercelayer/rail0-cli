@@ -19,7 +19,11 @@ deliberate second partial capture, because by then the first transaction has lef
 rail0 payments capture <id> --amount 50.00 --idempotency-key "$ORDER_ID"
 ```
 
-With a key, a re-run returns the first transaction and nothing moves. The same key with
+With a key, a re-run returns the first transaction and nothing moves: the CLI does not
+sign or broadcast it again, and with `--wait` it waits on that original transaction. If
+the first attempt never got as far as broadcasting, the re-run finishes it; if it
+**failed** on-chain, the re-run exits non-zero with the decoded reason, and retrying
+needs a **new** key — the old one can only bring the failed attempt back. The same key with
 a different amount is refused `422 idempotency_key_reused`, so a key you forgot to
 rotate is reported rather than silently honoured. Keys are scoped to the payment.
 
@@ -353,8 +357,11 @@ rail0 env staging      # rewrites the file, valid
 
 ### Amounts and expiries in the output
 
-Every amount the CLI prints carries a **human companion** next to the raw value:
-`amount_human`, `capturable_amount_human`, `refundable_amount_human`. The two expiries
+Every payment the CLI prints — `payments get`, `payments list` (one page or `--all`),
+the lifecycle commands — carries a **human companion** next to each raw amount:
+`amount_human`, `capturable_amount_human`, `refundable_amount_human`. Transaction rows
+(`payments transactions`, `payments transaction`) carry `amount_human` too, on their
+payment's scale; their gas figures stay in the chain's native wei. The two expiries
 get `authorization_expiry_at` / `refund_expiry_at` (RFC3339) and
 `authorization_expires_in` / `refund_expires_in` ("2h 5m", or "expired") beside the raw
 epoch integers.
@@ -373,10 +380,16 @@ payment picker, which has no script to keep compatible, instead labels it
 transaction hash, else `id`; one per line for a list), so you can capture it
 directly: `id=$(rail0 payments create … -q)`.
 
+The one exception is a response carrying a **one-time secret**: `webhooks create` and
+`webhooks rotate-secret` print the `shared_secret` under `-q`, because it is shown only
+once and the id can be looked up again with `webhooks list`:
+`secret=$(rail0 webhooks rotate-secret <id> -q)`.
+
 Exit codes distinguish the failure class: `0` success, `3` unauthorized, `4`
 forbidden, `5` not found, `6` conflict, `7` rejected (422), `8` gateway error
 (5xx), `9` network, `10` rate-limited (429), `130` cancelled by the user, `1`
-otherwise.
+otherwise — including a `--wait` that ran out of time, even when its last poll hit a
+network error: the operation may still be in flight, so it never exits `9`.
 
 `10` is the one class where re-running the identical command later is the correct
 response, which is why it is not folded into the generic failure.
@@ -401,8 +414,9 @@ A failed transaction shows the same code and sentence in `rail0 payments
 transactions <id>`, whether it reverted on-chain or was refused before broadcast.
 
 The list commands (`payments list`, `payments transactions`, `payments disputes`,
-`webhooks list`) take `--page` and `--per-page`; `payments list` also accepts
-`--all` to walk every page and return the full set.
+`disputes`, `wallets`, `webhooks list`, `webhooks event-callbacks`) take `--page` and
+`--per-page`; `payments list` also accepts `--all` to walk every page and return the
+full set.
 
 Minimal setup:
 
@@ -490,6 +504,12 @@ rail0 env staging -d      # ...and also print the resulting parameters
 rail0 env current         # show the active environment
 rail0 env current -d      # ...with every parameter's effective value + origin
 ```
+
+A switch writes the config file, so it is **refused** while `--base-url` or
+`RAIL0_BASE_URL` points somewhere else: either one outranks the file, and the switch
+would change nothing the commands use. Unset the override, then switch. Base URLs are
+compared the way sessions are stored, so a trailing `/` or a different case does not
+make the current gateway look like a different one.
 
 After a switch the environment-managed settings are **exactly** the target's: a key
 the target does not declare is **removed**, not left behind. Applying an environment
@@ -621,13 +641,26 @@ rail0 payments create -F @buyer -T @merchant -t USDC -a 10.50 -c 5042002 -p @buy
 > address). `payments create` handles this: it signs in with the payer's key (the
 > same `-p` key it signs the payload with) when there's no valid session for that
 > address — so no separate `rail0 auth login` is needed, and the session's address
-> matches `--from`. If a session for a *different* address is already stored, that
-> one is left alone: the sign-in serves this command only, and the CLI says so.
+> matches `--from`. A stored session for the same address that would expire before the
+> command finishes (a minute, plus the `--timeout` budget with `--wait`) is renewed and
+> saved. If a session for a *different* address is already stored, that one is left
+> alone: the sign-in serves this command only, and the CLI says so.
 
 > **Replay safety.** Each `payments create` sends a fresh `Idempotency-Key`, so a
 > command retried after a lost response (a timeout, a 429) cannot mint a second
 > payment — the gateway returns the first one. Pass `--idempotency-key` to reuse a
-> key of your own across processes.
+> key of your own across processes. Re-running with a key whose create already went
+> through prints a note and returns that payment (exit 0) — it is already signed, so
+> nothing is signed again; one replayed still `unsigned` is finished by signing it.
+
+> **Checked before signing.** Before the payer's key signs anything, the CLI checks
+> the payment the gateway created against the request you built: `payer`, `payee`,
+> `token` (addresses compared case-insensitively), `mode`, `chain_id`, and `amount` in
+> base units (your `--amount` scaled locally). The EIP-3009 authorization must be from
+> the signing key, on that chain and token, addressed to the payment's RAIL0 contract,
+> for exactly that amount. Any mismatch refuses to sign. Not yet checked: the
+> authorization's `nonce`, which binds it to the payment terms on-chain — recomputing it
+> needs the contract version, which the SDK cannot read from `GET /blockchains` yet.
 
 **If the signature step fails** (a dropped connection, a rate limit, the wrong
 key), the payment exists at `unsigned` with no signature. Don't create it again —
@@ -701,6 +734,16 @@ mistyped webhook id silently breaks production verification.
 
 The signing key is resolved in this order: `--private-key` (`-p` / `--pk`, where `@name` pulls the key from the OS keychain) > `RAIL0_PRIVATE_KEY` env var. If none is set, the CLI prompts for the key **hidden** on a terminal (or reads one line from a piped stdin), so it never lands in the shell history or process arguments — the same masked input as `keys add`.
 
+**Checked before signing.** The gateway prepares the transaction, but the CLI checks it
+locally before your key touches it, and refuses to sign on any mismatch: it must be
+value-0, on the payment's chain, from the signing key, addressed to the payment's RAIL0
+contract, call **the RAIL0 function you asked for** (its 4-byte selector — so a `void`
+answered with `capture` calldata, or a `dispute` with `closeDispute`, is refused) on
+**this payment's id**, and — for `capture` and `refund` — move **exactly the `--amount`
+you typed**, scaled to base units locally. Like the refund authorization's check, the
+amount check fails closed: if the token's decimals cannot be resolved, the command
+refuses rather than signing unchecked.
+
 #### Addressing a payment: UUID or rail0_id
 
 Commands that take a payment argument (`get`, `transactions`, and the action commands) accept either form, passed straight through to the gateway, which resolves both:
@@ -743,11 +786,36 @@ rail0 auth status
 
 #### `auth logout`
 
-Remove the cached JWT.
+Revoke the session on the gateway and remove the cached JWT. The result says what
+happened: `session` is `none` (nothing was stored), `revoked`, or `abandoned` (removed
+locally but not revoked — `session_detail` says why), the same vocabulary `env` uses
+for `previous_session`.
 
 ```sh
 rail0 auth logout
+rail0 auth logout --json | jq -r .session
 ```
+
+#### `auth revoke-all`
+
+End **every** session of an address: the ones on this machine, on other machines,
+and any a thief is holding. `auth logout` revokes one token, the one stored here;
+this is per **address**. The gateway records a cutoff instant and refuses every
+earlier session of the address, including this machine's.
+
+It is authorized by a fresh signature of the address's **key**, not by the session,
+because whoever reacts to a leaked key holds the wallet, not the stolen token. The
+signed message carries its own statement ("Sign out of RAIL0 everywhere"), so a
+login signature cannot be replayed to trigger it. It asks first (`--yes` skips).
+
+```sh
+rail0 auth revoke-all -p @merchant-key
+```
+
+The result carries `cutoff_at`, and `local_session` says what happened to this
+machine's stored session: `removed` (it was this address's, and is now dead),
+`kept` (another address's, still valid) or `none`. Sign in again afterwards. If the
+**key** itself leaked, ending its sessions does not make it safe: move the funds.
 
 #### `token`
 
@@ -785,7 +853,9 @@ rail0 wallets --default true --sort -created_at
 | `--symbol` | `-s` | Restrict the nested tokens to this symbol, e.g. `USDC` (wallets still listed) |
 | `--active` | — | Filter the wallets by active flag (`true` or `false`) |
 | `--default` | — | Restrict the nested token holdings to the default one (`true` or `false`) |
+| `--token-active` | — | Restrict the nested token holdings by active flag (`true` or `false`) |
 | `--sort` | — | Sort wallets, e.g. `-created_at` |
+| `--page` / `--per-page` | — | Page through the wallets (the gateway's default page is 25) |
 
 #### `wallets get <wallet>`
 
@@ -866,6 +936,31 @@ rail0 wallets balances 0xABCD… --chain-id 84532 --symbol USDC
 |------|-------|-------------|
 | `--chain-id` | | Restrict to one chain id |
 | `--symbol` | `-s` | Restrict tokens to this symbol (e.g. USDC) |
+
+#### `wallets tokens` — what a wallet accepts
+
+A wallet's **token holdings** — the (chain, token) pairs it accepts — are what
+[`payment-methods`](#payment-methods) offers buyers and what payment creation checks: a
+wallet with no active holding cannot be paid. So registering a wallet is only half the
+setup; this is the other half.
+
+```sh
+rail0 wallets tokens add 0xABCD… --chain-id 84532 --token USDC --default
+rail0 wallets tokens disable 0xABCD… USDC --chain-id 84532    # alias: remove
+rail0 wallets tokens enable 0xABCD… USDC --chain-id 84532
+```
+
+- `add` is an upsert: a disabled holding is re-enabled, never duplicated. `--token` is a
+  symbol resolved on `--chain-id`, or the token's `0x` address; both fall back to the
+  configured `chain-id` / `token`.
+- `enable` / `disable` take `<token>` as a symbol, an address, or the `token_id` shown by
+  `rail0 wallets`, matched against the holdings the wallet actually has. When the wallet
+  holds one symbol on several chains, `--chain-id` picks the chain; the CLI never guesses.
+- A wallet with active holdings has exactly **one default**, the method buyers see first.
+  The first holding takes it; `add … --default` moves it. The default cannot be disabled
+  (`422 default_payment_method`), so move it first.
+- Disabling is soft and reversible, and asks first (`--yes` skips the prompt). Payments
+  already created with that token are unaffected.
 
 #### `wallets alias <address> <name>`
 
@@ -989,7 +1084,7 @@ rail0 webhooks delete <webhook_id>
 | `disable` | Stop deliveries reversibly, keeping the id and secret (`delete` is the permanent form) |
 | `rotate-secret` | Issue a new shared secret (returned once) |
 | `reset-circuit` | Close the breaker **and** clear the manual disable — the only way back from a trip |
-| `event-callbacks` | Delivery attempts — the log to read when a callback did not arrive (`--status`, `--topic`, `--payment-id`, `--since`, `--until`, `--sort`) |
+| `event-callbacks` | Delivery attempts — the log to read when a callback did not arrive (`--status delivered\|failed`, `--response-code`, `--topic`, `--payment-id` as the payment's UUID or its 0x rail0_id — passed to the gateway as is, so any payment of the account matches whichever of its wallets it belongs to, `--since`, `--until`, `--sort`, `--page` / `--per-page`) |
 | `delete` | Destroy the webhook and its secret, permanently (unlike `wallets delete`, this one is real) |
 
 ---
@@ -1044,7 +1139,7 @@ All three take the same filters — `--mode`, `--status`, `--token`, `--chain-id
 rail0 analytics summary                          # orders, disputes, refund/dispute rates, volume
 rail0 analytics summary --from 2026-01-01T00:00:00Z
 rail0 analytics timeseries --interval week       # day (default) | week | month
-rail0 analytics breakdown --by token             # token | chain | mode | status
+rail0 analytics breakdown --by token             # token | chain | mode | status | operation
 ```
 
 Volume figures carry a `*_human` companion (`gross_human`, `captured_human`,
@@ -1110,7 +1205,7 @@ rail0 payments get 0xabc123…
 | `released` | Full authorization released back to payer (total release, nothing captured) |
 | `refunded` | Payment fully settled by refund (both escrow and refundable drained) |
 | `partially_refunded` | Legacy — no longer produced; a partial refund now leaves the status unchanged |
-| `expired` | Authorization window closed with nothing captured — the escrow is still on-chain and `release` recovers it |
+| `expired` | Authorization window closed with nothing captured — the escrow is still on-chain and `release` (or `void`) recovers it |
 
 There is no `failed` payment **status**: `failed` belongs to a **transaction**. A
 payment whose transaction reverts keeps the status it already held — the gateway
@@ -1123,9 +1218,14 @@ own status.
 
 #### `payments list`
 
-List payments for the authenticated wallet (requires login). Filter with
-`--chain-id`, `--disputed`, `--min-amount` / `--max-amount`, and `--created-from` /
-`--created-to` (ISO-8601); sort with `--sort`.
+List payments for the authenticated wallet (requires login). Filter with `--status`,
+`--mode`, `--payer` / `--payee`, `--token`, `--chain-id`, `--disputed`, `--operation`,
+`--rail0-id`, `--min-amount` / `--max-amount`, and `--created-from` / `--created-to`
+(ISO-8601); sort with `--sort`.
+
+`--operation` keeps payments carrying at least one transaction of that operation, so
+`--operation dispute` finds every payment that was **ever** disputed, which `--disputed`
+(an **open** dispute) does not.
 
 `--min-amount` / `--max-amount` are **decimals in token units** (`1.00`), like every
 other amount flag, and require `--chain-id` and `--token`: converting them to the base
@@ -1139,6 +1239,7 @@ rail0 payments list
 rail0 payments list --sort -created_at
 rail0 payments list --chain-id 5042002 --disputed
 rail0 payments list --chain-id 5042002 --token 0x3600… --min-amount 1.00
+rail0 payments list --operation refund --created-from 2026-09-01T00:00:00Z
 ```
 
 ---
@@ -1153,7 +1254,32 @@ A payment can hold several rows for the same operation (a retried broadcast, or 
 
 ```sh
 rail0 payments transactions 0xabc123…
-rail0 payments transactions 0xabc123… --sort -submitted_at
+rail0 payments transactions 0xabc123… --sort -confirmed_at
+rail0 payments transactions 0xabc123… --operation capture --status failed
+```
+
+`--sort` takes `created_at`, `updated_at`, `block_number` or `confirmed_at`;
+`--operation` and `--status` use the transaction vocabularies (`close_dispute`,
+`failed` and the rest), which `--status` on `payments list` does not.
+
+#### `payments transaction <rail0Id> <transaction_id>`
+
+One transaction, by the id the lifecycle commands print when the gateway accepts an
+operation: its status, the decoded reason of a failed one, and whether a stuck one is
+`redrivable`.
+
+#### `payments redrive <rail0Id> <transaction_id>`
+
+Re-broadcast a transaction that was prepared and **signed** but never reached the chain
+(a worker that died in between, a drained queue). The same signed bytes go out again;
+no new signature is asked for and nothing about the payment changes. Only a row reading
+`redrivable: true` qualifies. A `pending` row without a signature is unfinished, not
+stuck, so re-run the operation instead. Payee only; `-w/--wait` blocks until it
+confirms. The gateway also redrives on its own recovery cadence; this asks for it now.
+
+```sh
+rail0 payments transaction 0xabc123… 7f1c0c8e-…
+rail0 payments redrive 0xabc123… 7f1c0c8e-… --wait
 ```
 
 ---
@@ -1215,7 +1341,7 @@ rail0 payments capture <rail0Id> -a 0.50 -p @merchant-key
 
 #### `payments void <rail0Id>`
 
-Prepare the `void()` transaction — cancels authorization and returns escrowed funds to payer. Only callable before `authorizationExpiry`, by the payee.
+Prepare the `void()` transaction — cancels authorization and returns escrowed funds to payer. Callable on an `authorized` or `expired` payment with nothing captured yet, by the payee; the contract's `void` has no expiry check, so an expired, untouched authorization can still be voided.
 
 ```sh
 rail0 payments void <rail0Id> -p @merchant-key

@@ -53,11 +53,14 @@ func tokenFilePath(baseURL string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	sum := sha256.Sum256([]byte(normalizeBaseURL(baseURL)))
+	sum := sha256.Sum256([]byte(NormalizeBaseURL(baseURL)))
 	return filepath.Join(dir, "tokens", hex.EncodeToString(sum[:8])), nil
 }
 
-func normalizeBaseURL(baseURL string) string {
+// NormalizeBaseURL is the one notion of "the same gateway": case, surrounding
+// space and trailing slashes do not change which session a URL names. Exported so
+// every comparison of base URLs agrees with the one the session store makes.
+func NormalizeBaseURL(baseURL string) string {
 	return strings.ToLower(strings.TrimRight(strings.TrimSpace(baseURL), "/"))
 }
 
@@ -110,15 +113,42 @@ func Save(baseURL, jwt string) error {
 }
 
 // SaveAndReport writes the JWT and returns the file path on success.
+//
+// Permissions are ENFORCED, not requested. MkdirAll and WriteFile apply their mode
+// only when they create the path, so a tokens directory or file that already
+// existed as 0755/0644 (an older build, a restored backup, a umask) stayed readable
+// by every local user, holding a bearer credential. The directory is chmod'ed on
+// every save, and the file is replaced rather than rewritten.
+//
+// Replaced ATOMICALLY: written to a 0600 temp file beside it and renamed over it, so
+// a command reading the session while another saves one sees the old token or the
+// new one — never a truncated file, which parses as no session and forces a login.
+// Same directory because os.Rename is only atomic within a filesystem.
 func SaveAndReport(baseURL, jwt string) (string, error) {
 	path, err := tokenFilePath(baseURL)
 	if err != nil {
 		return "", err
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0700); err != nil {
 		return "", err
 	}
-	if err := os.WriteFile(path, []byte(jwt+"\n"), 0600); err != nil {
+	if err := os.Chmod(dir, 0700); err != nil {
+		return "", err
+	}
+	tmp, err := os.CreateTemp(dir, ".token-*.tmp") // created 0600
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = os.Remove(tmp.Name()) }() // a no-op once renamed
+	if _, err := tmp.WriteString(jwt + "\n"); err != nil {
+		_ = tmp.Close()
+		return "", err
+	}
+	if err := tmp.Close(); err != nil {
+		return "", err
+	}
+	if err := os.Rename(tmp.Name(), path); err != nil {
 		return "", err
 	}
 	return path, nil

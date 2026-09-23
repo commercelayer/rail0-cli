@@ -147,6 +147,8 @@ func TestPrintQuietShapes(t *testing.T) {
 			`{"rail0_id":"0xccc","status":"authorized"}`, "0xccc\n"},
 		{"empty list prints nothing",
 			`[]`, ""},
+		{"a one-time secret outranks the id (webhooks create / rotate-secret)",
+			`{"id":"whk-1","shared_secret":"s3cr3t","name":"hook"}`, "s3cr3t\n"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

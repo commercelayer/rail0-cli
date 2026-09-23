@@ -1,0 +1,55 @@
+.nh
+.TH "RAIL0" "1" "Aug 2026" "rail0 CLI" ""
+
+.SH NAME
+rail0-payments-transaction - Fetch one of a payment's transactions
+
+
+.SH SYNOPSIS
+\fBrail0 payments transaction   [flags]\fP
+
+
+.SH DESCRIPTION
+Fetch a single transaction of a payment by its id — the id every lifecycle
+command prints when the gateway accepts an operation (202).
+
+.PP
+The direct lookup for "what happened to THAT attempt": its status, the decoded
+revert reason of a failed one, and whether a stuck one is 'redrivable'.
+Readable by either participant.
+
+
+.SH OPTIONS
+\fB-h\fP, \fB--help\fP[=false]
+	help for transaction
+
+
+.SH OPTIONS INHERITED FROM PARENT COMMANDS
+\fB--base-url\fP=""
+	RAIL0 gateway base URL (env: RAIL0_BASE_URL)
+
+.PP
+\fB--debug\fP[=false]
+	Print HTTP request/response details to stderr
+
+.PP
+\fB--json\fP[=false]
+	Force plain (uncolored) JSON output (useful in scripts)
+
+.PP
+\fB--pretty\fP[=false]
+	Use the key-value/table view instead of JSON (terminal only)
+
+.PP
+\fB-q\fP, \fB--quiet\fP[=false]
+	Print only the result's id/hash, one per line (useful in scripts)
+
+
+.SH EXAMPLE
+.EX
+  rail0 payments transaction 0xabc123… 7f1c0c8e-…
+.EE
+
+
+.SH SEE ALSO
+\fBrail0-payments(1)\fP

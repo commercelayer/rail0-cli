@@ -7,6 +7,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -70,14 +71,23 @@ func Load() (*Config, error) {
 		// Named, with the remedy: a bare `yaml: line 4: ...` left the reader
 		// hunting for WHICH file, and this one is in an OS-specific directory
 		// most people never look at. (#108)
-		return nil, fmt.Errorf(
+		return nil, &notYAMLError{fmt.Errorf(
 			"config file is not valid YAML (%s): %w\n"+
 				"       run 'rail0 config path' to locate it, then fix or delete it "+
 				"(the CLI works fine with no config file)",
-			path, err)
+			path, err)}
 	}
 	return &c, nil
 }
+
+// notYAMLError marks a Load failure caused by the file's CONTENT, as opposed to
+// reading it. The distinction is what LoadForWrite rests on: content YAML cannot
+// parse is unrecoverable and may be replaced, but a file that could not be READ
+// (permissions, an I/O error) may be perfectly healthy and must never be.
+type notYAMLError struct{ err error }
+
+func (e *notYAMLError) Error() string { return e.err.Error() }
+func (e *notYAMLError) Unwrap() error { return e.err }
 
 // Save writes the config back to disk (0600, dir 0700), creating the directory
 // if needed.
@@ -113,9 +123,12 @@ func LoadForWrite() (cfg *Config, replaced bool, err error) {
 	if err == nil {
 		return c, false, nil
 	}
-	// A path/permission problem is not a parse problem: it will hit Save too, so
-	// surface it rather than pretending we start from an empty config.
-	if _, pathErr := Path(); pathErr != nil {
+	// Only a PARSE failure may be replaced. A read failure — an unreadable file, a
+	// transient I/O error, no config dir — says nothing about the contents, and
+	// treating it as "corrupt" rewrote a healthy file with only the new entry,
+	// losing every alias, setting and the keychain index with it.
+	var parseErr *notYAMLError
+	if !errors.As(err, &parseErr) {
 		return nil, false, err
 	}
 	return &Config{}, true, nil

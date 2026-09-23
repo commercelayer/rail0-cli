@@ -2,7 +2,7 @@
 .TH "RAIL0" "1" "Aug 2026" "rail0 CLI" ""
 
 .SH NAME
-rail0-analytics-breakdown - Group the counts by token, chain, mode or status (--by is required)
+rail0-analytics-breakdown - Group the counts by token, chain, mode, status or operation (--by is required)
 
 
 .SH SYNOPSIS
@@ -13,14 +13,17 @@ rail0-analytics-breakdown - Group the counts by token, chain, mode or status (--
 Group the account's orders by one dimension.
 
 .PP
---by is required: token, chain, mode or status. token and chain rows carry volume
-(they identify a scale); mode and status rows are counts only, because a group
-spanning several tokens has no single unit to add up in.
+--by is required: token, chain, mode, status or operation. token and chain rows
+carry volume (they identify a scale); mode and status rows are counts only,
+because a group spanning several tokens has no single unit to add up in.
+operation groups the account's own CONFIRMED transactions — how many captures,
+refunds, disputes… actually landed — and carries a transaction count beside the
+order count.
 
 
 .SH OPTIONS
 \fB--by\fP=""
-	Group by: token, chain, mode or status (required)
+	Group by: token, chain, mode, status or operation (required)
 
 .PP
 \fB--chain-id\fP=0
@@ -76,6 +79,7 @@ spanning several tokens has no single unit to add up in.
 .EX
   rail0 analytics breakdown --by token
   rail0 analytics breakdown --by status --mode charge
+  rail0 analytics breakdown --by operation
 .EE
 
 

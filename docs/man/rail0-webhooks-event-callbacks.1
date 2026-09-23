@@ -21,7 +21,11 @@ topic matches), and if it is, what is the receiver returning.
 
 .PP
 \&'--status failed' is the usual starting point, and the one to read before
-\&'reset-circuit'.
+\&'reset-circuit'; '--response-code 500' then tells the receiver's crashes apart
+from its rate limits. '--payment-id' narrows to one payment, named by either
+its UUID or its 0x rail0_id — any payment of the account, whichever of its
+wallets it belongs to. The gateway keeps 15 days of attempts; page through them
+with --page / --per-page.
 
 
 .SH OPTIONS
@@ -29,8 +33,20 @@ topic matches), and if it is, what is the receiver returning.
 	help for event-callbacks
 
 .PP
+\fB--page\fP=0
+	Page number (1-based)
+
+.PP
 \fB--payment-id\fP=""
-	Filter by the payment the delivery is for
+	Filter by the payment the delivery is for: its UUID or its 0x rail0_id
+
+.PP
+\fB--per-page\fP=0
+	Attempts per page
+
+.PP
+\fB--response-code\fP=""
+	Filter by the receiver's exact HTTP response code (e.g. 500)
 
 .PP
 \fB--since\fP=""
@@ -42,7 +58,7 @@ topic matches), and if it is, what is the receiver returning.
 
 .PP
 \fB--status\fP=""
-	Filter by delivery status ('pending', 'delivered', 'failed')
+	Filter by delivery status ('delivered', 'failed')
 
 .PP
 \fB--topic\fP=""
@@ -78,6 +94,7 @@ topic matches), and if it is, what is the receiver returning.
 .EX
   rail0 webhooks event-callbacks whk_abc123 --status failed
   rail0 webhooks event-callbacks whk_abc123 --topic payments.captured
+  rail0 webhooks event-callbacks whk_abc123 --status failed --response-code 500
   rail0 webhooks event-callbacks whk_abc123 --payment-id 0x… --since 2026-01-01T00:00:00Z
 .EE
 

@@ -50,8 +50,45 @@ Use 'rail0 <command> --help' for detailed usage of any command.`,
 }
 
 func Execute() {
+	rejectUnknownSubcommands(rootCmd)
 	if err := rootCmd.Execute(); err != nil {
 		ui.FatalCode(humanizeError(err), exitCode(err))
+	}
+}
+
+// rejectUnknownSubcommands makes every pure group command (`auth`, `webhooks`, `keys`,
+// …: subcommands, no action of its own) fail on an argument it does not recognise.
+//
+// cobra reports an unknown command only at the ROOT. Below it, a group with no Run
+// just prints its help and exits 0, so `rail0 webhooks lsit` or `rail0 auth logn`
+// "succeeded" — and a script with a typo carried on as if the step had run. The bare
+// group still prints its help and exits 0; only a stray argument is an error, with
+// cobra's own did-you-mean suggestions.
+//
+// Applied at Execute rather than in each file's init so a group added later is
+// covered without remembering to, and so the generated reference (bin/docs, which
+// walks the tree without executing it) keeps describing the groups as groups.
+func rejectUnknownSubcommands(cmd *cobra.Command) {
+	for _, sub := range cmd.Commands() {
+		rejectUnknownSubcommands(sub)
+	}
+	if cmd == cmd.Root() || !cmd.HasSubCommands() || cmd.Run != nil || cmd.RunE != nil {
+		return
+	}
+	// cobra defaults the distance only for the root's own lookup; a group left at 0
+	// would suggest nothing but exact matches.
+	if cmd.SuggestionsMinimumDistance <= 0 {
+		cmd.SuggestionsMinimumDistance = 2
+	}
+	cmd.RunE = func(c *cobra.Command, args []string) error {
+		if len(args) == 0 {
+			return c.Help()
+		}
+		msg := fmt.Sprintf("unknown command %q for %q", args[0], c.CommandPath())
+		if suggestions := c.SuggestionsFor(args[0]); len(suggestions) > 0 {
+			msg += "\n\nDid you mean this?\n\t" + strings.Join(suggestions, "\n\t")
+		}
+		return fmt.Errorf("%s\n\nRun '%s --help' for usage", msg, c.CommandPath())
 	}
 }
 

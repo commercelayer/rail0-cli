@@ -154,7 +154,13 @@ func assignGroup(id string, cmds ...*cobra.Command) {
 // A static header cannot be replaced that way, and seeding one from a STALE cached
 // token was worse than seeding nothing — it kept being sent. (#59)
 func newClient() *rail0.Client {
-	baseURL := resolveBaseURL()
+	return newClientFor(resolveBaseURL())
+}
+
+// newClientFor is newClient for a named gateway rather than the current one — for the
+// one call that must reach a gateway the configuration has already moved away from:
+// revoking the session `env` just left.
+func newClientFor(baseURL string) *rail0.Client {
 	opts := rail0.ClientOptions{
 		BaseURL: baseURL,
 		Token:   token.Load(baseURL),

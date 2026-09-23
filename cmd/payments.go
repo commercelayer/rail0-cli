@@ -102,6 +102,8 @@ var (
 	paymentsListMaxAmount   string
 	paymentsListCreatedFrom string
 	paymentsListCreatedTo   string
+	paymentsListOperation   string
+	paymentsListRail0ID     string
 	paymentsListPage        int
 	paymentsListPerPage     int
 	paymentsListAll         bool
@@ -114,7 +116,10 @@ var paymentsListCmd = &cobra.Command{
 Requires authentication — run 'rail0 auth login -p 0xKey…' first.
 
 Filter with --status, --mode, --payer, --payee, --token, --chain-id, --disputed,
---min-amount / --max-amount, and --created-from / --created-to (ISO-8601).
+--operation, --rail0-id, --min-amount / --max-amount, and --created-from /
+--created-to (ISO-8601). --operation keeps payments carrying at least one
+transaction of that operation — '--operation dispute' finds every payment ever
+disputed, which --disputed (an OPEN dispute) does not.
 
 --min-amount / --max-amount are DECIMALS in token units ('1.00'), like every other
 amount flag. Converting them to the base units the gateway filters on needs the
@@ -147,6 +152,8 @@ amount range only means something within one token anyway.`,
 			MaxAmount:   maxAmount,
 			CreatedFrom: paymentsListCreatedFrom,
 			CreatedTo:   paymentsListCreatedTo,
+			Operation:   paymentsListOperation,
+			Rail0ID:     paymentsListRail0ID,
 			Page:        paymentsListPage,
 			PerPage:     paymentsListPerPage,
 		}
@@ -205,9 +212,11 @@ func fetchAllPayments(ctx context.Context, client *rail0.Client, p rail0.ListPay
 // ── payments transactions ─────────────────────────────────────────────────────
 
 var (
-	paymentsTransactionsSort    string
-	paymentsTransactionsPage    int
-	paymentsTransactionsPerPage int
+	paymentsTransactionsSort      string
+	paymentsTransactionsOperation string
+	paymentsTransactionsStatus    string
+	paymentsTransactionsPage      int
+	paymentsTransactionsPerPage   int
 )
 
 var paymentsTransactionsCmd = &cobra.Command{
@@ -227,13 +236,17 @@ A payment can hold several rows for the same operation (a retried broadcast, or
 successive partial captures), which is why the balances a payment reports are
 the last CONFIRMED ones and not the last submitted.`,
 	Example: `  rail0 payments transactions 0xabc123…
-  rail0 payments transactions 0xabc123… --sort -confirmed_at`,
+  rail0 payments transactions 0xabc123… --sort -confirmed_at
+  rail0 payments transactions 0xabc123… --operation capture --status failed`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return ui.RunAPI(func() (any, error) {
 			ctx := context.Background()
 			client := newReadClient()
 			id := args[0]
-			p := rail0.ListTransactionsParams{Sort: paymentsTransactionsSort, Page: paymentsTransactionsPage, PerPage: paymentsTransactionsPerPage}
+			p := rail0.ListTransactionsParams{
+				Sort: paymentsTransactionsSort, Operation: paymentsTransactionsOperation, Status: paymentsTransactionsStatus,
+				Page: paymentsTransactionsPage, PerPage: paymentsTransactionsPerPage,
+			}
 			resp, err := client.Payments.Transactions(ctx, id, p)
 			if err != nil {
 				return nil, err
@@ -1312,6 +1325,10 @@ func init() {
 		"Maximum amount as a decimal in token units (inclusive); needs --chain-id and --token")
 	paymentsListCmd.Flags().StringVar(&paymentsListCreatedFrom, "created-from", "", "Only payments created at/after this ISO-8601 time")
 	paymentsListCmd.Flags().StringVar(&paymentsListCreatedTo, "created-to", "", "Only payments created at/before this ISO-8601 time")
+	paymentsListCmd.Flags().StringVar(&paymentsListOperation, "operation", "",
+		"Only payments with at least one transaction of this operation (e.g. dispute, refund)")
+	paymentsListCmd.Flags().StringVar(&paymentsListRail0ID, "rail0-id", "", "Filter by the logical on-chain payment id (0x…)")
+	_ = paymentsListCmd.RegisterFlagCompletionFunc("operation", fixedCompletions(transactionOperations...))
 	paymentsListCmd.Flags().IntVar(&paymentsListPage, "page", 0, "Page number (1-based)")
 	paymentsListCmd.Flags().IntVar(&paymentsListPerPage, "per-page", 0, "Results per page")
 	paymentsListCmd.Flags().BoolVar(&paymentsListAll, "all", false, "Fetch every page (ignores --page)")
@@ -1323,6 +1340,12 @@ func init() {
 
 	// payments transactions
 	paymentsTransactionsCmd.Flags().StringVar(&paymentsTransactionsSort, "sort", "", "Sort fields: created_at, updated_at, block_number, confirmed_at (prefix - for descending, comma-separated)")
+	paymentsTransactionsCmd.Flags().StringVar(&paymentsTransactionsOperation, "operation", "",
+		"Filter by operation ("+strings.Join(transactionOperations, ", ")+")")
+	paymentsTransactionsCmd.Flags().StringVar(&paymentsTransactionsStatus, "status", "",
+		"Filter by transaction status ("+strings.Join(transactionStatuses, ", ")+")")
+	_ = paymentsTransactionsCmd.RegisterFlagCompletionFunc("operation", fixedCompletions(transactionOperations...))
+	_ = paymentsTransactionsCmd.RegisterFlagCompletionFunc("status", fixedCompletions(transactionStatuses...))
 	paymentsTransactionsCmd.Flags().IntVar(&paymentsTransactionsPage, "page", 0, "Page number (1-based)")
 	paymentsTransactionsCmd.Flags().IntVar(&paymentsTransactionsPerPage, "per-page", 0, "Results per page")
 	paymentsCmd.AddCommand(paymentsTransactionsCmd)

@@ -1170,9 +1170,14 @@ own status.
 
 #### `payments list`
 
-List payments for the authenticated wallet (requires login). Filter with
-`--chain-id`, `--disputed`, `--min-amount` / `--max-amount`, and `--created-from` /
-`--created-to` (ISO-8601); sort with `--sort`.
+List payments for the authenticated wallet (requires login). Filter with `--status`,
+`--mode`, `--payer` / `--payee`, `--token`, `--chain-id`, `--disputed`, `--operation`,
+`--rail0-id`, `--min-amount` / `--max-amount`, and `--created-from` / `--created-to`
+(ISO-8601); sort with `--sort`.
+
+`--operation` keeps payments carrying at least one transaction of that operation, so
+`--operation dispute` finds every payment that was **ever** disputed, which `--disputed`
+(an **open** dispute) does not.
 
 `--min-amount` / `--max-amount` are **decimals in token units** (`1.00`), like every
 other amount flag, and require `--chain-id` and `--token`: converting them to the base
@@ -1186,6 +1191,7 @@ rail0 payments list
 rail0 payments list --sort -created_at
 rail0 payments list --chain-id 5042002 --disputed
 rail0 payments list --chain-id 5042002 --token 0x3600… --min-amount 1.00
+rail0 payments list --operation refund --created-from 2026-09-01T00:00:00Z
 ```
 
 ---
@@ -1201,6 +1207,31 @@ A payment can hold several rows for the same operation (a retried broadcast, or 
 ```sh
 rail0 payments transactions 0xabc123…
 rail0 payments transactions 0xabc123… --sort -confirmed_at
+rail0 payments transactions 0xabc123… --operation capture --status failed
+```
+
+`--sort` takes `created_at`, `updated_at`, `block_number` or `confirmed_at`;
+`--operation` and `--status` use the transaction vocabularies (`close_dispute`,
+`failed` and the rest), which `--status` on `payments list` does not.
+
+#### `payments transaction <rail0Id> <transaction_id>`
+
+One transaction, by the id the lifecycle commands print when the gateway accepts an
+operation: its status, the decoded reason of a failed one, and whether a stuck one is
+`redrivable`.
+
+#### `payments redrive <rail0Id> <transaction_id>`
+
+Re-broadcast a transaction that was prepared and **signed** but never reached the chain
+(a worker that died in between, a drained queue). The same signed bytes go out again;
+no new signature is asked for and nothing about the payment changes. Only a row reading
+`redrivable: true` qualifies. A `pending` row without a signature is unfinished, not
+stuck, so re-run the operation instead. Payee only; `-w/--wait` blocks until it
+confirms. The gateway also redrives on its own recovery cadence; this asks for it now.
+
+```sh
+rail0 payments transaction 0xabc123… 7f1c0c8e-…
+rail0 payments redrive 0xabc123… 7f1c0c8e-… --wait
 ```
 
 ---

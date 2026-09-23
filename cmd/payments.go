@@ -627,6 +627,9 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 			if err != nil {
 				return nil, err
 			}
+			if replayedPastPending(prep) {
+				return resumeReplayed(ctx, client, rail0Id, "authorize", prep)
+			}
 			if err := sc.verify(prep.UnsignedTransaction); err != nil {
 				return nil, err
 			}
@@ -690,6 +693,9 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 			prep, err := prepareOp(ctx, client, rail0Id, rail0.OpCharge)
 			if err != nil {
 				return nil, err
+			}
+			if replayedPastPending(prep) {
+				return resumeReplayed(ctx, client, rail0Id, "charge", prep)
 			}
 			if err := sc.verify(prep.UnsignedTransaction); err != nil {
 				return nil, err
@@ -780,6 +786,9 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 			if err != nil {
 				return nil, err
 			}
+			if replayedPastPending(prep) {
+				return resumeReplayed(ctx, client, rail0Id, "capture", prep)
+			}
 			if err := sc.verify(prep.UnsignedTransaction); err != nil {
 				return nil, err
 			}
@@ -840,6 +849,9 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 			prep, err := prepareOp(ctx, client, rail0Id, rail0.OpVoid)
 			if err != nil {
 				return nil, err
+			}
+			if replayedPastPending(prep) {
+				return resumeReplayed(ctx, client, rail0Id, "void", prep)
 			}
 			if err := sc.verify(prep.UnsignedTransaction); err != nil {
 				return nil, err
@@ -917,6 +929,9 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 			prep, err := prepareOp(ctx, client, rail0Id, rail0.OpRelease, rail0.PrepareRequest{From: caller})
 			if err != nil {
 				return nil, err
+			}
+			if replayedPastPending(prep) {
+				return resumeReplayed(ctx, client, rail0Id, "release", prep)
 			}
 			if err := sc.verify(prep.UnsignedTransaction); err != nil {
 				return nil, err
@@ -1001,9 +1016,31 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 			if err != nil {
 				return nil, err
 			}
-			phase1, err := client.Payments.RefundPrepare(ctx, rail0Id, rail0.PrepareRequest{Amount: refundAmount})
+			// Keyed from phase 1 on: the gateway checks the key before anything else,
+			// so a re-run whose refund already went out gets the ORIGINAL transaction
+			// here instead of a fresh signing payload — which would otherwise be
+			// signed, only for phase 2 to hand back that same row anyway.
+			phase1, err := prepareOp(ctx, client, rail0Id, rail0.OpRefund, rail0.PrepareRequest{Amount: refundAmount})
 			if err != nil {
 				return nil, err
+			}
+			if replayedPastPending(phase1) {
+				return resumeReplayed(ctx, client, rail0Id, "refund", phase1)
+			}
+			// A replayed row still `pending` already carries the unsigned tx with the
+			// authorization embedded: finish it rather than asking for a new signature.
+			if idempotencyKey != "" && phase1.ID != "" && phase1.SigningPayload == nil {
+				if err := sc.verify(phase1.UnsignedTransaction); err != nil {
+					return nil, err
+				}
+				signedTx, err := signTx(phase1.UnsignedTransaction, signingKey)
+				if err != nil {
+					return nil, fmt.Errorf("sign tx: %w", err)
+				}
+				return submitThenWait(ctx, client, rail0Id, "refund", func() (any, error) {
+					return client.Payments.Refund(ctx, rail0Id,
+						rail0.SubmitTransactionRequest{SignedTransaction: signedTx})
+				})
 			}
 			if phase1.SigningPayload == nil {
 				return nil, errors.New("refund prepare did not return a signing_payload")
@@ -1106,6 +1143,9 @@ Pass --private-key (-p): the CLI signs locally with the payer key and broadcasts
 			if err != nil {
 				return nil, err
 			}
+			if replayedPastPending(prep) {
+				return resumeReplayed(ctx, client, rail0Id, "dispute", prep)
+			}
 			if err := sc.verify(prep.UnsignedTransaction); err != nil {
 				return nil, err
 			}
@@ -1169,6 +1209,9 @@ Pass --private-key (-p): the CLI signs locally with the payer key and broadcasts
 			prep, err := client.Payments.CloseDisputePrepareWithKey(ctx, rail0Id, idempotencyKey, closeDisputeReason)
 			if err != nil {
 				return nil, err
+			}
+			if replayedPastPending(prep) {
+				return resumeReplayed(ctx, client, rail0Id, "close_dispute", prep)
 			}
 			if err := sc.verify(prep.UnsignedTransaction); err != nil {
 				return nil, err

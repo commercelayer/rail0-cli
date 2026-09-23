@@ -190,6 +190,30 @@ func submittedTransactionID(res any) string {
 	return ""
 }
 
+// replayedPastPending reports whether a keyed prepare handed back a transaction the
+// FIRST attempt already moved past `pending` — signed, broadcast, maybe settled.
+//
+// That is exactly what a re-run with --idempotency-key gets: the gateway replays the
+// original row whatever its status (200 instead of 201). Signing and submitting it
+// again is always wrong — submit only accepts a `pending` row, so it answered 404 and
+// the re-run the help recommends after a timed-out --wait failed every time, with a
+// message about a wrong id. A replayed row that is STILL pending (the first attempt
+// never got as far as the submit) is not caught here: finishing it is correct.
+func replayedPastPending(tx *rail0.Transaction) bool {
+	return idempotencyKey != "" && tx != nil && tx.ID != "" && tx.Status != "" && tx.Status != "pending"
+}
+
+// resumeReplayed follows a replayed transaction instead of re-broadcasting it: with
+// --wait it waits on THAT transaction's id, exactly as the first attempt would have;
+// without it returns the row, whose status says where the operation stands.
+func resumeReplayed(ctx context.Context, client *rail0.Client, rail0Id, op string, tx *rail0.Transaction) (any, error) {
+	ui.Progressf("idempotency key already used: %s transaction %s is %s — nothing re-broadcast", op, tx.ID, tx.Status)
+	if !waitFlag {
+		return tx, nil
+	}
+	return waitForOp(ctx, client, rail0Id, op, tx.ID, waitTimeout)
+}
+
 // pollUntil is the one polling loop behind both --wait and `payments wait`. It
 // calls `check` every waitPollInterval until it reports done, a decision stops
 // it, the deadline passes, or the user interrupts.

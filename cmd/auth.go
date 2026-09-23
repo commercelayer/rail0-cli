@@ -235,6 +235,86 @@ func logoutResult(baseURL string, revoked sessionRevocation) map[string]any {
 	return out
 }
 
+// ── auth revoke-all ───────────────────────────────────────────────────────────
+
+var revokeAllPrivateKey string
+
+var authRevokeAllCmd = &cobra.Command{
+	Use:   "revoke-all",
+	Short: "End EVERY session of an address, on every machine (for a key you no longer trust)",
+	Long: `Revoke every session the gateway has issued to an address — the ones on this
+machine, on other machines, and any a thief is holding.
+
+'auth logout' cannot do this: it revokes ONE token, the one stored here. This is
+per ADDRESS. The gateway records a cutoff instant, and every session of the
+address issued before it is refused from then on, including this machine's.
+
+It is authorized by a fresh signature of the address's KEY, not by the session:
+whoever reacts to a leaked key holds the wallet, not the stolen token. The signed
+message says "Sign out of RAIL0 everywhere", so a login signature cannot be
+replayed to trigger it. The key is resolved like every signing command (-p as
+0x hex, @name for a keychain key, or RAIL0_PRIVATE_KEY).
+
+Afterwards, sign in again with 'rail0 auth login'. If you suspect the key itself
+leaked, this ends the sessions but does not make the key safe: move the funds
+and stop using it.`,
+	Example: `  rail0 auth revoke-all -p @merchant-key`,
+	Args:    cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		keyHex, err := signingKeyOrPrompt(revokeAllPrivateKey)
+		if err != nil {
+			return err
+		}
+		address, err := addressFromKey(keyHex)
+		if err != nil {
+			return err
+		}
+		privKey, err := rail0.HexToPrivateKey(keyHex)
+		if err != nil {
+			return fmt.Errorf("invalid private key: %w", err)
+		}
+		if err := confirmDestructive(fmt.Sprintf(
+			"Revoke EVERY session of %s, on every machine? You will need to sign in again.", address)); err != nil {
+			return err
+		}
+		baseURL := resolveBaseURL()
+		client := newClient()
+		return ui.RunAPI(func() (any, error) {
+			res, err := client.Auth.RevokeAll(context.Background(), privKey, siweHost(baseURL))
+			if err != nil {
+				return nil, err
+			}
+			return map[string]any{
+				"address":       address,
+				"revoked_all":   res.RevokedAll,
+				"cutoff_at":     res.CutoffAt,
+				"local_session": dropRevokedLocalSession(baseURL, address),
+			}, nil
+		})
+	},
+}
+
+// dropRevokedLocalSession deletes this machine's stored session when revoke-all
+// just killed it — the cutoff covers every session of the address, this one
+// included — so the next command signs in instead of collecting a 401. A session
+// of a DIFFERENT address is still valid and is kept. Returns what happened, for
+// the result: "removed", "kept" (another address) or "none".
+func dropRevokedLocalSession(baseURL, address string) string {
+	stored := token.Load(baseURL)
+	if stored == "" {
+		return "none"
+	}
+	if claims, err := parseJWTClaims(stored); err == nil {
+		if sub, _ := claims["sub"].(string); !strings.EqualFold(sub, address) {
+			return "kept"
+		}
+	}
+	// This address's session, or one too broken to read: either way it no longer
+	// authenticates anything.
+	_ = token.Delete(baseURL)
+	return "removed"
+}
+
 // ── init ──────────────────────────────────────────────────────────────────────
 
 func init() {
@@ -245,5 +325,11 @@ func init() {
 	authLoginCmd.Flags().BoolVarP(&loginShowToken, "token", "t", false,
 		"After signing in, also print the JWT token and its expiry to the terminal")
 
-	authCmd.AddCommand(authLoginCmd, authStatusCmd, authLogoutCmd)
+	authRevokeAllCmd.Flags().StringVarP(&revokeAllPrivateKey, "private-key", "p", "",
+		"Key OF the address whose sessions to end: 0x hex, @name for an OS-keychain key, or RAIL0_PRIVATE_KEY")
+	authRevokeAllCmd.Flags().StringVar(&revokeAllPrivateKey, "pk", "", "Alias for --private-key")
+	_ = authRevokeAllCmd.Flags().MarkHidden("pk")
+	addYesFlag(authRevokeAllCmd)
+
+	authCmd.AddCommand(authLoginCmd, authStatusCmd, authLogoutCmd, authRevokeAllCmd)
 }

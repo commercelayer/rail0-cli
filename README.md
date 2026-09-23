@@ -769,6 +769,27 @@ rail0 auth logout
 rail0 auth logout --json | jq -r .session
 ```
 
+#### `auth revoke-all`
+
+End **every** session of an address: the ones on this machine, on other machines,
+and any a thief is holding. `auth logout` revokes one token, the one stored here;
+this is per **address**. The gateway records a cutoff instant and refuses every
+earlier session of the address, including this machine's.
+
+It is authorized by a fresh signature of the address's **key**, not by the session,
+because whoever reacts to a leaked key holds the wallet, not the stolen token. The
+signed message carries its own statement ("Sign out of RAIL0 everywhere"), so a
+login signature cannot be replayed to trigger it. It asks first (`--yes` skips).
+
+```sh
+rail0 auth revoke-all -p @merchant-key
+```
+
+The result carries `cutoff_at`, and `local_session` says what happened to this
+machine's stored session: `removed` (it was this address's, and is now dead),
+`kept` (another address's, still valid) or `none`. Sign in again afterwards. If the
+**key** itself leaked, ending its sessions does not make it safe: move the funds.
+
 #### `token`
 
 Print the cached session JWT and its expiry, so it can be copied or piped. If you're not logged in (or the token has expired), it suggests logging in instead. This is the **singular** session token — distinct from [`rail0 tokens`](#tokens), which lists the gateway's accepted payment tokens.

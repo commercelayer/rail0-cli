@@ -259,8 +259,19 @@ func replayedPastPending(tx *rail0.Transaction) bool {
 // resumeReplayed follows a replayed transaction instead of re-broadcasting it: with
 // --wait it waits on THAT transaction's id, exactly as the first attempt would have;
 // without it returns the row, whose status says where the operation stands.
+//
+// A replayed row that already FAILED is the exception, with or without --wait: the
+// outcome is final, so it is returned as the op-failed error the first attempt's
+// --wait would have produced. Returning the row printed it and exited 0, which a
+// script reads as "the capture went through". The hint names the way forward,
+// because the key is what brought this row back: the same key can only ever replay
+// it, so a retry needs a new one.
 func resumeReplayed(ctx context.Context, client *rail0.Client, rail0Id, op string, tx *rail0.Transaction) (any, error) {
 	ui.Progressf("idempotency key already used: %s transaction %s is %s — nothing re-broadcast", op, tx.ID, tx.Status)
+	if tx.Status == "failed" {
+		return nil, fmt.Errorf("%w (replayed by the idempotency key; to retry, pass a NEW --idempotency-key)",
+			opFailedError(op, tx))
+	}
 	if !waitFlag {
 		return tx, nil
 	}

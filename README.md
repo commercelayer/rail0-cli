@@ -21,7 +21,9 @@ rail0 payments capture <id> --amount 50.00 --idempotency-key "$ORDER_ID"
 
 With a key, a re-run returns the first transaction and nothing moves: the CLI does not
 sign or broadcast it again, and with `--wait` it waits on that original transaction. If
-the first attempt never got as far as broadcasting, the re-run finishes it. The same key with
+the first attempt never got as far as broadcasting, the re-run finishes it; if it
+**failed** on-chain, the re-run exits non-zero with the decoded reason, and retrying
+needs a **new** key — the old one can only bring the failed attempt back. The same key with
 a different amount is refused `422 idempotency_key_reused`, so a key you forgot to
 rotate is reported rather than silently honoured. Keys are scoped to the payment.
 

@@ -461,3 +461,33 @@ func TestCreateWithoutAPayloadOnAnUnsignedPaymentFails(t *testing.T) {
 		t.Errorf("deposited a signature %d time(s) with nothing to sign", n)
 	}
 }
+
+// A keyed re-run whose original transaction FAILED: the replay is final, so it must
+// exit non-zero with the decoded reason — and say a retry needs a new key, since
+// this one can only ever bring the failed row back. Nothing is submitted.
+func TestCaptureReRunOfAFailedTransactionFails(t *testing.T) {
+	for _, wait := range []bool{false, true} {
+		g := newLifecycleGateway(t)
+		g.prepare["capture"] = []any{map[string]any{"id": "tx-1", "operation": "capture", "status": "failed",
+			"error_code": "authorization_expired", "error_detail": "the authorization window closed"}}
+		idempotencyKey, captureAmount, capturePrivateKey, waitFlag = "order-42", "1.00", testKeyHex, wait
+		t.Cleanup(func() { captureAmount, capturePrivateKey = "", "" })
+
+		var err error
+		_ = captureStdout(t, func() { err = paymentsCaptureCmd.RunE(paymentsCaptureCmd, []string{lcRail0ID}) })
+		if err == nil {
+			t.Fatalf("wait=%v: a replayed failed capture exited 0", wait)
+		}
+		for _, want := range []string{"capture failed on-chain", "the authorization window closed", "new --idempotency-key"} {
+			if !strings.Contains(strings.ToLower(err.Error()), strings.ToLower(want)) {
+				t.Errorf("wait=%v: error %q is missing %q", wait, err, want)
+			}
+		}
+		if exitCode(err) == 0 {
+			t.Errorf("wait=%v: exit code 0 for a failed operation", wait)
+		}
+		if n := g.sent("POST /payments/" + lcRail0ID + "/capture"); n != 0 {
+			t.Errorf("wait=%v: the replayed capture was submitted %d time(s)", wait, n)
+		}
+	}
+}

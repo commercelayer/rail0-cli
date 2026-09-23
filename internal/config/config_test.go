@@ -227,3 +227,31 @@ func TestLoadForWritePreservesAReadableFile(t *testing.T) {
 		t.Errorf("readable contents must survive, got %+v", cfg)
 	}
 }
+
+// A file that cannot be READ is not a corrupt file: LoadForWrite must surface the
+// error rather than hand back an empty Config, or the caller's Save rewrites a
+// healthy file with only its own entry — every alias, setting and keychain index
+// entry gone, and the command exiting 0.
+func TestLoadForWriteRefusesAnUnreadableFile(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root reads a mode-000 file")
+	}
+	withTempConfigDir(t)
+	original := &Config{Aliases: map[string]string{"merchant": "0xabc"}}
+	if err := original.Save(); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	path, _ := Path()
+	if err := os.Chmod(path, 0); err != nil {
+		t.Fatalf("chmod: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(path, 0600) })
+
+	cfg, replaced, err := LoadForWrite()
+	if err == nil {
+		t.Fatalf("LoadForWrite must fail on an unreadable file, got %+v (replaced=%v)", cfg, replaced)
+	}
+	if replaced {
+		t.Error("an unreadable file must never be reported as replaced")
+	}
+}

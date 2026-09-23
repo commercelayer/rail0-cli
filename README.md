@@ -1113,7 +1113,7 @@ All three take the same filters — `--mode`, `--status`, `--token`, `--chain-id
 rail0 analytics summary                          # orders, disputes, refund/dispute rates, volume
 rail0 analytics summary --from 2026-01-01T00:00:00Z
 rail0 analytics timeseries --interval week       # day (default) | week | month
-rail0 analytics breakdown --by token             # token | chain | mode | status
+rail0 analytics breakdown --by token             # token | chain | mode | status | operation
 ```
 
 Volume figures carry a `*_human` companion (`gross_human`, `captured_human`,

@@ -2,7 +2,10 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -397,5 +400,59 @@ func TestPaymentsWaitUntilStopsOnAnUnreachableTarget(t *testing.T) {
 	}
 	if n := g.sent("GET /payments/" + lcRail0ID); n != 1 {
 		t.Errorf("polled %d times, want 1", n)
+	}
+}
+
+// `expired` is terminal for a capture but not for the escrow: a release or a void can
+// still land. `--until released` (or voided) on an expired payment used to fail at
+// the first poll because terminalStatuses was consulted before statusCanReach; it
+// must keep polling until the release shows up. `--until captured` still stops.
+func TestPaymentsWaitUntilReleasedOutlastsExpired(t *testing.T) {
+	for _, target := range []string{"released", "voided"} {
+		t.Run(target, func(t *testing.T) {
+			isolate(t)
+			isolateTokenStore(t)
+			fastPolls(t)
+			var polls int
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				polls++
+				status := "expired"
+				if polls >= 3 {
+					status = target
+				}
+				w.Header().Set("Content-Type", "application/json")
+				_ = json.NewEncoder(w).Encode(map[string]any{"id": "pay-1", "rail0_id": lcRail0ID, "status": status})
+			}))
+			defer srv.Close()
+			t.Setenv("RAIL0_BASE_URL", srv.URL)
+			waitUntil, waitTimeout = target, time.Minute
+			t.Cleanup(func() { waitUntil, waitTimeout = "", defaultWaitTimeout })
+
+			var err error
+			out := captureStdout(t, func() { err = paymentsWaitCmd.RunE(paymentsWaitCmd, []string{lcRail0ID}) })
+			if err != nil {
+				t.Fatalf("--until %s on an expired payment must keep waiting, got %v", target, err)
+			}
+			if polls != 3 || !strings.Contains(out, `"`+target+`"`) {
+				t.Errorf("polls = %d, out = %s; want the wait to end on %s at the third poll", polls, out, target)
+			}
+		})
+	}
+
+	isolate(t)
+	isolateTokenStore(t)
+	fastPolls(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"id": "pay-1", "rail0_id": lcRail0ID, "status": "expired"})
+	}))
+	defer srv.Close()
+	t.Setenv("RAIL0_BASE_URL", srv.URL)
+	waitUntil, waitTimeout = "captured", time.Minute
+	t.Cleanup(func() { waitUntil, waitTimeout = "", defaultWaitTimeout })
+	var err error
+	_ = captureStdout(t, func() { err = paymentsWaitCmd.RunE(paymentsWaitCmd, []string{lcRail0ID}) })
+	if err == nil || !strings.Contains(err.Error(), "terminal") || !strings.Contains(err.Error(), "release") {
+		t.Errorf("--until captured on an expired payment must still stop, naming the recovery; got %v", err)
 	}
 }

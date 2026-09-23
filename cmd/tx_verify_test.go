@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math/big"
 	"strings"
 	"testing"
 
@@ -379,5 +380,188 @@ func TestExpectedBaseUnitsFailsClosed(t *testing.T) {
 	}
 	if _, err := expectedBaseUnits(ctx, testChainID, "0x9999999999999999999999999999999999999999", "1"); err == nil {
 		t.Error("a token whose decimals are unknown must be refused, not skipped")
+	}
+}
+
+// ── selector and amount (checkCalldataCall) ──────────────────────────────────
+
+// calldataFor builds RAIL0 calldata the way the ABI lays it out: selector, paymentId,
+// the six inline Payment words (zeros — their content is not checked here), then any
+// trailing arguments. amountUnits, when set, is capture/refund's uint256 amount.
+func calldataFor(t *testing.T, op, rail0ID, amountUnits string) string {
+	t.Helper()
+	sel, ok := rail0Selectors[canonicalOp(op)]
+	if !ok {
+		t.Fatalf("no selector for %q", op)
+	}
+	b := strings.Builder{}
+	b.WriteString("0x" + sel + strings.TrimPrefix(strings.ToLower(rail0ID), "0x"))
+	b.WriteString(strings.Repeat("0", 64*6))
+	if amountUnits != "" {
+		n, ok := new(big.Int).SetString(amountUnits, 10)
+		if !ok {
+			t.Fatalf("bad amount %q", amountUnits)
+		}
+		b.WriteString(fmt.Sprintf("%064x", n))
+	}
+	if canonicalOp(op) == "refund" {
+		b.WriteString(strings.Repeat("0", 64*3)) // v, r, s
+	}
+	return b.String()
+}
+
+// The selectors are pinned against RAIL0.sol's compiled methodIdentifiers
+// (rail0/contracts/out/RAIL0.sol/RAIL0.json), not against the table they are computed
+// from — a typo in a signature string would otherwise agree with itself.
+func TestRail0SelectorsMatchTheABI(t *testing.T) {
+	abi := map[string]string{
+		"authorize":     "c36c951c",
+		"charge":        "1eddc5e5",
+		"capture":       "11bf1806",
+		"void":          "69438554",
+		"release":       "955b0ee2",
+		"refund":        "e8ed339d",
+		"dispute":       "eebaa720",
+		"close_dispute": "6e6923ab",
+	}
+	if len(rail0Selectors) != len(abi) {
+		t.Errorf("%d selectors, want %d", len(rail0Selectors), len(abi))
+	}
+	for op, want := range abi {
+		if got := rail0Selectors[op]; got != want {
+			t.Errorf("%s selector = %s, want %s (from the contract ABI)", op, got, want)
+		}
+	}
+}
+
+// The right calldata for each operation passes; the amount-taking ones only with the
+// amount the user asked for.
+func TestVerifyAcceptsTheRightCallForEachOperation(t *testing.T) {
+	for _, op := range []string{"authorize", "charge", "void", "release", "dispute", "close dispute"} {
+		sc := testContext()
+		sc.op = op
+		tx := unsignedJSON(t, map[string]any{"data": calldataFor(t, op, testRail0ID, "")})
+		if err := sc.verify(tx); err != nil {
+			t.Errorf("%s: rejected its own calldata: %v", op, err)
+		}
+	}
+	for _, op := range []string{"capture", "refund"} {
+		sc := testContext()
+		sc.op, sc.amountBaseUnits = op, "1500000"
+		tx := unsignedJSON(t, map[string]any{"data": calldataFor(t, op, testRail0ID, "1500000")})
+		if err := sc.verify(tx); err != nil {
+			t.Errorf("%s: rejected its own calldata: %v", op, err)
+		}
+	}
+}
+
+// The swaps checkCalldataPaymentID could not see: the right payment, the wrong
+// function. Each would have been signed before.
+func TestVerifyRejectsASwappedOperation(t *testing.T) {
+	cases := []struct{ asked, served, amount string }{
+		{"capture", "void", ""},
+		{"void", "capture", "1000000"},
+		{"capture", "release", ""},
+		{"release", "capture", "1000000"},
+		{"dispute", "close_dispute", ""},
+		{"close dispute", "dispute", ""},
+		{"refund", "capture", "1000000"},
+	}
+	for _, tc := range cases {
+		sc := testContext()
+		sc.op, sc.amountBaseUnits = tc.asked, "1000000"
+		tx := unsignedJSON(t, map[string]any{"data": calldataFor(t, tc.served, testRail0ID, tc.amount)})
+		err := sc.verify(tx)
+		if err == nil {
+			t.Errorf("asked to %s, served %s: signed it", tc.asked, tc.served)
+			continue
+		}
+		name := rail0FunctionSignatures[canonicalOp(tc.served)]
+		name = name[:strings.IndexByte(name, '(')]
+		if !strings.Contains(err.Error(), "refusing to sign") || !strings.Contains(err.Error(), name+"()") {
+			t.Errorf("asked to %s, served %s: error %q should name %s()", tc.asked, tc.served, err, name)
+		}
+	}
+}
+
+// An unknown selector (the old test fixture's 0xdeadbeef, or approve's 0x095ea7b3)
+// is refused and named as hex.
+func TestVerifyRejectsAForeignSelector(t *testing.T) {
+	sc := testContext()
+	sc.op = "void"
+	err := sc.verify(unsignedJSON(t, nil)) // 0xdeadbeef + the right id
+	if err == nil || !strings.Contains(err.Error(), "0xdeadbeef") {
+		t.Errorf("a foreign selector must be refused by name, got %v", err)
+	}
+}
+
+// Capture and refund: the right function for a different quantity than the user typed.
+func TestVerifyRejectsAnAmountOtherThanAskedFor(t *testing.T) {
+	for _, op := range []string{"capture", "refund"} {
+		sc := testContext()
+		sc.op, sc.amountBaseUnits = op, "1000000"
+		tx := unsignedJSON(t, map[string]any{"data": calldataFor(t, op, testRail0ID, "999000000")})
+		err := sc.verify(tx)
+		if err == nil || !strings.Contains(err.Error(), "999000000") || !strings.Contains(err.Error(), "1000000") {
+			t.Errorf("%s: an inflated amount must be refused naming both, got %v", op, err)
+		}
+		// Truncated before the amount word.
+		short := calldataFor(t, op, testRail0ID, "")
+		if op == "refund" {
+			short = short[:len(short)-64*3]
+		}
+		if err := sc.verify(unsignedJSON(t, map[string]any{"data": short})); err == nil || !strings.Contains(err.Error(), "too short") {
+			t.Errorf("%s: calldata with no amount word must be refused, got %v", op, err)
+		}
+	}
+}
+
+// Fail closed: an amount-taking operation with nothing local to compare against, and an
+// operation with no known selector, both refuse rather than skip.
+func TestCheckCalldataCallFailsClosed(t *testing.T) {
+	if err := checkCalldataCall(calldataFor(t, "capture", testRail0ID, "1"), "capture", ""); err == nil {
+		t.Error("capture with no expected amount must be refused")
+	}
+	if err := checkCalldataCall(calldataFor(t, "void", testRail0ID, ""), "approve", ""); err == nil {
+		t.Error("an operation with no known selector must be refused")
+	}
+	if err := checkCalldataCall("0x", "void", ""); err == nil || !strings.Contains(err.Error(), "too short") {
+		t.Errorf("empty calldata must be refused as too short, got %v", err)
+	}
+}
+
+// ── checkCreatedPayment ──────────────────────────────────────────────────────
+
+func TestCheckCreatedPayment(t *testing.T) {
+	req := rail0.CreatePaymentRequest{
+		ChainID: testChainID, Mode: "authorize", Amount: "1.50", Token: testPayloadToken,
+		Payer: testSigner, Payee: testRail0Contract,
+	}
+	good := func() *rail0.Payment {
+		return &rail0.Payment{
+			ChainID: testChainID, Mode: "authorize", Amount: "1500000",
+			Token: rail0.Address(strings.ToUpper(testPayloadToken)), Payer: testSigner,
+			Payee: rail0.Address(strings.ToUpper(testRail0Contract)),
+		}
+	}
+	if err := checkCreatedPayment(good(), req, "1500000"); err != nil {
+		t.Fatalf("rejected the payment asked for (checksum-cased addresses): %v", err)
+	}
+	for name, mutate := range map[string]func(*rail0.Payment){
+		"chain_id": func(p *rail0.Payment) { p.ChainID = 1 },
+		"payer":    func(p *rail0.Payment) { p.Payer = testAttacker },
+		"payee":    func(p *rail0.Payment) { p.Payee = testAttacker },
+		"token":    func(p *rail0.Payment) { p.Token = testAttacker },
+		"mode":     func(p *rail0.Payment) { p.Mode = "charge" },
+		"amount":   func(p *rail0.Payment) { p.Amount = "1500001" },
+		// Absent is a mismatch, not a skip.
+		"payee ": func(p *rail0.Payment) { p.Payee = "" },
+	} {
+		p := good()
+		mutate(p)
+		err := checkCreatedPayment(p, req, "1500000")
+		if err == nil || !strings.Contains(err.Error(), strings.TrimSpace(name)) {
+			t.Errorf("%s: want a refusal naming the field, got %v", name, err)
+		}
 	}
 }

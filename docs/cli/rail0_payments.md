@@ -53,9 +53,11 @@ Charge (one-shot) flow — no escrow, funds move straight through:
 * [rail0 payments get](rail0_payments_get.md)	 - Fetch the current state of a payment
 * [rail0 payments history](rail0_payments_history.md)	 - Show a payment's chronological history
 * [rail0 payments list](rail0_payments_list.md)	 - List payments for the authenticated wallet (requires login)
+* [rail0 payments redrive](rail0_payments_redrive.md)	 - Re-send a signed transaction whose broadcast never reached the chain (payee)
 * [rail0 payments refund](rail0_payments_refund.md)	 - Refund a payment (prepare, sign, and broadcast)
 * [rail0 payments release](rail0_payments_release.md)	 - Release a payment after expiry (prepare, sign, and broadcast)
 * [rail0 payments sign](rail0_payments_sign.md)	 - Deposit the payer signature on an already-created payment
+* [rail0 payments transaction](rail0_payments_transaction.md)	 - Fetch one of a payment's transactions
 * [rail0 payments transactions](rail0_payments_transactions.md)	 - List on-chain transactions for a payment
 * [rail0 payments void](rail0_payments_void.md)	 - Void a payment (prepare, sign, and broadcast)
 * [rail0 payments wait](rail0_payments_wait.md)	 - Block until a payment settles (or reaches a given status)

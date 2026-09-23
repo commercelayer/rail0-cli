@@ -24,6 +24,9 @@ var walletsChainID int
 var walletsSymbol string
 var walletsSort string
 var walletsDefault string
+var walletsTokenActive string
+var walletsPage int
+var walletsPerPage int
 
 var walletsCmd = &cobra.Command{
 	Use:   "wallets",
@@ -46,7 +49,13 @@ address) of the session account.`,
 		if err != nil {
 			return err
 		}
-		p := rail0.ListWalletsParams{ChainID: walletsChainID, TokenSymbol: walletsSymbol, Sort: walletsSort}
+		p := rail0.ListWalletsParams{
+			ChainID: walletsChainID, TokenSymbol: walletsSymbol, Sort: walletsSort,
+			Page: walletsPage, PerPage: walletsPerPage,
+		}
+		if p.TokenActive, err = parseBoolFlag(walletsTokenActive); err != nil {
+			return fmt.Errorf("--token-active: %w", err)
+		}
 		if walletsActive != "" {
 			switch walletsActive {
 			case "true":
@@ -363,6 +372,10 @@ func init() {
 	_ = walletsCmd.Flags().MarkHidden("token")
 	walletsCmd.Flags().StringVar(&walletsSort, "sort", "", "Sort wallets (e.g. -created_at)")
 	walletsCmd.Flags().StringVar(&walletsDefault, "default", "", "Restrict nested token holdings to the default one ('true' or 'false')")
+	walletsCmd.Flags().StringVar(&walletsTokenActive, "token-active", "", "Restrict nested token holdings by active flag ('true' or 'false')")
+	// Without these the listing stopped, silently, at the gateway's default page.
+	walletsCmd.Flags().IntVar(&walletsPage, "page", 0, "Page number (1-based)")
+	walletsCmd.Flags().IntVar(&walletsPerPage, "per-page", 0, "Wallets per page")
 
 	// wallets create
 	walletsCreateCmd.Flags().StringVarP(&createWalletAddress, "address", "A", "", "EVM wallet address (0x-prefixed hex, or @alias)")

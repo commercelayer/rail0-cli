@@ -31,6 +31,10 @@ the last CONFIRMED ones and not the last submitted.
 	help for transactions
 
 .PP
+\fB--operation\fP=""
+	Filter by operation (authorize, charge, capture, void, release, refund, dispute, close_dispute)
+
+.PP
 \fB--page\fP=0
 	Page number (1-based)
 
@@ -41,6 +45,10 @@ the last CONFIRMED ones and not the last submitted.
 .PP
 \fB--sort\fP=""
 	Sort fields: created_at, updated_at, block_number, confirmed_at (prefix - for descending, comma-separated)
+
+.PP
+\fB--status\fP=""
+	Filter by transaction status (pending, submitting, submitted, confirmed, failed)
 
 
 .SH OPTIONS INHERITED FROM PARENT COMMANDS
@@ -68,6 +76,7 @@ the last CONFIRMED ones and not the last submitted.
 .EX
   rail0 payments transactions 0xabc123…
   rail0 payments transactions 0xabc123… --sort -confirmed_at
+  rail0 payments transactions 0xabc123… --operation capture --status failed
 .EE
 
 

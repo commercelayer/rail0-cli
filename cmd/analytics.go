@@ -37,7 +37,7 @@ var analyticsCmd = &cobra.Command{
   summary     — headline figures: order count, disputed count, refund and dispute
                 rates, per-status counts, and per-token volume
   timeseries  — order counts bucketed by day, week or month
-  breakdown   — the same counts grouped by token, chain, mode or status
+  breakdown   — the same counts grouped by token, chain, mode, status or operation
 
 All three take the same filters (--mode, --status, --token, --chain-id, --from,
 --to). Requires an account: a wallet-only session gets 403 account_required, since
@@ -107,18 +107,22 @@ instead of a number that looks addable.`,
 
 var analyticsBreakdownCmd = &cobra.Command{
 	Use:   "breakdown",
-	Short: "Group the counts by token, chain, mode or status (--by is required)",
+	Short: "Group the counts by token, chain, mode, status or operation (--by is required)",
 	Long: `Group the account's orders by one dimension.
 
---by is required: token, chain, mode or status. token and chain rows carry volume
-(they identify a scale); mode and status rows are counts only, because a group
-spanning several tokens has no single unit to add up in.`,
+--by is required: token, chain, mode, status or operation. token and chain rows
+carry volume (they identify a scale); mode and status rows are counts only,
+because a group spanning several tokens has no single unit to add up in.
+operation groups the account's own CONFIRMED transactions — how many captures,
+refunds, disputes… actually landed — and carries a transaction count beside the
+order count.`,
 	Example: `  rail0 analytics breakdown --by token
-  rail0 analytics breakdown --by status --mode charge`,
+  rail0 analytics breakdown --by status --mode charge
+  rail0 analytics breakdown --by operation`,
 	Args: cobra.NoArgs,
 	RunE: func(_ *cobra.Command, _ []string) error {
 		if analyticsBy == "" {
-			return fmt.Errorf("--by is required: token, chain, mode or status")
+			return fmt.Errorf("--by is required: token, chain, mode, status or operation")
 		}
 		return ui.RunAPI(func() (any, error) {
 			rows, err := newReadClient().Analytics.Breakdown(context.Background(), rail0.BreakdownParams{
@@ -215,8 +219,8 @@ func init() {
 	analyticsTimeseriesCmd.Flags().StringVar(&analyticsInterval, "interval", "", "Bucket width: day (default), week or month")
 	_ = analyticsTimeseriesCmd.RegisterFlagCompletionFunc("interval", fixedCompletions("day", "week", "month"))
 
-	analyticsBreakdownCmd.Flags().StringVar(&analyticsBy, "by", "", "Group by: token, chain, mode or status (required)")
-	_ = analyticsBreakdownCmd.RegisterFlagCompletionFunc("by", fixedCompletions("token", "chain", "mode", "status"))
+	analyticsBreakdownCmd.Flags().StringVar(&analyticsBy, "by", "", "Group by: token, chain, mode, status or operation (required)")
+	_ = analyticsBreakdownCmd.RegisterFlagCompletionFunc("by", fixedCompletions("token", "chain", "mode", "status", "operation"))
 
 	analyticsCmd.AddCommand(analyticsSummaryCmd, analyticsTimeseriesCmd, analyticsBreakdownCmd)
 }

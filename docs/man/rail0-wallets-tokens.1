@@ -1,0 +1,62 @@
+.nh
+.TH "RAIL0" "1" "Aug 2026" "rail0 CLI" ""
+
+.SH NAME
+rail0-wallets-tokens - Choose which tokens (and chains) a wallet accepts
+
+
+.SH SYNOPSIS
+\fBrail0 wallets tokens [flags]\fP
+
+
+.SH DESCRIPTION
+Manage a wallet's token holdings — the (chain, token) pairs it accepts.
+
+.PP
+They are what 'payment-methods' offers buyers and what payment creation checks:
+a wallet with no active holding cannot be paid. Every holding survives being
+disabled, so re-enabling one keeps its history.
+
+.PP
+A wallet with active holdings always has exactly ONE default, the method a buyer
+is offered first. The first holding you add takes it; to move it, run
+\&'wallets tokens add' on the new one with --default. The gateway refuses to
+disable the default (422 default_payment_method) — move it first.
+
+
+.SH OPTIONS
+\fB-h\fP, \fB--help\fP[=false]
+	help for tokens
+
+
+.SH OPTIONS INHERITED FROM PARENT COMMANDS
+\fB--base-url\fP=""
+	RAIL0 gateway base URL (env: RAIL0_BASE_URL)
+
+.PP
+\fB--debug\fP[=false]
+	Print HTTP request/response details to stderr
+
+.PP
+\fB--json\fP[=false]
+	Force plain (uncolored) JSON output (useful in scripts)
+
+.PP
+\fB--pretty\fP[=false]
+	Use the key-value/table view instead of JSON (terminal only)
+
+.PP
+\fB-q\fP, \fB--quiet\fP[=false]
+	Print only the result's id/hash, one per line (useful in scripts)
+
+
+.SH EXAMPLE
+.EX
+  rail0 wallets tokens add 0xABCD… --chain-id 84532 --token USDC --default
+  rail0 wallets tokens disable 0xABCD… USDC --chain-id 84532
+  rail0 wallets tokens enable 0xABCD… USDC --chain-id 84532
+.EE
+
+
+.SH SEE ALSO
+\fBrail0-wallets(1)\fP, \fBrail0-wallets-tokens-add(1)\fP, \fBrail0-wallets-tokens-disable(1)\fP, \fBrail0-wallets-tokens-enable(1)\fP

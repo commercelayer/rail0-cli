@@ -51,5 +51,6 @@ expires; 'rail0 token' prints the token itself.
 * [rail0](rail0.md)	 - CLI for the RAIL0 stablecoin payment protocol
 * [rail0 auth login](rail0_auth_login.md)	 - Sign in with your Ethereum wallet (SIWE)
 * [rail0 auth logout](rail0_auth_logout.md)	 - End the session: revoke the token on the gateway and remove it locally
+* [rail0 auth revoke-all](rail0_auth_revoke-all.md)	 - End EVERY session of an address, on every machine (for a key you no longer trust)
 * [rail0 auth status](rail0_auth_status.md)	 - Show the current authentication status
 

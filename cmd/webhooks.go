@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
+	"regexp"
 
 	rail0 "github.com/commercelayer/rail0-go"
 	"github.com/rail0/cli/internal/ui"
@@ -284,6 +284,9 @@ var webhooksEventsTopic string
 var webhooksEventsPaymentID string
 var webhooksEventsSince string
 var webhooksEventsUntil string
+var webhooksEventsResponseCode string
+var webhooksEventsPage int
+var webhooksEventsPerPage int
 
 var webhooksEventCallbacksCmd = &cobra.Command{
 	Use:   "event-callbacks <webhook_id>",
@@ -297,29 +300,35 @@ means the event never dispatched — check that the webhook is active and the
 topic matches), and if it is, what is the receiver returning.
 
 '--status failed' is the usual starting point, and the one to read before
-'reset-circuit'.`,
+'reset-circuit'; '--response-code 500' then tells the receiver's crashes apart
+from its rate limits. '--payment-id' narrows to one payment, named by either
+its UUID or its 0x rail0_id — any payment of the account, whichever of its
+wallets it belongs to. The gateway keeps 15 days of attempts; page through them
+with --page / --per-page.`,
 	Example: `  rail0 webhooks event-callbacks whk_abc123 --status failed
   rail0 webhooks event-callbacks whk_abc123 --topic payments.captured
+  rail0 webhooks event-callbacks whk_abc123 --status failed --response-code 500
   rail0 webhooks event-callbacks whk_abc123 --payment-id 0x… --since 2026-01-01T00:00:00Z`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		p := rail0.ListEventCallbacksParams{
-			Status:    webhooksEventsStatus,
-			Topic:     webhooksEventsTopic,
-			PaymentID: webhooksEventsPaymentID,
-			Since:     webhooksEventsSince,
-			Until:     webhooksEventsUntil,
-			Sort:      webhooksEventsSort,
+			Status:       webhooksEventsStatus,
+			Topic:        webhooksEventsTopic,
+			PaymentID:    webhooksEventsPaymentID,
+			ResponseCode: webhooksEventsResponseCode,
+			Since:        webhooksEventsSince,
+			Until:        webhooksEventsUntil,
+			Sort:         webhooksEventsSort,
+			Page:         webhooksEventsPage,
+			PerPage:      webhooksEventsPerPage,
+		}
+		// Checked before any request, so a mistyped id is named here rather than
+		// coming back as the gateway's 400.
+		if err := validateEventCallbackPaymentID(p.PaymentID); err != nil {
+			return err
 		}
 		return ui.RunAPI(func() (any, error) {
-			ctx := context.Background()
-			client := newReadClient()
-			paymentID, err := eventCallbackPaymentID(ctx, client, p.PaymentID)
-			if err != nil {
-				return nil, err
-			}
-			p.PaymentID = paymentID
-			resp, err := client.Webhooks.EventCallbacks(ctx, args[0], p)
+			resp, err := newReadClient().Webhooks.EventCallbacks(context.Background(), args[0], p)
 			if err != nil {
 				return nil, err
 			}
@@ -328,21 +337,26 @@ topic matches), and if it is, what is the receiver returning.
 	},
 }
 
-// eventCallbackPaymentID turns --payment-id into what the gateway filters on: the
-// payment's UUID. A delivery row stores that id, and the gateway compares the value
-// against a uuid column as-is, so the 0x rail0 id — the one every other command takes,
-// and the one this command's own example showed — failed the whole query instead of
-// matching. A 0x id is resolved through the payment itself; anything else passes
-// through untouched.
-func eventCallbackPaymentID(ctx context.Context, client *rail0.Client, id string) (string, error) {
-	if !strings.HasPrefix(id, "0x") {
-		return id, nil
+// eventCallbackPaymentIDPattern is the gateway's own rule for the payment_id filter:
+// either identifier a payment answers to — its UUID (UUID_FORMAT) or its 0x rail0_id
+// (BYTES32_FORMAT). The gateway resolves both itself, so the value is passed through
+// unchanged.
+var eventCallbackPaymentIDPattern = regexp.MustCompile(
+	`^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|0x[0-9a-fA-F]{64})$`)
+
+// validateEventCallbackPaymentID checks --payment-id locally ("" = no filter).
+//
+// It replaces a client-side resolution: the CLI used to turn a 0x rail0_id into the
+// payment's UUID with Payments.Get, which is readable only by the payment's payer or
+// payee — so filtering the account's deliveries by a payment of ANOTHER wallet of the
+// same account failed, and every 0x filter cost an extra request. The gateway now
+// accepts the rail0_id directly, so the only thing left to do here is refuse a value
+// that is neither form, with a message naming both.
+func validateEventCallbackPaymentID(id string) error {
+	if id == "" || eventCallbackPaymentIDPattern.MatchString(id) {
+		return nil
 	}
-	payment, err := client.Payments.Get(ctx, id)
-	if err != nil {
-		return "", fmt.Errorf("resolve --payment-id %s: %w", shortID(id), err)
-	}
-	return payment.ID, nil
+	return fmt.Errorf("--payment-id %q is neither a payment UUID nor a 0x rail0_id (0x + 64 hex)", id)
 }
 
 // ── webhooks delete ──────────────────────────────────────────────────────────────
@@ -422,7 +436,11 @@ func init() {
 
 	webhooksEventCallbacksCmd.Flags().StringVar(&webhooksEventsStatus, "status", "", "Filter by delivery status ('delivered', 'failed')")
 	webhooksEventCallbacksCmd.Flags().StringVar(&webhooksEventsTopic, "topic", "", "Filter by event topic (e.g. payments.captured)")
-	webhooksEventCallbacksCmd.Flags().StringVar(&webhooksEventsPaymentID, "payment-id", "", "Filter by the payment the delivery is for (its id or 0x rail0 id)")
+	webhooksEventCallbacksCmd.Flags().StringVar(&webhooksEventsPaymentID, "payment-id", "", "Filter by the payment the delivery is for: its UUID or its 0x rail0_id")
+	webhooksEventCallbacksCmd.Flags().StringVar(&webhooksEventsResponseCode, "response-code", "", "Filter by the receiver's exact HTTP response code (e.g. 500)")
+	// Without these the log stopped, silently, at the gateway's default page.
+	webhooksEventCallbacksCmd.Flags().IntVar(&webhooksEventsPage, "page", 0, "Page number (1-based)")
+	webhooksEventCallbacksCmd.Flags().IntVar(&webhooksEventsPerPage, "per-page", 0, "Attempts per page")
 	webhooksEventCallbacksCmd.Flags().StringVar(&webhooksEventsSince, "since", "", "Only deliveries at/after this ISO-8601 time")
 	webhooksEventCallbacksCmd.Flags().StringVar(&webhooksEventsUntil, "until", "", "Only deliveries at/before this ISO-8601 time")
 	webhooksEventCallbacksCmd.Flags().StringVar(&webhooksEventsSort, "sort", "", "Sort fields (e.g. -created_at)")

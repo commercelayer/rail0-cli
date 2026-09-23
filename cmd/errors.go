@@ -150,6 +150,7 @@ var errorHints = map[string]string{
 	"already_disputed":             "a dispute is already open — close it with 'rail0 payments dispute close <id>' first",
 	"not_disputed":                 "there is no open dispute to close",
 	"nothing_to_dispute":           "a dispute needs a merchant-held (refundable) balance",
+	"not_redrivable":               "only a pending transaction the gateway holds SIGNED can be redriven — check 'redrivable' in 'rail0 payments transaction <id> <transaction_id>'; an unsigned one needs the operation re-run",
 	"transaction_not_overwritable": "a transaction for this operation is already in flight — wait for it with 'rail0 payments wait <id>'",
 	"signer_mismatch":              "the signing key doesn't match the payment's payer/payee — use the right wallet's key",
 	// The SIWE BINDING failures, split out of signer_mismatch (gateway #216). These

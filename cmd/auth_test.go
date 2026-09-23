@@ -1,10 +1,16 @@
 package cmd
 
 import (
+	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"regexp"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/rail0/cli/internal/token"
 )
 
 func TestSIWEHost(t *testing.T) {
@@ -81,5 +87,61 @@ func TestLogoutResult(t *testing.T) {
 	}
 	if d := logoutResult("x", sessionRevocation{Had: true, Why: "gateway unreachable"})["session_detail"]; d != "gateway unreachable" {
 		t.Errorf("an abandoned session must say why, got %v", d)
+	}
+}
+
+// revoke-all signs a proof with the key it is given (the SDK carries the statement)
+// and then drops this machine's session when — and only when — it belonged to that
+// address: the cutoff killed it, while another address's session is still valid.
+func TestRevokeAllDropsOnlyTheRevokedAddressSession(t *testing.T) {
+	for _, tc := range []struct {
+		name, sub, want string
+	}{
+		{"own session", "", "removed"},
+		{"another address", "0x9999999999999999999999999999999999999999", "kept"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			isolate(t)
+			isolateTokenStore(t)
+			var revoked bool
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				switch r.URL.Path {
+				case "/auth/nonces":
+					_ = json.NewEncoder(w).Encode(map[string]string{"nonce": "abc123nonce9", "expires_at": "2030-01-01T00:00:00Z"})
+				case "/auth/revoke_all":
+					revoked = true
+					_ = json.NewEncoder(w).Encode(map[string]any{"revoked_all": true, "cutoff_at": "2026-09-23T12:00:00Z"})
+				}
+			}))
+			defer srv.Close()
+			t.Setenv("RAIL0_BASE_URL", srv.URL)
+			t.Setenv("RAIL0_PRIVATE_KEY", "")
+
+			sub := tc.sub
+			if sub == "" {
+				sub = addressForTestKey(t)
+			}
+			if err := saveTokenForTest(makeJWT(t, map[string]any{"sub": sub, "exp": time.Now().Add(time.Hour).Unix()})); err != nil {
+				t.Fatal(err)
+			}
+			assumeYes, revokeAllPrivateKey = true, testKeyHex
+			t.Cleanup(func() { assumeYes, revokeAllPrivateKey = false, "" })
+
+			out := captureStdout(t, func() {
+				if err := authRevokeAllCmd.RunE(authRevokeAllCmd, nil); err != nil {
+					t.Errorf("revoke-all: %v", err)
+				}
+			})
+			if !revoked {
+				t.Fatal("POST /auth/revoke_all was never sent")
+			}
+			if !strings.Contains(out, `"local_session": "`+tc.want+`"`) || !strings.Contains(out, "2026-09-23T12:00:00Z") {
+				t.Errorf("result should report local_session %q and the cutoff, got:\n%s", tc.want, out)
+			}
+			if stored := token.Load(srv.URL) != ""; stored != (tc.want == "kept") {
+				t.Errorf("stored session present = %v, want %v", stored, tc.want == "kept")
+			}
+		})
 	}
 }

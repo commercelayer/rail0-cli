@@ -1,8 +1,11 @@
 package cmd
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/rail0/cli/internal/config"
 	"github.com/rail0/cli/internal/token"
@@ -384,5 +387,36 @@ func TestEnvSwitchRefusesWhileTheBaseURLFlagIsSet(t *testing.T) {
 	baseURL = "HTTPS://rail0-gateway-staging.fly.dev/"
 	if err := switchEnv("staging", false); err != nil {
 		t.Errorf("an override naming the target (normalised) must be allowed: %v", err)
+	}
+}
+
+// A switch whose config save FAILS must leave the session of the gateway you are still
+// on alone. It used to revoke first and save second, so a failed save logged you out of
+// the environment you had not left.
+func TestEnvSwitchThatCannotSaveKeepsTheSession(t *testing.T) {
+	isolate(t)
+	isolateTokenStore(t)
+	if os.Geteuid() == 0 {
+		t.Skip("root writes a read-only directory")
+	}
+	staging := "https://rail0-gateway-staging.fly.dev"
+	if err := (&config.Config{Settings: map[string]string{"base-url": staging}}).Save(); err != nil {
+		t.Fatal(err)
+	}
+	if err := token.Save(staging, makeJWT(t, map[string]any{"sub": "0xme", "exp": time.Now().Add(time.Hour).Unix()})); err != nil {
+		t.Fatal(err)
+	}
+	path, _ := config.Path()
+	dir := filepath.Dir(path)
+	if err := os.Chmod(dir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+
+	if err := switchEnv("development", false); err == nil {
+		t.Fatal("the switch must fail when the config cannot be written")
+	}
+	if token.Load(staging) == "" {
+		t.Error("a switch that did not happen revoked the session of the gateway still in use")
 	}
 }

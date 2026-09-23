@@ -28,17 +28,22 @@ Requires login — a payment is readable only by its payer or payee. Run
 
 .PP
 Status values:
-  unsigned   — created, payer signature not yet submitted
+  unsigned            — created, payer signature not yet submitted
   signed              — payer signature stored, awaiting payee action
   authorized          — funds held in escrow, capture available
   charged             — one-shot charge executed, refund available
   captured            — funds fully captured by payee
   partially_captured  — partial capture executed; remaining escrow still capturable
+  expired             — authorization window closed with nothing captured; the escrow
+                        is still on-chain, recoverable with 'release' (or 'void')
   voided              — authorization cancelled (only before any capture), funds returned to payer
   released            — full authorization released back to payer (total release, nothing captured)
   refunded            — payment fully settled by refund (escrow and refundable both drained)
   partially_refunded  — legacy; no longer produced (a partial refund leaves the status unchanged)
-  failed              — terminal failure; payment cannot proceed
+
+.PP
+A failed on-chain attempt does not change the status: it shows on the
+transaction ('payments transactions') and in last_error_code / last_error_message.
 
 
 .SH OPTIONS

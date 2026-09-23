@@ -233,6 +233,19 @@ func (f *createPaymentFlags) buildResolved() (rail0.CreatePaymentRequest, error)
 		if err := validateFileRequest(req); err != nil {
 			return rail0.CreatePaymentRequest{}, err
 		}
+		// validateFileRequest accepts "@name" for payer/payee — the flag path does —
+		// but the request went out with the literal "@buyer", which then failed the
+		// signer check as "does not match the payer @buyer", reading like a wrong
+		// key. Resolved here, as the flag path resolves its own.
+		payer, err := resolveAlias(string(req.Payer))
+		if err != nil {
+			return rail0.CreatePaymentRequest{}, err
+		}
+		payee, err := resolveAlias(string(req.Payee))
+		if err != nil {
+			return rail0.CreatePaymentRequest{}, err
+		}
+		req.Payer, req.Payee = rail0.Address(payer), rail0.Address(payee)
 		return req, nil
 	}
 

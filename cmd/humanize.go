@@ -130,12 +130,16 @@ type transactionView struct {
 
 // humanizeTransactions gives each transaction its amount in token units, read on the
 // scale of the payment it belongs to. A transaction carries no chain or token of its own,
-// so the payment is fetched once; if that read fails the rows are returned as they
-// came — raw base units, as before — rather than failing a listing over a companion.
+// so the payment is fetched once — and not at all when no row has an amount to scale
+// (an empty page, or only operations that move none). If that read fails the rows are
+// returned as they came — raw base units, as before — rather than failing a listing
+// over a companion.
 func humanizeTransactions(ctx context.Context, client *rail0.Client, paymentID string, txs []rail0.Transaction) []*transactionView {
 	chainID, token := 0, ""
-	if p, err := client.Payments.Get(ctx, paymentID); err == nil && p != nil {
-		chainID, token = p.ChainID, string(p.Token)
+	if anyAmount(txs) {
+		if p, err := client.Payments.Get(ctx, paymentID); err == nil && p != nil {
+			chainID, token = p.ChainID, string(p.Token)
+		}
 	}
 	out := make([]*transactionView, len(txs))
 	for i := range txs {
@@ -146,6 +150,16 @@ func humanizeTransactions(ctx context.Context, client *rail0.Client, paymentID s
 		out[i] = v
 	}
 	return out
+}
+
+// anyAmount reports whether any transaction moves an amount worth scaling.
+func anyAmount(txs []rail0.Transaction) bool {
+	for i := range txs {
+		if txs[i].Amount != "" {
+			return true
+		}
+	}
+	return false
 }
 
 // humanize wraps a payment for output. Nil in, nil out, so a caller can pass a

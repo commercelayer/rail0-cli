@@ -256,3 +256,27 @@ func TestPaymentsTransactionsHumanizeTheirAmounts(t *testing.T) {
 		t.Errorf("want the raw amount and its human companion, got:\n%s", out)
 	}
 }
+
+// A page with no amount to scale costs one call, not two: the payment is read only to
+// scale amounts, so rows that carry none skip it.
+func TestPaymentsTransactionsSkipThePaymentReadWithoutAmounts(t *testing.T) {
+	g := newRecordingGateway(t)
+	g.respond = func(r *http.Request) any {
+		if strings.HasSuffix(r.URL.Path, "/transactions") {
+			return []any{map[string]any{"id": "tx-1", "operation": "void", "status": "confirmed"}}
+		}
+		t.Errorf("unexpected read of %s", r.URL.Path)
+		return map[string]any{}
+	}
+
+	captureStdout(t, func() {
+		if err := paymentsTransactionsCmd.RunE(paymentsTransactionsCmd, []string{lcRail0ID}); err != nil {
+			t.Errorf("payments transactions: %v", err)
+		}
+	})
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if len(g.reqs) != 1 {
+		t.Errorf("gateway calls = %d, want 1", len(g.reqs))
+	}
+}

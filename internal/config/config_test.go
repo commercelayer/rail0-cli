@@ -15,6 +15,19 @@ func withTempConfigDir(t *testing.T) {
 	// os.UserConfigDir reads XDG_CONFIG_HOME on Linux and HOME on macOS.
 	t.Setenv("XDG_CONFIG_HOME", dir)
 	t.Setenv("HOME", dir)
+	// Then PROVE the redirection took, rather than trusting the two lines above.
+	// Setting only one of the variables silently redirects nothing on the other
+	// platform, and a test that writes a fixture then overwrites the developer's
+	// real config while still passing — it reads back the same real path it just
+	// wrote, so every assertion holds. That happened twice in this file. An
+	// unredirected Path() must be a loud failure, not a quiet data loss.
+	path, err := Path()
+	if err != nil {
+		t.Skipf("no config dir on this platform: %v", err)
+	}
+	if !strings.HasPrefix(path, dir) {
+		t.Fatalf("config path %q escaped the temp dir %q — the test would write the real config", path, dir)
+	}
 }
 
 func TestLoadMissingReturnsEmpty(t *testing.T) {
@@ -61,11 +74,11 @@ func TestSaveAndReload(t *testing.T) {
 // the SAME directory (os.Rename is only atomic within one filesystem) and leaves
 // no litter.
 func TestSaveIsAtomicAndLeavesNoTempFiles(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", dir)
-	if _, err := Path(); err != nil {
-		t.Skipf("no config dir on this platform: %v", err)
-	}
+	// withTempConfigDir for the same reason as the malformed-YAML test below: a
+	// bare XDG_CONFIG_HOME does not redirect os.UserConfigDir on macOS, and this
+	// test SAVES — so it wrote its fixture straight over the real config file,
+	// silently replacing the developer's settings and aliases with its own.
+	withTempConfigDir(t)
 
 	first := &Config{Keys: []string{"payer"}, Settings: map[string]string{"base-url": "http://a"}}
 	if err := first.Save(); err != nil {
@@ -102,20 +115,16 @@ func TestSaveIsAtomicAndLeavesNoTempFiles(t *testing.T) {
 // `yaml: line 4: ...` left the reader hunting for a path in an OS-specific
 // directory they never look at.
 func TestLoadNamesThePathAndTheRemedyOnMalformedYAML(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", dir)
-	path, err := Path()
-	if err != nil {
-		t.Skipf("no config dir on this platform: %v", err)
-	}
-	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, []byte("settings:\n  base-url: [unclosed\n"), 0600); err != nil {
-		t.Fatal(err)
-	}
+	// withTempConfigDir, NOT a bare XDG_CONFIG_HOME: os.UserConfigDir reads HOME
+	// on macOS and ignores XDG_CONFIG_HOME entirely, so setting only the latter
+	// left Path() pointing at the REAL config file — and this test, whose whole
+	// job is to plant an unparseable one, overwrote the developer's own settings
+	// and key index. It still passed, because it wrote and re-read the same real
+	// path, so nothing flagged the damage. Isolation here is the assertion.
+	withTempConfigDir(t)
+	path := writeCorruptConfig(t)
 
-	_, err = Load()
+	_, err := Load()
 	if err == nil {
 		t.Fatal("a malformed config must be an error, not silently empty")
 	}

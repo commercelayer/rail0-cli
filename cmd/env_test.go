@@ -95,6 +95,38 @@ func TestEnvSwitchDetailsGating(t *testing.T) {
 	}
 }
 
+// -d must mean the same thing on all three forms of `env`. The bare listing used
+// to print every environment's settings unconditionally, so the persistent flag
+// changed `env <name>` and `env current` but did nothing here — and a reader had
+// no way to tell whether the parameters in front of them were the flag's doing
+// or the command's. Bare answers "which environments can I pick?"; -d adds what
+// each one declares.
+func TestEnvListDetailsGating(t *testing.T) {
+	isolate(t)
+
+	bare := environmentRows(false)
+	if len(bare) != len(environments) {
+		t.Fatalf("listing must name every environment: got %d, want %d", len(bare), len(environments))
+	}
+	for _, row := range bare {
+		if _, ok := row["settings"]; ok {
+			t.Errorf("listing without -d must omit settings, got %v", row)
+		}
+		if _, ok := row["env"]; !ok {
+			t.Errorf("listing must always name the environment, got %v", row)
+		}
+		if _, ok := row["current"]; !ok {
+			t.Errorf("listing must always mark the current one, got %v", row)
+		}
+	}
+
+	for _, row := range environmentRows(true) {
+		if _, ok := row["settings"]; !ok {
+			t.Errorf("listing with -d must include settings, got %v", row)
+		}
+	}
+}
+
 // A switch reports what became of the session on the gateway it LEFT, in the
 // result rather than in a log line — so -q/--json callers see it too. Whether the
 // old JWT is dead or merely abandoned on disk is part of what the switch did, and

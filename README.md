@@ -375,6 +375,11 @@ payment picker, which has no script to keep compatible, instead labels it
 transaction hash, else `id`; one per line for a list), so you can capture it
 directly: `id=$(rail0 payments create … -q)`.
 
+The one exception is a response carrying a **one-time secret**: `webhooks create` and
+`webhooks rotate-secret` print the `shared_secret` under `-q`, because it is shown only
+once and the id can be looked up again with `webhooks list`:
+`secret=$(rail0 webhooks rotate-secret <id> -q)`.
+
 Exit codes distinguish the failure class: `0` success, `3` unauthorized, `4`
 forbidden, `5` not found, `6` conflict, `7` rejected (422), `8` gateway error
 (5xx), `9` network, `10` rate-limited (429), `130` cancelled by the user, `1`

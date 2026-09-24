@@ -312,10 +312,11 @@ type payloadExpectation struct {
 //     RAIL0-domain EIP-712 hash of the payment terms (payer, payee, token, amount,
 //     both expiries) — so it is what binds the signature to THESE terms on-chain.
 //     Recomputing it needs the deployment's VERSION() for the domain, and no payment
-//     response carries it; GET /blockchains serves it as `contract.version`, but the
-//     gateway's OpenAPI schema declares that property outside `properties`, so the
-//     SDK's generated Blockchain type has no field for it. Until that is fixed a
-//     nonce for different terms (another payee) is not detectable here. `payments
+//     response carries it: the only source is GET /blockchains (`contract.version`,
+//     typed in the SDK as Blockchain.Contract.Version). Reading it would add a gateway
+//     request to every create, which was judged not worth it for this check
+//     (2026-09-24), so a nonce for different terms (another payee) is not detectable
+//     here. Revisit if a payment response ever carries the version. `payments
 //     create` narrows this by checking the created payment's own terms against the
 //     request (checkCreatedPayment), which catches a gateway that records the wrong
 //     payment, but not one that records the right payment and serves a nonce for

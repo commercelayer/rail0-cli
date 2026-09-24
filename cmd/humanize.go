@@ -7,6 +7,8 @@ import (
 	"time"
 
 	rail0 "github.com/commercelayer/rail0-go"
+
+	"github.com/rail0/cli/internal/ui"
 )
 
 // Amount and expiry rendering for the output layer.
@@ -153,15 +155,23 @@ type transactionView struct {
 // humanizeTransactions gives each transaction its amount in token units, read on the
 // scale of the payment it belongs to. A transaction carries no chain or token of its own,
 // so the payment is fetched once — and not at all when no row has an amount to scale
-// (an empty page, or only operations that move none). If that read fails the rows are
-// returned as they came — raw base units, as before — rather than failing a listing
-// over a companion.
+// (an empty page, or only operations that move none), or under --quiet, which prints
+// only ids. If that read fails the rows are returned as they came — raw base units, as
+// before — rather than failing a listing over a companion.
 func humanizeTransactions(ctx context.Context, client *rail0.Client, paymentID string, txs []rail0.Transaction) []*transactionView {
+	var p *rail0.Payment
+	if anyAmount(txs) && !ui.IsQuiet() {
+		p, _ = client.Payments.Get(ctx, paymentID) // nil on failure: rows stay raw
+	}
+	return humanizeTransactionsOf(ctx, p, txs)
+}
+
+// humanizeTransactionsOf is humanizeTransactions for a caller that already holds the
+// payment (nil = unknown, rows stay raw).
+func humanizeTransactionsOf(ctx context.Context, p *rail0.Payment, txs []rail0.Transaction) []*transactionView {
 	chainID, token := 0, ""
-	if anyAmount(txs) {
-		if p, err := client.Payments.Get(ctx, paymentID); err == nil && p != nil {
-			chainID, token = p.ChainID, string(p.Token)
-		}
+	if p != nil && !ui.IsQuiet() {
+		chainID, token = p.ChainID, string(p.Token)
 	}
 	out := make([]*transactionView, len(txs))
 	for i := range txs {
@@ -185,10 +195,14 @@ func anyAmount(txs []rail0.Transaction) bool {
 }
 
 // humanize wraps a payment for output. Nil in, nil out, so a caller can pass a
-// response through without a guard.
+// response through without a guard. Under --quiet the companions are left out: only the
+// id is printed, and the amounts would cost a token-catalogue request for nothing.
 func humanize(ctx context.Context, p *rail0.Payment) *paymentView {
 	if p == nil {
 		return nil
+	}
+	if ui.IsQuiet() {
+		return &paymentView{Payment: p}
 	}
 	chainID, token := p.ChainID, string(p.Token)
 	return &paymentView{
@@ -203,8 +217,8 @@ func humanize(ctx context.Context, p *rail0.Payment) *paymentView {
 	}
 }
 
-// humanizeAll wraps a list. One catalog fetch per chain covers the whole page, since
-// tokenDecimals caches per chain.
+// humanizeAll wraps a list. One catalogue fetch covers the whole page, whatever its
+// chains (tokenCatalog).
 func humanizeAll(ctx context.Context, payments []rail0.Payment) []*paymentView {
 	out := make([]*paymentView, 0, len(payments))
 	for i := range payments {

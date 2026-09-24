@@ -32,6 +32,10 @@ func SetPretty(on bool) { prettyMode = on }
 // can capture it without a JSON parser.
 func SetQuiet(on bool) { quietMode = on }
 
+// IsQuiet reports whether --quiet is in effect. A caller that decorates its result with
+// fields --quiet never prints can skip the requests that only feed them.
+func IsQuiet() bool { return quietMode }
+
 func isTerminal(f *os.File) bool { return term.IsTerminal(f.Fd()) }
 
 // RunAPI executes fn and prints its result. On a TTY it shows a bubbletea

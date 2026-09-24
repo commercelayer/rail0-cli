@@ -366,6 +366,7 @@ func pollUntil(ctx context.Context, timeout time.Duration, checkCmd string, dela
 	}
 
 	for {
+		var retryAfter time.Duration
 		res, done, err := check(ctx)
 		switch {
 		case ctx.Err() != nil:
@@ -381,6 +382,12 @@ func pollUntil(ctx context.Context, timeout time.Duration, checkCmd string, dela
 				return nil, err
 			}
 			lastTransient = err
+			// A 429 says when the budget refills: polling again sooner only earns
+			// another 429 and spends the same budget the wait needs.
+			var apiErr *rail0.APIError
+			if errors.As(err, &apiErr) && apiErr.Status == http.StatusTooManyRequests {
+				retryAfter = apiErr.RetryAfter
+			}
 		case done:
 			return res, nil
 		}
@@ -393,7 +400,7 @@ func pollUntil(ctx context.Context, timeout time.Duration, checkCmd string, dela
 			lastProgress = time.Now()
 		}
 		delay = nextPollDelay(time.Since(started), delay)
-		if !sleep(delay) {
+		if !sleep(max(delay, retryAfter)) {
 			return nil, interruptedError(checkCmd)
 		}
 	}
@@ -619,14 +626,22 @@ becomes 'captured', a captured one never becomes 'authorized' again. An
 						}
 						return nil, false, nil
 					}
-					txs, err := client.Payments.Transactions(ctx, rail0Id)
+					// The payment embeds EVERY transaction; the list endpoint this used
+					// to read returned its first page (25 rows), so a payment with more
+					// could report settled while a later operation was still in flight.
+					p, err := client.Payments.Get(ctx, rail0Id)
 					if err != nil {
 						return nil, false, err
 					}
-					if anyInFlight(txs.Data) {
+					if anyInFlight(p.Transactions) {
 						return nil, false, nil
 					}
-					p, err := client.Payments.Get(ctx, rail0Id)
+					// Settled — but return a FRESH read, not this one. The gateway
+					// commits a confirmation and the payment's new state together, yet
+					// serves the payment row and its transactions from two queries: a
+					// confirm landing between them shows the last transaction settled
+					// beside a payment still in its previous state.
+					p, err = client.Payments.Get(ctx, rail0Id)
 					return p, err == nil, err
 				})
 		})

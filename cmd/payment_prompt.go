@@ -52,8 +52,16 @@ var opFilters = map[string]opFilter{
 // pickPaymentID resolves the payment an operation acts on. A positional argument
 // is used as-is. Otherwise, on a TTY, it fetches the caller's payments, keeps the
 // ones op can act on, and shows a picker; when none match (or the list can't be
-// fetched — e.g. release run by the un-authenticated payer) it falls back to a
-// free-text prompt. Non-interactive with no argument → error.
+// fetched) it falls back to a free-text prompt. Non-interactive with no argument →
+// error.
+//
+// Before the list it signs in as the SIGNING KEY's address (ensureSession), the same
+// sign-in the operation does next anyway. The list used to go out first, on whatever
+// session was stored: with none, `GET /payments` was a guaranteed 401 — a wasted call
+// and a picker that never appeared — and with another address's session it listed
+// THAT party's payments, offering ones the key cannot act on. ensureSession remembers
+// the sign-in for the rest of the command, so the operation's own check does not
+// repeat it.
 //
 // Whatever it returns goes straight into the request path: the gateway resolves
 // EITHER identifier form there — the payment's UUID or its logical rail0_id (0x + 64
@@ -61,12 +69,19 @@ var opFilters = map[string]opFilter{
 // (The CLI historically pre-resolved a rail0_id to its UUID through an authenticated
 // list filter; resolvePaymentID was the passthrough left behind when that stopped
 // being necessary, and is now gone. #72)
-func pickPaymentID(ctx context.Context, client *rail0.Client, args []string, op string) (string, error) {
+func pickPaymentID(ctx context.Context, client *rail0.Client, args []string, op, signingKey string) (string, error) {
 	if len(args) > 0 {
 		return args[0], nil
 	}
 	if !term.IsTerminal(os.Stdin.Fd()) {
 		return "", fmt.Errorf("a payment id (rail0_id or UUID) is required")
+	}
+	signer, err := addressFromKey(signingKey)
+	if err != nil {
+		return "", err
+	}
+	if err := ensureSession(ctx, client, signingKey, signer); err != nil {
+		return "", err
 	}
 	if id, ok := pickFromList(ctx, client, op); ok {
 		return id, nil

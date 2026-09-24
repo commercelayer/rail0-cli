@@ -20,6 +20,7 @@ import (
 type fakeGateway struct {
 	mu    sync.Mutex
 	auths map[string]string // request path -> Authorization header as received
+	hits  map[string]int    // request path -> times requested
 	jwt   string
 }
 
@@ -27,11 +28,13 @@ func newFakeGateway(t *testing.T) (*fakeGateway, *httptest.Server) {
 	t.Helper()
 	g := &fakeGateway{
 		auths: map[string]string{},
+		hits:  map[string]int{},
 		jwt:   makeJWT(t, map[string]any{"sub": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", "exp": time.Now().Add(time.Hour).Unix()}),
 	}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		g.mu.Lock()
 		g.auths[r.URL.Path] = r.Header.Get("Authorization")
+		g.hits[r.URL.Path]++
 		g.mu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
 		switch {
@@ -252,5 +255,46 @@ func TestEnsureSessionRenewsTheSameAddressesExpiringSession(t *testing.T) {
 				t.Errorf("another address's session was evicted: stored %q", got)
 			}
 		})
+	}
+}
+
+// With another address's session stored, the fresh sign-in is deliberately not saved
+// (#95) — so a command that ensures its session twice (the interactive picker, then the
+// operation's signer check) signed in twice. The second call must reuse the first.
+func TestEnsureSessionSignsInOncePerClientWhenAnotherSessionIsStored(t *testing.T) {
+	isolateTokenStore(t)
+	g, srv := newFakeGateway(t)
+	t.Setenv("RAIL0_BASE_URL", srv.URL)
+	other := makeJWT(t, map[string]any{"sub": "0x9999999999999999999999999999999999999999", "exp": time.Now().Add(time.Hour).Unix()})
+	if err := saveTokenForTest(other); err != nil {
+		t.Fatalf("seed other token: %v", err)
+	}
+
+	client := newClient()
+	ctx := context.Background()
+	for range 2 {
+		if err := ensureSession(ctx, client, testKeyHex, addressForTestKey(t)); err != nil {
+			t.Fatalf("ensureSession: %v", err)
+		}
+	}
+	g.mu.Lock()
+	logins := g.hits["/auth"]
+	g.mu.Unlock()
+	if logins != 1 {
+		t.Errorf("signed in %d times on one client; want 1", logins)
+	}
+	if got := token.Load(srv.URL); got != other {
+		t.Error("the other address's stored session must be left in place")
+	}
+
+	// A different client (another command) still signs in: the memo is per client.
+	if err := ensureSession(ctx, newClient(), testKeyHex, addressForTestKey(t)); err != nil {
+		t.Fatalf("ensureSession on a new client: %v", err)
+	}
+	g.mu.Lock()
+	logins = g.hits["/auth"]
+	g.mu.Unlock()
+	if logins != 2 {
+		t.Errorf("a new client signed in %d times in total; want 2", logins)
 	}
 }

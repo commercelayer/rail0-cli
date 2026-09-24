@@ -283,6 +283,11 @@ func sessionOutlives(claims map[string]any, margin time.Duration) bool {
 	return time.Unix(int64(exp), 0).After(time.Now().Add(margin))
 }
 
+// signedInAs records, per client, the address ensureSession signed in as during this
+// process (see ensureSession). A CLI process runs one command, so it never grows past
+// a client or two.
+var signedInAs = map[*rail0.Client]string{}
+
 // ensureSession guarantees a valid SIWE session whose address matches `addr`
 // before a write to /payments. The gateway now gates every /payments endpoint on
 // a session, and `create` additionally requires the payer to BE the authenticated
@@ -300,6 +305,14 @@ func sessionOutlives(claims map[string]any, margin time.Duration) bool {
 // — still built with no token — came back 401 "run 'rail0 auth login' first". Logging
 // in here mutates the client the command actually uses. (#59)
 func ensureSession(ctx context.Context, client *rail0.Client, keyHex, addr string) error {
+	// Already signed in as addr on THIS client earlier in the command: its token is
+	// minutes old, so it outlives any margin. Without this, a command that signs in
+	// twice (the interactive picker, then the operation's signer check) repeated the
+	// nonce + verify round-trip whenever the stored session was another address's —
+	// the one case where the fresh token is deliberately not saved (#95).
+	if signedInAs[client] != "" && strings.EqualFold(signedInAs[client], addr) {
+		return nil
+	}
 	baseURL := resolveBaseURL()
 	// Whether a DIFFERENT live session is already stored decides if we may
 	// persist this one — see the token.Save call below (#95).
@@ -332,6 +345,7 @@ func ensureSession(ctx context.Context, client *rail0.Client, keyHex, addr strin
 	if err != nil {
 		return fmt.Errorf("sign-in failed: %w", err)
 	}
+	signedInAs[client] = addr
 	// Persist ONLY when this is the machine's session for this gateway. When a
 	// different live session is already stored, the sign-in we just did serves
 	// this one command (the key came from its -p flag) and must not evict it:

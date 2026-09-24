@@ -58,7 +58,7 @@ sibling checkout, nothing to compile. Grab the archive for your platform from
 [Releases](https://github.com/commercelayer/rail0-cli/releases), or in one line:
 
 ```sh
-# macOS arm64 — swap darwin/arm64 for your platform (darwin|linux|windows, amd64|arm64)
+# macOS arm64 — swap darwin/arm64 for your platform (darwin|linux amd64|arm64; windows amd64, as a .zip)
 VERSION=$(curl -fsSL https://api.github.com/repos/commercelayer/rail0-cli/releases/latest | sed -n 's/.*"tag_name": *"v\([^"]*\)".*/\1/p')
 curl -fsSL "https://github.com/commercelayer/rail0-cli/releases/download/v${VERSION}/rail0_${VERSION}_darwin_arm64.tar.gz" | tar xz
 sudo mv rail0 /usr/local/bin/
@@ -232,8 +232,11 @@ rail0 auth status                  # address, account, expiry
 ```
 
 **The buyer does not need this step.** `payments create` signs in on its own with
-the payer key, so a buyer with a wallet and nothing else can pay. The merchant
-logs in because the action commands and the account views require it.
+the payer key, so a buyer with a wallet and nothing else can pay. The signing
+commands (`authorize`, `capture`, …) do the same with their own `-p` key, so the
+merchant does not log in for those either: the login stores the merchant's session
+for the commands that take no key — the reads (`payments get`, `list`, `wait`) and
+the account views (`wallets`, `webhooks`, `analytics`).
 
 ### 5. Check what the merchant accepts
 
@@ -422,7 +425,7 @@ Minimal setup:
 
 ```sh
 export RAIL0_BASE_URL=https://api.rail0.xyz
-rail0 auth login -p @payee     # caches a JWT via SIWE; every command reads it from there
+rail0 auth login -p @payee     # caches a JWT via SIWE; the commands that take no key read it from there
 ```
 
 The session lives only in the OS cache dir, keyed **per gateway**
@@ -710,21 +713,26 @@ Every on-chain action command (`authorize`, `charge`, `capture`, `void`, `releas
 | `--private-key` | `-p` | Caller's secp256k1 private key: 0x-prefixed hex, or `@name` for a key saved in the OS keychain (`rail0 keys add`) |
 | `--wait` | `-w` | Block until the operation confirms on-chain (or fails) instead of returning at the `202` |
 | `--timeout` | — | Max time to wait with `--wait` (default `15m`). The gateway is notified only once the chain calls the block settled, so settlement is minutes, not seconds: ~2 min on Base/OP Sepolia and ~11 min on Arbitrum Sepolia (its `safe` block sits ~2640 blocks back, on L1 batch cadence), ~0 on Arc and Amoy. The old `2m` default could not be reached on Arbitrum at all — and a `--wait` that gives up exits non-zero, which a script reads as a failed capture. Lower it on a fast chain if you want a stuck operation reported sooner |
-| `--yes` | `-y` | Skip the confirmation prompt on any irreversible op (`void`/`release`/`refund`, `keys rm`, `wallets delete`, `webhooks delete`/`rotate-secret`); required to run them non-interactively |
+| `--idempotency-key` | — | Make a re-run safe: the same key returns the first transaction instead of opening a second — see [Safe re-runs](#safe-re-runs---idempotency-key) |
+| `--yes` | `-y` | Skip the confirmation prompt (every action except `authorize`); required to run non-interactively |
 
 **Waiting for confirmation.** The gateway returns `202` immediately and the indexer
 confirms the on-chain event a moment later. Pass `--wait` to have the command poll
 until the operation's transaction is `confirmed` (then print the settled payment)
 or `failed`, instead of polling `payments get` by hand. You can also wait on an
 existing payment: `rail0 payments wait <rail0Id> [--until <status>]` (default: until
-no transaction is still in flight).
+no transaction is still in flight). Polling backs off: a read every 2s for the first
+30s, then each pause half again as long, up to one every 10s — and a `429` is waited
+out for its `Retry-After` rather than polled through.
 
 **Confirmations.** Every irreversible action prompts for a `y/N` confirmation first;
 pass `--yes` to skip it (and to run it in a non-interactive shell, where it otherwise
 refuses rather than blocking on a hidden prompt). That covers every fund-moving
 on-chain op — `capture`, `charge`, `void`, `release`, `refund`, `dispute`,
-`dispute close` — and, identically, `keys rm`, `wallets delete`,
-`webhooks delete` and `webhooks rotate-secret`. A sweep test asserts the whole
+`dispute close` — and, identically, `auth revoke-all`, `keys rm`, `wallets delete`
+(and `wallets update --active false`, the same operation), `wallets tokens disable`,
+`webhooks delete`, `webhooks rotate-secret`, and an `env` switch that would clear
+settings. A sweep test asserts the whole
 surface, so a new fund-moving command cannot ship ungated.
 
 `webhooks rotate-secret` is gated for a reason that is easy to miss: it is not
@@ -751,7 +759,7 @@ Commands that take a payment argument (`get`, `transactions`, and the action com
 - the payment **UUID** `id`;
 - the logical **`rail0_id`** (`0x…`, 64 hex).
 
-Either works with or without a session (subject to the endpoint's own auth — the action commands are still payee/payer-gated). The CLI no longer pre-resolves the `rail0_id` client-side; a value that is neither a UUID nor a `rail0_id` is a clean 404.
+Either form needs the same authorization: the gateway serves a payment only to its payer or payee. The action commands sign in as their `-p` key; the reads (`get`, `transactions`, `wait`, …) use the stored session, which must be one of the two parties'. The CLI no longer pre-resolves the `rail0_id` client-side; a value that is neither a UUID nor a `rail0_id` is a clean 404.
 
 ---
 
@@ -759,7 +767,7 @@ Either works with or without a session (subject to the endpoint's own auth — t
 
 ### Authentication
 
-Every `/payments` operation requires a SIWE session (the gateway rejects anonymous writes and binds a created payment to the payer). Reads and merchant action commands need a prior `auth login`; **`payments create` signs in automatically** with the payer key, so a buyer needs no separate login step (see [Payer — `payments create`](#payer--payments-create)).
+Every `/payments` operation requires a SIWE session (the gateway rejects anonymous writes and binds a created payment to the payer). **Every signing command signs in automatically as its own key** — `payments create`/`sign` with the payer key, the action commands with their `-p` key — so none of them needs a prior login (see [Payer — `payments create`](#payer--payments-create)). The commands that take no key (the payment reads, `payments redrive`, and the account views) use the session stored by `auth login`; for a payment read it must be the payer's or the payee's.
 
 #### `auth login`
 
@@ -1015,7 +1023,7 @@ rail0 chains -s ETH -n mainnet    # combined
 
 #### `tokens`
 
-List the token catalog. Filter by chain with `--chain-id` and/or by token symbol with `--symbol` / `-s` (case-insensitive).
+List the token catalog. Filter by chain with `--chain-id` / `-c`, by token symbol with `--symbol` / `-s` (case-insensitive), and by `--active` (`--active=false` for retired tokens only; omit it for every token).
 
 ```sh
 rail0 tokens
@@ -1172,8 +1180,10 @@ Create a payment, sign the EIP-712 payload with the payer's key, and submit the 
 | `--amount` | `-a` | yes | — | Amount in token units (e.g. `10.50`) |
 | `--chain-id` | `-c` | yes | — | EVM chain ID as in `chains` (e.g. `5042002`) |
 | `--charge` | `-C` | no | (off) | Create with mode `charge` (immediate, no escrow); default is `authorize` (escrow + capture) |
+| `--description` | `-d` | no | — | Reconciliation note (e.g. order id); prompted on a terminal when omitted |
 | `--payment-file` | `-f` | no | — | JSON file with the full request body |
 | `--private-key` | `-p` | yes | — | Payer's key — creates and signs locally in one step |
+| `--idempotency-key` | — | no | fresh per run | Reuse to retry the same create without minting a second payment |
 
 ```sh
 rail0 payments create \
@@ -1187,7 +1197,7 @@ If required flags are missing and stdin is a TTY, an interactive form launches a
 
 #### `payments get <rail0Id>`
 
-Fetch the current status of a payment, including live on-chain balances and the transaction list.
+Fetch the current status of a payment, including its last **confirmed** on-chain balances (mirrors the indexer reports, not live reads — a broadcast but unconfirmed capture or refund is not in them yet) and the transaction list.
 
 ```sh
 rail0 payments get 0xabc123…
@@ -1274,7 +1284,8 @@ Re-broadcast a transaction that was prepared and **signed** but never reached th
 (a worker that died in between, a drained queue). The same signed bytes go out again;
 no new signature is asked for and nothing about the payment changes. Only a row reading
 `redrivable: true` qualifies. A `pending` row without a signature is unfinished, not
-stuck, so re-run the operation instead. Payee only; `-w/--wait` blocks until it
+stuck, so re-run the operation instead. Payee only, and it takes no key: it runs on the
+stored session, so `auth login` as the payee first. `-w/--wait` blocks until it
 confirms. The gateway also redrives on its own recovery cadence; this asks for it now.
 
 ```sh
@@ -1373,6 +1384,32 @@ rail0 payments refund <rail0Id> -a 1.00 -p @merchant-key
 
 ---
 
+#### `payments dispute <rail0Id>` / `payments dispute close <rail0Id>`
+
+Open or withdraw a dispute. **Payer only**, so these sign with the buyer's key; signal-only
+(no money moves), but still on-chain transactions, so `--wait` applies. `--reason` takes an
+optional bytes32 code. A merchant cannot dismiss a dispute — a full `refund` closes it.
+`payments disputes <rail0Id>` lists one payment's open/close history.
+
+```sh
+rail0 payments dispute <rail0Id> -p @buyer-key --wait
+rail0 payments dispute close <rail0Id> -p @buyer-key --wait
+```
+
+---
+
+#### `payments wait <rail0Id>`
+
+Block until a payment settles — no transaction still in flight — or, with `--until
+<status>`, until it reaches that status; it stops early with an error once the status
+can no longer be reached. `--timeout` defaults to `15m`. Runs on the stored session.
+
+```sh
+rail0 payments wait <rail0Id> --until captured
+```
+
+---
+
 ## Full flow examples
 
 Worked versions of the three shapes, using the address book and keychain names
@@ -1393,8 +1430,8 @@ parts, possibly never.
 ```sh
 export RAIL0_BASE_URL=https://api.rail0.xyz
 
-# The MERCHANT logs in: the action commands need a session.
-# The buyer does not — 'payments create' signs in with the payer key on its own.
+# The MERCHANT logs in, so the stored session (used by 'payments get') is theirs.
+# The signing commands below sign in as their own -p key either way.
 rail0 auth login -p @merchant-key
 
 # 1. Buyer creates the payment and signs the EIP-3009 authorization locally

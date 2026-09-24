@@ -36,11 +36,27 @@ Readable by either participant.`,
 		return ui.RunAPI(func() (any, error) {
 			ctx := context.Background()
 			client := newReadClient()
+			// One read, not two: the payment embeds every transaction as the same entity
+			// the single-transaction endpoint serves, and it is also where the chain and
+			// token that scale the amount come from. That endpoint plus the payment used
+			// to be two requests for the same row.
+			p, err := client.Payments.Get(ctx, args[0])
+			if err != nil {
+				return nil, err
+			}
+			for i := range p.Transactions {
+				if p.Transactions[i].ID == args[1] {
+					return humanizeTransactionsOf(ctx, p, p.Transactions[i:i+1])[0], nil
+				}
+			}
+			// Not among the payment's rows: ask the endpoint anyway, so the answer is the
+			// gateway's own (a 404 for an id that is not this payment's) rather than a
+			// message invented here — and a row created since the read above is found.
 			tx, err := client.Payments.GetTransaction(ctx, args[0], args[1])
 			if err != nil {
 				return nil, err
 			}
-			return humanizeTransactions(ctx, client, args[0], []rail0.Transaction{*tx})[0], nil
+			return humanizeTransactionsOf(ctx, p, []rail0.Transaction{*tx})[0], nil
 		})
 	},
 }
@@ -75,7 +91,7 @@ Payee only. Add -w/--wait to block until the transaction confirms (or fails).`,
 			if !waitFlag {
 				return tx, nil
 			}
-			return waitForOp(ctx, client, rail0Id, tx.Operation, tx.ID, waitTimeout)
+			return waitForOp(ctx, client, rail0Id, tx.Operation, tx.ID, true, waitTimeout)
 		})
 	},
 }

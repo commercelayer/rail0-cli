@@ -23,9 +23,34 @@ var (
 	waitUntil   string
 )
 
-// A var, not a const, so the tests can drive the polling loop without sleeping
-// for real seconds.
-var waitPollInterval = 2 * time.Second
+// Polling cadence: every waitPollInterval for the first waitPollFastPhase, then each
+// interval half again as long as the one before, up to waitPollMaxInterval.
+//
+// A flat 2s made a wait's cost proportional to the chain's finality: ~3 reads on Arc,
+// ~65 on Base or OP Sepolia, ~330 on Arbitrum Sepolia and 451 for a wait that ran out
+// its 15 minutes — each against the session's 300/min budget, so ten parallel `-w`
+// captures on a slow chain throttled the session they all share. Settlement that has
+// not come in the first half minute is waiting on the chain's safe/finalized block,
+// which is minutes away and not 2s closer on the next read; the backoff costs at most
+// waitPollMaxInterval of extra latency at the end of such a wait, and nothing on the
+// chains that settle in seconds.
+//
+// Vars, not consts, so the tests can drive the polling loop without sleeping for real
+// seconds.
+var (
+	waitPollInterval    = 2 * time.Second
+	waitPollFastPhase   = 30 * time.Second
+	waitPollMaxInterval = 10 * time.Second
+)
+
+// nextPollDelay is the pause before the next read, given how long the wait has run and
+// the previous pause (see waitPollInterval for the schedule).
+func nextPollDelay(elapsed, previous time.Duration) time.Duration {
+	if elapsed < waitPollFastPhase || previous < waitPollInterval {
+		return waitPollInterval
+	}
+	return min(previous*3/2, max(waitPollMaxInterval, waitPollInterval))
+}
 
 // Default polling deadline for --wait.
 //
@@ -61,11 +86,12 @@ var waitPollInterval = 2 * time.Second
 // healthy operation as a failure, which is the error that costs money.
 const defaultWaitTimeout = 15 * time.Minute
 
-// How many polls between progress lines on stderr. Off a TTY (--json, -q, CI)
-// there is no spinner, so a wait used to be COMPLETELY silent for up to two
-// minutes with no way to tell it apart from a hang. Every 5th poll is one line
-// per ~10s — enough to show life, quiet enough not to bury the result. (#107)
-const waitProgressEvery = 5
+// How often a progress line goes to stderr. Off a TTY (--json, -q, CI) there is no
+// spinner, so a wait used to be COMPLETELY silent for up to two minutes with no way to
+// tell it apart from a hang. One line per ~10s is enough to show life and quiet enough
+// not to bury the result. (#107) Measured in time rather than polls now that the
+// interval backs off: every 5th poll would have been one line per ~50s late in a wait.
+const waitProgressEvery = 10 * time.Second
 
 // The gateway's payment-status vocabulary — `Payment.aasm.states`, which is exactly
 // what its `status` query parameter is validated against. So this is the list behind
@@ -229,7 +255,7 @@ func submitThenWait(ctx context.Context, client *rail0.Client, rail0Id, op strin
 	if !waitFlag {
 		return res, nil
 	}
-	return waitForOp(ctx, client, rail0Id, op, submittedTransactionID(res), waitTimeout)
+	return waitForOp(ctx, client, rail0Id, op, submittedTransactionID(res), true, waitTimeout)
 }
 
 // submittedTransactionID extracts the transaction id from a submit response. All
@@ -285,12 +311,16 @@ func resumeReplayed(ctx context.Context, client *rail0.Client, rail0Id, op strin
 	if !waitFlag {
 		return tx, nil
 	}
-	return waitForOp(ctx, client, rail0Id, op, tx.ID, waitTimeout)
+	// Polled at once (afterSubmit false): unlike a fresh submit, a replayed row may
+	// already be settled, and the first read is what finds that out.
+	return waitForOp(ctx, client, rail0Id, op, tx.ID, false, waitTimeout)
 }
 
 // pollUntil is the one polling loop behind both --wait and `payments wait`. It
-// calls `check` every waitPollInterval until it reports done, a decision stops
-// it, the deadline passes, or the user interrupts.
+// calls `check` on the waitPollInterval schedule (nextPollDelay) until it reports
+// done, a decision stops it, the deadline passes, or the user interrupts. With
+// `delayFirst` the first read waits one interval instead of going out at once — see
+// waitForOp for when that is right.
 //
 // It exists because the two loops used to be separate copies that got three
 // things wrong in the same way — and all three matter only AFTER the operation
@@ -307,7 +337,7 @@ func resumeReplayed(ctx context.Context, client *rail0.Client, rail0Id, op strin
 //
 // `checkCmd` is the runnable command that answers "what happened?", quoted in
 // both the interrupt and the give-up message.
-func pollUntil(ctx context.Context, timeout time.Duration, checkCmd string,
+func pollUntil(ctx context.Context, timeout time.Duration, checkCmd string, delayFirst bool,
 	check func(context.Context) (any, bool, error),
 ) (any, error) {
 	// Derived here rather than threaded from Execute: the wait loops are the only
@@ -318,8 +348,25 @@ func pollUntil(ctx context.Context, timeout time.Duration, checkCmd string,
 	started := time.Now()
 	deadline := started.Add(timeout)
 	var lastTransient error
+	lastProgress := started
+	delay := waitPollInterval
 
-	for polls := 0; ; polls++ {
+	// sleep waits `d`, or less when the deadline comes first — the read AT the deadline
+	// is the last one, rather than a pause that overshoots it by a whole interval.
+	sleep := func(d time.Duration) bool {
+		select {
+		case <-ctx.Done():
+			return false
+		case <-time.After(min(d, max(time.Until(deadline), 0))):
+			return true
+		}
+	}
+	if delayFirst && !sleep(delay) {
+		return nil, interruptedError(checkCmd)
+	}
+
+	for {
+		var retryAfter time.Duration
 		res, done, err := check(ctx)
 		switch {
 		case ctx.Err() != nil:
@@ -335,6 +382,12 @@ func pollUntil(ctx context.Context, timeout time.Duration, checkCmd string,
 				return nil, err
 			}
 			lastTransient = err
+			// A 429 says when the budget refills: polling again sooner only earns
+			// another 429 and spends the same budget the wait needs.
+			var apiErr *rail0.APIError
+			if errors.As(err, &apiErr) && apiErr.Status == http.StatusTooManyRequests {
+				retryAfter = apiErr.RetryAfter
+			}
 		case done:
 			return res, nil
 		}
@@ -342,13 +395,13 @@ func pollUntil(ctx context.Context, timeout time.Duration, checkCmd string,
 		if !time.Now().Before(deadline) {
 			return nil, gaveUpError(timeout, checkCmd, lastTransient)
 		}
-		if polls%waitProgressEvery == 0 {
+		if time.Since(lastProgress) >= waitProgressEvery {
 			ui.Progressf("waiting… %s elapsed of %s", time.Since(started).Truncate(time.Second), timeout)
+			lastProgress = time.Now()
 		}
-		select {
-		case <-ctx.Done():
+		delay = nextPollDelay(time.Since(started), delay)
+		if !sleep(max(delay, retryAfter)) {
 			return nil, interruptedError(checkCmd)
-		case <-time.After(waitPollInterval):
 		}
 	}
 }
@@ -412,8 +465,16 @@ func terminalMismatchError(p *rail0.Payment, want string) error {
 // waitForOp polls the payment's transactions until the one this attempt created is
 // confirmed (returns the settled payment) or failed (returns its decoded error), or
 // the timeout elapses. `txID` identifies that attempt; see pickWaitTarget.
-func waitForOp(ctx context.Context, client *rail0.Client, rail0Id, op, txID string, timeout time.Duration) (any, error) {
-	return pollUntil(ctx, timeout, fmt.Sprintf("rail0 payments wait %s", rail0Id),
+//
+// `afterSubmit` is true when the caller has JUST handed the gateway a transaction to
+// broadcast (a submit, a redrive): the 202 means queued, the broadcast is asynchronous
+// and the gateway hears of the outcome only once the chain calls the block settled, so a
+// read milliseconds later can only say "not yet". Skipping it saves one request per
+// wait; a failure is still seen one interval (2s) after it happens.
+func waitForOp(ctx context.Context, client *rail0.Client, rail0Id, op, txID string, afterSubmit bool,
+	timeout time.Duration,
+) (any, error) {
+	return pollUntil(ctx, timeout, fmt.Sprintf("rail0 payments wait %s", rail0Id), afterSubmit,
 		func(ctx context.Context) (any, bool, error) {
 			txs, err := client.Payments.Transactions(ctx, rail0Id, rail0.ListTransactionsParams{Operation: op})
 			if err != nil {
@@ -542,7 +603,8 @@ becomes 'captured', a captured one never becomes 'authorized' again. An
 		ctx := context.Background()
 		rail0Id := args[0]
 		return ui.RunAPIWithMessage("Waiting…", func() (any, error) {
-			return pollUntil(ctx, waitTimeout, fmt.Sprintf("rail0 payments get %s", rail0Id),
+			// Polled at once: the payment may already be where the caller wants it.
+			return pollUntil(ctx, waitTimeout, fmt.Sprintf("rail0 payments get %s", rail0Id), false,
 				func(ctx context.Context) (any, bool, error) {
 					if waitUntil != "" {
 						p, err := client.Payments.Get(ctx, rail0Id)
@@ -564,14 +626,22 @@ becomes 'captured', a captured one never becomes 'authorized' again. An
 						}
 						return nil, false, nil
 					}
-					txs, err := client.Payments.Transactions(ctx, rail0Id)
+					// The payment embeds EVERY transaction; the list endpoint this used
+					// to read returned its first page (25 rows), so a payment with more
+					// could report settled while a later operation was still in flight.
+					p, err := client.Payments.Get(ctx, rail0Id)
 					if err != nil {
 						return nil, false, err
 					}
-					if anyInFlight(txs.Data) {
+					if anyInFlight(p.Transactions) {
 						return nil, false, nil
 					}
-					p, err := client.Payments.Get(ctx, rail0Id)
+					// Settled — but return a FRESH read, not this one. The gateway
+					// commits a confirmation and the payment's new state together, yet
+					// serves the payment row and its transactions from two queries: a
+					// confirm landing between them shows the last transaction settled
+					// beside a payment still in its previous state.
+					p, err = client.Payments.Get(ctx, rail0Id)
 					return p, err == nil, err
 				})
 		})

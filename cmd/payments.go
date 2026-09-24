@@ -670,7 +670,7 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 		}
 		client := newClient()
 		ctx := context.Background()
-		idInput, err := pickPaymentID(ctx, client, args, "authorize")
+		idInput, err := pickPaymentID(ctx, client, args, "authorize", signingKey)
 		if err != nil {
 			return err
 		}
@@ -732,7 +732,7 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 		}
 		client := newClient()
 		ctx := context.Background()
-		idInput, err := pickPaymentID(ctx, client, args, "charge")
+		idInput, err := pickPaymentID(ctx, client, args, "charge", signingKey)
 		if err != nil {
 			return err
 		}
@@ -809,7 +809,7 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 		}
 		client := newClient()
 		ctx := context.Background()
-		idInput, err := pickPaymentID(ctx, client, args, "capture")
+		idInput, err := pickPaymentID(ctx, client, args, "capture", signingKey)
 		if err != nil {
 			return err
 		}
@@ -897,7 +897,7 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 		}
 		client := newClient()
 		ctx := context.Background()
-		idInput, err := pickPaymentID(ctx, client, args, "void")
+		idInput, err := pickPaymentID(ctx, client, args, "void", signingKey)
 		if err != nil {
 			return err
 		}
@@ -977,7 +977,7 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 		}
 		client := newClient()
 		ctx := context.Background()
-		idInput, err := pickPaymentID(ctx, client, args, "release")
+		idInput, err := pickPaymentID(ctx, client, args, "release", signingKey)
 		if err != nil {
 			return err
 		}
@@ -1055,7 +1055,7 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 		}
 		client := newClient()
 		ctx := context.Background()
-		idInput, err := pickPaymentID(ctx, client, args, "refund")
+		idInput, err := pickPaymentID(ctx, client, args, "refund", signingKey)
 		if err != nil {
 			return err
 		}
@@ -1188,7 +1188,7 @@ Pass --private-key (-p): the CLI signs locally with the payer key and broadcasts
 		}
 		client := newClient()
 		ctx := context.Background()
-		idInput, err := pickPaymentID(ctx, client, args, "dispute")
+		idInput, err := pickPaymentID(ctx, client, args, "dispute", signingKey)
 		if err != nil {
 			return err
 		}
@@ -1256,7 +1256,7 @@ Pass --private-key (-p): the CLI signs locally with the payer key and broadcasts
 		}
 		client := newClient()
 		ctx := context.Background()
-		idInput, err := pickPaymentID(ctx, client, args, "close dispute")
+		idInput, err := pickPaymentID(ctx, client, args, "close dispute", signingKey)
 		if err != nil {
 			return err
 		}

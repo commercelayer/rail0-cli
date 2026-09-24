@@ -4,9 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -104,7 +107,7 @@ func fastPolls(t *testing.T) {
 func TestPollUntilToleratesTransientErrorsThenSucceeds(t *testing.T) {
 	fastPolls(t)
 	calls := 0
-	got, err := pollUntil(context.Background(), time.Minute, "rail0 payments get 0xabc",
+	got, err := pollUntil(context.Background(), time.Minute, "rail0 payments get 0xabc", false,
 		func(context.Context) (any, bool, error) {
 			calls++
 			switch calls {
@@ -133,7 +136,7 @@ func TestPollUntilToleratesTransientErrorsThenSucceeds(t *testing.T) {
 func TestPollUntilAbortsOnANonTransientError(t *testing.T) {
 	fastPolls(t)
 	calls := 0
-	_, err := pollUntil(context.Background(), time.Minute, "rail0 payments get 0xabc",
+	_, err := pollUntil(context.Background(), time.Minute, "rail0 payments get 0xabc", false,
 		func(context.Context) (any, bool, error) {
 			calls++
 			return nil, false, &rail0.APIError{Status: 404, Detail: "payment not found"}
@@ -152,7 +155,7 @@ func TestPollUntilSurfacesADecisionImmediately(t *testing.T) {
 	fastPolls(t)
 	decision := errors.New("capture failed on-chain: AuthorizationExpired")
 	calls := 0
-	_, err := pollUntil(context.Background(), time.Minute, "rail0 payments get 0xabc",
+	_, err := pollUntil(context.Background(), time.Minute, "rail0 payments get 0xabc", false,
 		func(context.Context) (any, bool, error) {
 			calls++
 			return nil, false, stopPolling{decision}
@@ -169,7 +172,7 @@ func TestPollUntilSurfacesADecisionImmediately(t *testing.T) {
 // answers the question — plus the blip it spent itself on.
 func TestPollUntilGiveUpNamesTheCheckCommandAndTheLastError(t *testing.T) {
 	fastPolls(t)
-	_, err := pollUntil(context.Background(), 5*time.Millisecond, "rail0 payments get 0xdeadbeef",
+	_, err := pollUntil(context.Background(), 5*time.Millisecond, "rail0 payments get 0xdeadbeef", false,
 		func(context.Context) (any, bool, error) {
 			return nil, false, &rail0.APIError{Status: 503, Detail: "upstream busy"}
 		})
@@ -189,7 +192,7 @@ func TestPollUntilInterruptedReportsTheOperationIsInFlight(t *testing.T) {
 	fastPolls(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	_, err := pollUntil(ctx, time.Minute, "rail0 payments get 0xabc",
+	_, err := pollUntil(ctx, time.Minute, "rail0 payments get 0xabc", false,
 		func(context.Context) (any, bool, error) { return nil, false, nil })
 	if !errors.Is(err, ErrAborted) {
 		t.Fatalf("error = %v, want ErrAborted so the exit code is %d", err, ExitCodeAborted)
@@ -454,5 +457,166 @@ func TestPaymentsWaitUntilReleasedOutlastsExpired(t *testing.T) {
 	_ = captureStdout(t, func() { err = paymentsWaitCmd.RunE(paymentsWaitCmd, []string{lcRail0ID}) })
 	if err == nil || !strings.Contains(err.Error(), "terminal") || !strings.Contains(err.Error(), "release") {
 		t.Errorf("--until captured on an expired payment must still stop, naming the recovery; got %v", err)
+	}
+}
+
+// The schedule: flat for the fast phase — the chains that settle in seconds must see
+// no change — then half again per poll, never past the cap.
+func TestNextPollDelayBacksOffAfterTheFastPhaseUpToTheCap(t *testing.T) {
+	if got := nextPollDelay(10*time.Second, waitPollInterval); got != waitPollInterval {
+		t.Errorf("inside the fast phase: delay = %s, want the base %s", got, waitPollInterval)
+	}
+	delay := waitPollInterval
+	var seen []time.Duration
+	for range 8 {
+		delay = nextPollDelay(time.Minute, delay)
+		seen = append(seen, delay)
+	}
+	want := []time.Duration{3 * time.Second, 4500 * time.Millisecond, 6750 * time.Millisecond,
+		10 * time.Second, 10 * time.Second, 10 * time.Second, 10 * time.Second, 10 * time.Second}
+	if !slices.Equal(seen, want) {
+		t.Errorf("after the fast phase: delays = %v, want %v", seen, want)
+	}
+}
+
+// A 15-minute wait on a chain whose settlement never comes used to cost 451 reads at
+// a flat 2s. Counted by walking the schedule, so the budget is pinned without sleeping.
+func TestPollScheduleBoundsAFullWait(t *testing.T) {
+	elapsed, delay, reads := time.Duration(0), waitPollInterval, 1
+	for elapsed < defaultWaitTimeout {
+		delay = nextPollDelay(elapsed, delay)
+		elapsed += delay
+		reads++
+	}
+	if reads > 110 {
+		t.Errorf("a full %s wait makes %d reads; want at most 110 (it was 451 at a flat 2s)",
+			defaultWaitTimeout, reads)
+	}
+}
+
+// After a submit the first read waits one interval: the 202 means queued, so a read
+// milliseconds later can only say "not yet". Without delayFirst it still goes out at
+// once — a replayed row, or `payments wait`, may already be settled.
+func TestPollUntilDelayFirstSkipsTheImmediateRead(t *testing.T) {
+	original := waitPollInterval
+	waitPollInterval = 50 * time.Millisecond
+	t.Cleanup(func() { waitPollInterval = original })
+
+	for _, delayFirst := range []bool{false, true} {
+		started := time.Now()
+		var firstAt time.Duration
+		_, err := pollUntil(context.Background(), time.Minute, "rail0 payments get 0xabc", delayFirst,
+			func(context.Context) (any, bool, error) {
+				firstAt = time.Since(started)
+				return "settled", true, nil
+			})
+		if err != nil {
+			t.Fatalf("delayFirst=%v: %v", delayFirst, err)
+		}
+		if delayed := firstAt >= waitPollInterval; delayed != delayFirst {
+			t.Errorf("delayFirst=%v: first read after %s (interval %s)", delayFirst, firstAt, waitPollInterval)
+		}
+	}
+}
+
+// The pause before the last read is cut to the deadline instead of overshooting it by
+// a whole interval — which, at the 10s cap, would stretch a wait past its --timeout.
+func TestPollUntilDoesNotSleepPastTheDeadline(t *testing.T) {
+	original := waitPollInterval
+	waitPollInterval = time.Hour
+	t.Cleanup(func() { waitPollInterval = original })
+
+	started := time.Now()
+	_, err := pollUntil(context.Background(), 50*time.Millisecond, "rail0 payments get 0xabc", false,
+		func(context.Context) (any, bool, error) { return nil, false, nil })
+	if !errors.Is(err, ErrWaitGaveUp) {
+		t.Fatalf("err = %v, want ErrWaitGaveUp", err)
+	}
+	if took := time.Since(started); took > 5*time.Second {
+		t.Errorf("gave up after %s with a 50ms timeout; the pause must stop at the deadline", took)
+	}
+}
+
+// A 429 carries Retry-After: the next read waits that long instead of the (shorter)
+// poll interval, which would only earn another 429 from the same spent budget.
+func TestPollUntilHonoursRetryAfterOnA429(t *testing.T) {
+	fastPolls(t)
+	const retryAfter = 80 * time.Millisecond
+	started := time.Now()
+	var secondAt time.Duration
+	calls := 0
+	_, err := pollUntil(context.Background(), time.Minute, "rail0 payments get 0xabc", false,
+		func(context.Context) (any, bool, error) {
+			calls++
+			if calls == 1 {
+				return nil, false, &rail0.APIError{Status: http.StatusTooManyRequests, RetryAfter: retryAfter}
+			}
+			secondAt = time.Since(started)
+			return "settled", true, nil
+		})
+	if err != nil {
+		t.Fatalf("pollUntil: %v", err)
+	}
+	if secondAt < retryAfter {
+		t.Errorf("second read after %s; want at least the Retry-After of %s", secondAt, retryAfter)
+	}
+}
+
+// `payments wait` without --until reads the payment's EMBEDDED transactions — every one
+// of them. The list endpoint it used to read served its first page (25 rows), so the
+// in-flight 30th operation of a long-lived payment was invisible and the wait ended
+// early. Once nothing is in flight it returns a FRESH read of the payment: the gateway
+// serves the row and its transactions from two queries, so the read that shows the last
+// confirmation can carry the payment's previous state.
+func TestPaymentsWaitReadsEveryEmbeddedTransactionAndReturnsAFreshPayment(t *testing.T) {
+	isolate(t)
+	isolateTokenStore(t)
+	fastPolls(t)
+	waitUntil, waitTimeout = "", time.Minute
+	t.Cleanup(func() { waitUntil, waitTimeout = "", defaultWaitTimeout })
+
+	var mu sync.Mutex
+	gets, listCalls := 0, 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		if strings.HasSuffix(r.URL.Path, "/transactions") {
+			listCalls++
+			_, _ = w.Write([]byte(`[]`))
+			return
+		}
+		gets++
+		txs := make([]map[string]any, 30)
+		for i := range txs {
+			txs[i] = map[string]any{"id": fmt.Sprintf("tx-%d", i), "operation": "capture", "status": "confirmed"}
+		}
+		status := "authorized"
+		switch {
+		case gets <= 2:
+			txs[29]["status"] = "submitted" // the newest, past any first page
+		case gets >= 4:
+			status = "captured" // the fresh read after the settled one
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"id": "pay-1", "rail0_id": "0xabc", "status": status, "transactions": txs})
+	}))
+	t.Cleanup(srv.Close)
+	t.Setenv("RAIL0_BASE_URL", srv.URL)
+
+	var err error
+	out := captureStdout(t, func() { err = paymentsWaitCmd.RunE(paymentsWaitCmd, []string{"0xabc"}) })
+	if err != nil {
+		t.Fatalf("payments wait: %v", err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if listCalls != 0 {
+		t.Errorf("GET …/transactions called %d times; the payment embeds every row", listCalls)
+	}
+	if gets != 4 {
+		t.Errorf("GET /payments/:id called %d times; want 2 in flight, 1 settled, 1 fresh", gets)
+	}
+	if !strings.Contains(out, `"captured"`) {
+		t.Errorf("output = %s; want the fresh read (captured), not the settled one", out)
 	}
 }

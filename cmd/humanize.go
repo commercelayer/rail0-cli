@@ -7,6 +7,8 @@ import (
 	"time"
 
 	rail0 "github.com/commercelayer/rail0-go"
+
+	"github.com/rail0/cli/internal/ui"
 )
 
 // Amount and expiry rendering for the output layer.
@@ -22,42 +24,64 @@ import (
 // working, and `amount_human` is additive.
 
 var (
-	tokenDecimalsMu    sync.Mutex
-	tokenDecimalsCache = map[int]map[string]int{} // chainID → lowercased address → decimals
+	tokenCatalogMu  sync.Mutex
+	tokenCatalogAll []rail0.Token // nil until fetched; every token on every chain
 )
+
+// tokenCatalog returns the gateway's WHOLE token catalogue — every chain, retired tokens
+// included — fetched at most once per process, in one `GET /tokens`.
+//
+// It used to be two caches, each filled per chain: activeTokens (the create path, with
+// ?active=true) and tokenDecimals (the rendering and signing paths, unfiltered). A
+// `payments create` therefore fetched the same chain's tokens twice, and a `payments
+// list` spanning k chains made k calls — all on the gateway's per-IP throttle, which
+// /tokens sits on whether or not a session is attached. One unfiltered call answers
+// every one of those questions: the gateway's chain_id and active filters are plain
+// selects over this same list (Catalog.tokens), so applying them here gives exactly what
+// the filtered calls returned.
+//
+// A failure caches nothing, so a transient error stays retryable within the command.
+func tokenCatalog(ctx context.Context) ([]rail0.Token, error) {
+	tokenCatalogMu.Lock()
+	defer tokenCatalogMu.Unlock()
+	if tokenCatalogAll != nil {
+		return tokenCatalogAll, nil
+	}
+	tokens, err := newReadClient().Tokens.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if tokens == nil {
+		tokens = []rail0.Token{} // fetched and empty is not "not fetched"
+	}
+	tokenCatalogAll = tokens
+	return tokens, nil
+}
 
 // tokenDecimals returns a token's decimals on a chain, and whether they are known.
 //
-// The catalog is fetched at most once per chain per process and includes RETIRED
-// tokens, unlike the create path's activeTokens: a settled payment references its
-// token forever, and rendering a historical amount in base units because the token
-// was later retired is exactly the failure this exists to prevent.
+// Read from the whole catalogue, which includes RETIRED tokens, unlike the create path's
+// activeTokens: a settled payment references its token forever, and rendering a
+// historical amount in base units because the token was later retired is exactly the
+// failure this exists to prevent.
 //
-// A catalog failure caches nothing and reports unknown, so a transient error stays
-// retryable and the caller falls back to the raw value rather than to a wrong scale.
+// A catalogue failure reports unknown, so the caller falls back to the raw value rather
+// than to a wrong scale.
 func tokenDecimals(ctx context.Context, chainID int, address string) (int, bool) {
 	if chainID == 0 || address == "" {
 		return 0, false
 	}
-	key := lowerHex(address)
-
-	tokenDecimalsMu.Lock()
-	defer tokenDecimalsMu.Unlock()
-	if byAddr, ok := tokenDecimalsCache[chainID]; ok {
-		d, found := byAddr[key]
-		return d, found
-	}
-	tokens, err := newReadClient().Tokens.List(ctx, rail0.ListTokensParams{ChainID: chainID})
+	tokens, err := tokenCatalog(ctx)
 	if err != nil {
 		return 0, false
 	}
-	byAddr := make(map[string]int, len(tokens))
+	key := lowerHex(address)
 	for _, t := range tokens {
-		byAddr[lowerHex(string(t.Address))] = t.Decimals
+		if t.ChainID == chainID && lowerHex(string(t.Address)) == key {
+			return t.Decimals, true
+		}
 	}
-	tokenDecimalsCache[chainID] = byAddr
-	d, found := byAddr[key]
-	return d, found
+	return 0, false
 }
 
 func lowerHex(s string) string {
@@ -131,15 +155,23 @@ type transactionView struct {
 // humanizeTransactions gives each transaction its amount in token units, read on the
 // scale of the payment it belongs to. A transaction carries no chain or token of its own,
 // so the payment is fetched once — and not at all when no row has an amount to scale
-// (an empty page, or only operations that move none). If that read fails the rows are
-// returned as they came — raw base units, as before — rather than failing a listing
-// over a companion.
+// (an empty page, or only operations that move none), or under --quiet, which prints
+// only ids. If that read fails the rows are returned as they came — raw base units, as
+// before — rather than failing a listing over a companion.
 func humanizeTransactions(ctx context.Context, client *rail0.Client, paymentID string, txs []rail0.Transaction) []*transactionView {
+	var p *rail0.Payment
+	if anyAmount(txs) && !ui.IsQuiet() {
+		p, _ = client.Payments.Get(ctx, paymentID) // nil on failure: rows stay raw
+	}
+	return humanizeTransactionsOf(ctx, p, txs)
+}
+
+// humanizeTransactionsOf is humanizeTransactions for a caller that already holds the
+// payment (nil = unknown, rows stay raw).
+func humanizeTransactionsOf(ctx context.Context, p *rail0.Payment, txs []rail0.Transaction) []*transactionView {
 	chainID, token := 0, ""
-	if anyAmount(txs) {
-		if p, err := client.Payments.Get(ctx, paymentID); err == nil && p != nil {
-			chainID, token = p.ChainID, string(p.Token)
-		}
+	if p != nil && !ui.IsQuiet() {
+		chainID, token = p.ChainID, string(p.Token)
 	}
 	out := make([]*transactionView, len(txs))
 	for i := range txs {
@@ -163,10 +195,14 @@ func anyAmount(txs []rail0.Transaction) bool {
 }
 
 // humanize wraps a payment for output. Nil in, nil out, so a caller can pass a
-// response through without a guard.
+// response through without a guard. Under --quiet the companions are left out: only the
+// id is printed, and the amounts would cost a token-catalogue request for nothing.
 func humanize(ctx context.Context, p *rail0.Payment) *paymentView {
 	if p == nil {
 		return nil
+	}
+	if ui.IsQuiet() {
+		return &paymentView{Payment: p}
 	}
 	chainID, token := p.ChainID, string(p.Token)
 	return &paymentView{
@@ -181,8 +217,8 @@ func humanize(ctx context.Context, p *rail0.Payment) *paymentView {
 	}
 }
 
-// humanizeAll wraps a list. One catalog fetch per chain covers the whole page, since
-// tokenDecimals caches per chain.
+// humanizeAll wraps a list. One catalogue fetch covers the whole page, whatever its
+// chains (tokenCatalog).
 func humanizeAll(ctx context.Context, payments []rail0.Payment) []*paymentView {
 	out := make([]*paymentView, 0, len(payments))
 	for i := range payments {

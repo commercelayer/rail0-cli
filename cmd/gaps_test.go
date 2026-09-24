@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/rail0/cli/internal/config"
+	"github.com/rail0/cli/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -112,12 +113,52 @@ func TestPaymentsTransactionsSendsOperationAndStatus(t *testing.T) {
 	}
 }
 
-func TestPaymentsTransactionReadsOneByID(t *testing.T) {
+// One read: the payment embeds its transactions and carries the chain and token that
+// scale the amount, so the single-transaction endpoint (and the payment fetched again
+// for the scale) is not called.
+func TestPaymentsTransactionReadsOneByIDFromThePayment(t *testing.T) {
+	resetTokenCatalog(t)
 	g := newRecordingGateway(t)
-	g.respond = func(*http.Request) any { return map[string]any{"id": "tx-9", "status": "failed"} }
+	g.respond = func(r *http.Request) any {
+		switch r.URL.Path {
+		case "/payments/" + lcRail0ID:
+			return map[string]any{"id": "pay-1", "chain_id": 84532, "token": "0xtok", "transactions": []any{
+				map[string]any{"id": "tx-1", "status": "confirmed"},
+				map[string]any{"id": "tx-9", "status": "failed", "amount": "1500000"},
+			}}
+		case "/tokens":
+			return []any{map[string]any{"address": "0xtok", "chain_id": 84532, "decimals": 6, "active": true}}
+		}
+		return nil
+	}
 
-	var out string
-	out = captureStdout(t, func() {
+	out := captureStdout(t, func() {
+		if err := paymentsTransactionCmd.RunE(paymentsTransactionCmd, []string{lcRail0ID, "tx-9"}); err != nil {
+			t.Errorf("payments transaction: %v", err)
+		}
+	})
+	if !strings.Contains(out, `"tx-9"`) || !strings.Contains(out, `"1.5"`) {
+		t.Errorf("output should be tx-9 with its human amount, got:\n%s", out)
+	}
+	for _, r := range g.reqs {
+		if strings.Contains(r.path, "/transactions") {
+			t.Errorf("unexpected request %s %s: the payment already carries the row", r.method, r.path)
+		}
+	}
+}
+
+// An id the payment does not list goes to the endpoint, so the answer is the gateway's
+// own — its 404, or a row created after the payment was read.
+func TestPaymentsTransactionFallsBackToTheEndpointForAnUnlistedID(t *testing.T) {
+	g := newRecordingGateway(t)
+	g.respond = func(r *http.Request) any {
+		if strings.HasSuffix(r.URL.Path, "/transactions/tx-9") {
+			return map[string]any{"id": "tx-9", "status": "failed"}
+		}
+		return map[string]any{"id": "pay-1"}
+	}
+
+	out := captureStdout(t, func() {
 		if err := paymentsTransactionCmd.RunE(paymentsTransactionCmd, []string{lcRail0ID, "tx-9"}); err != nil {
 			t.Errorf("payments transaction: %v", err)
 		}
@@ -125,6 +166,35 @@ func TestPaymentsTransactionReadsOneByID(t *testing.T) {
 	g.last(t, http.MethodGet, "/payments/"+lcRail0ID+"/transactions/tx-9")
 	if !strings.Contains(out, `"tx-9"`) {
 		t.Errorf("output should be the transaction, got:\n%s", out)
+	}
+}
+
+// --quiet prints only the id, so the human amounts — and the token-catalogue request
+// behind them — are skipped.
+func TestPaymentsGetQuietSkipsTheTokenCatalogue(t *testing.T) {
+	resetTokenCatalog(t)
+	g := newRecordingGateway(t)
+	g.respond = func(r *http.Request) any {
+		if r.URL.Path == "/payments/"+lcRail0ID {
+			return map[string]any{"id": "pay-1", "rail0_id": lcRail0ID, "chain_id": 84532, "token": "0xtok", "amount": "1500000"}
+		}
+		return nil
+	}
+	ui.SetQuiet(true)
+	t.Cleanup(func() { ui.SetQuiet(false) })
+
+	out := captureStdout(t, func() {
+		if err := paymentsGetCmd.RunE(paymentsGetCmd, []string{lcRail0ID}); err != nil {
+			t.Errorf("payments get: %v", err)
+		}
+	})
+	if strings.TrimSpace(out) != lcRail0ID {
+		t.Errorf("quiet output = %q, want just the rail0_id", out)
+	}
+	for _, r := range g.reqs {
+		if r.path == "/tokens" {
+			t.Error("--quiet fetched the token catalogue for amounts it never prints")
+		}
 	}
 }
 
@@ -175,9 +245,7 @@ func TestWalletTokensAdd(t *testing.T) {
 			if err := (&config.Config{Settings: map[string]string{"chain-id": "84532"}}).Save(); err != nil {
 				t.Fatal(err)
 			}
-			tokenCatalogMu.Lock()
-			delete(tokenCatalogCache, 84532)
-			tokenCatalogMu.Unlock()
+			resetTokenCatalog(t)
 
 			cmd := walletTokensAddCmd
 			walletTokenChainID, walletTokenToken, walletTokenDefault = 0, "USDC", false

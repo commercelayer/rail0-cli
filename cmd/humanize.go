@@ -22,42 +22,64 @@ import (
 // working, and `amount_human` is additive.
 
 var (
-	tokenDecimalsMu    sync.Mutex
-	tokenDecimalsCache = map[int]map[string]int{} // chainID → lowercased address → decimals
+	tokenCatalogMu  sync.Mutex
+	tokenCatalogAll []rail0.Token // nil until fetched; every token on every chain
 )
+
+// tokenCatalog returns the gateway's WHOLE token catalogue — every chain, retired tokens
+// included — fetched at most once per process, in one `GET /tokens`.
+//
+// It used to be two caches, each filled per chain: activeTokens (the create path, with
+// ?active=true) and tokenDecimals (the rendering and signing paths, unfiltered). A
+// `payments create` therefore fetched the same chain's tokens twice, and a `payments
+// list` spanning k chains made k calls — all on the gateway's per-IP throttle, which
+// /tokens sits on whether or not a session is attached. One unfiltered call answers
+// every one of those questions: the gateway's chain_id and active filters are plain
+// selects over this same list (Catalog.tokens), so applying them here gives exactly what
+// the filtered calls returned.
+//
+// A failure caches nothing, so a transient error stays retryable within the command.
+func tokenCatalog(ctx context.Context) ([]rail0.Token, error) {
+	tokenCatalogMu.Lock()
+	defer tokenCatalogMu.Unlock()
+	if tokenCatalogAll != nil {
+		return tokenCatalogAll, nil
+	}
+	tokens, err := newReadClient().Tokens.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if tokens == nil {
+		tokens = []rail0.Token{} // fetched and empty is not "not fetched"
+	}
+	tokenCatalogAll = tokens
+	return tokens, nil
+}
 
 // tokenDecimals returns a token's decimals on a chain, and whether they are known.
 //
-// The catalog is fetched at most once per chain per process and includes RETIRED
-// tokens, unlike the create path's activeTokens: a settled payment references its
-// token forever, and rendering a historical amount in base units because the token
-// was later retired is exactly the failure this exists to prevent.
+// Read from the whole catalogue, which includes RETIRED tokens, unlike the create path's
+// activeTokens: a settled payment references its token forever, and rendering a
+// historical amount in base units because the token was later retired is exactly the
+// failure this exists to prevent.
 //
-// A catalog failure caches nothing and reports unknown, so a transient error stays
-// retryable and the caller falls back to the raw value rather than to a wrong scale.
+// A catalogue failure reports unknown, so the caller falls back to the raw value rather
+// than to a wrong scale.
 func tokenDecimals(ctx context.Context, chainID int, address string) (int, bool) {
 	if chainID == 0 || address == "" {
 		return 0, false
 	}
-	key := lowerHex(address)
-
-	tokenDecimalsMu.Lock()
-	defer tokenDecimalsMu.Unlock()
-	if byAddr, ok := tokenDecimalsCache[chainID]; ok {
-		d, found := byAddr[key]
-		return d, found
-	}
-	tokens, err := newReadClient().Tokens.List(ctx, rail0.ListTokensParams{ChainID: chainID})
+	tokens, err := tokenCatalog(ctx)
 	if err != nil {
 		return 0, false
 	}
-	byAddr := make(map[string]int, len(tokens))
+	key := lowerHex(address)
 	for _, t := range tokens {
-		byAddr[lowerHex(string(t.Address))] = t.Decimals
+		if t.ChainID == chainID && lowerHex(string(t.Address)) == key {
+			return t.Decimals, true
+		}
 	}
-	tokenDecimalsCache[chainID] = byAddr
-	d, found := byAddr[key]
-	return d, found
+	return 0, false
 }
 
 func lowerHex(s string) string {

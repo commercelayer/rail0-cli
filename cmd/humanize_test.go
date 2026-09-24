@@ -3,29 +3,27 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"slices"
 	"testing"
 	"time"
 
 	rail0 "github.com/commercelayer/rail0-go"
 )
 
-// Seeds the per-chain decimals cache so the pure rendering can be tested without a
-// gateway. Restored afterwards: the cache is process-wide, and a test that leaves a
-// fake token behind would change what a later test sees.
+// Seeds the token catalogue so the pure rendering can be tested without a gateway.
+// Restored afterwards: the catalogue is process-wide, and a test that leaves a fake
+// token behind would change what a later test sees.
 func seedDecimals(t *testing.T, chainID int, address string, decimals int) {
 	t.Helper()
-	tokenDecimalsMu.Lock()
-	previous := tokenDecimalsCache[chainID]
-	tokenDecimalsCache[chainID] = map[string]int{lowerHex(address): decimals}
-	tokenDecimalsMu.Unlock()
+	tokenCatalogMu.Lock()
+	previous := tokenCatalogAll
+	tokenCatalogAll = append(slices.Clone(previous),
+		rail0.Token{ChainID: chainID, Address: rail0.Address(address), Decimals: decimals})
+	tokenCatalogMu.Unlock()
 	t.Cleanup(func() {
-		tokenDecimalsMu.Lock()
-		if previous == nil {
-			delete(tokenDecimalsCache, chainID)
-		} else {
-			tokenDecimalsCache[chainID] = previous
-		}
-		tokenDecimalsMu.Unlock()
+		tokenCatalogMu.Lock()
+		tokenCatalogAll = previous
+		tokenCatalogMu.Unlock()
 	})
 }
 

@@ -175,9 +175,7 @@ func TestWalletTokensAdd(t *testing.T) {
 			if err := (&config.Config{Settings: map[string]string{"chain-id": "84532"}}).Save(); err != nil {
 				t.Fatal(err)
 			}
-			tokenCatalogMu.Lock()
-			delete(tokenCatalogCache, 84532)
-			tokenCatalogMu.Unlock()
+			resetTokenCatalog(t)
 
 			cmd := walletTokensAddCmd
 			walletTokenChainID, walletTokenToken, walletTokenDefault = 0, "USDC", false

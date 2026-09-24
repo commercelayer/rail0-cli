@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"net/http"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -259,54 +260,109 @@ func TestAssertAmountPrecision(t *testing.T) {
 	}
 }
 
+// resetTokenCatalog empties the process-wide token catalogue for one test and again
+// after it, so no test sees another's tokens.
+func resetTokenCatalog(t *testing.T) {
+	t.Helper()
+	reset := func() {
+		tokenCatalogMu.Lock()
+		tokenCatalogAll = nil
+		tokenCatalogMu.Unlock()
+	}
+	reset()
+	t.Cleanup(reset)
+}
+
 // An interactive create consulted the token list three to four times for the SAME
 // chain — assertTokenKnown, the huh validator (re-run on every submit attempt),
 // resolve, and the picker — each on a fresh client, so the form stalled between
-// prompts (#69). activeTokens caches per chain for the life of the command.
+// prompts (#69). activeTokens serves from the per-process catalogue.
 func TestActiveTokensServesFromCacheWithoutRefetching(t *testing.T) {
-	tokenCatalogMu.Lock()
-	tokenCatalogCache = map[int][]rail0.Token{}
-	tokenCatalogMu.Unlock()
-	t.Cleanup(func() {
-		tokenCatalogMu.Lock()
-		tokenCatalogCache = map[int][]rail0.Token{}
-		tokenCatalogMu.Unlock()
-	})
+	resetTokenCatalog(t)
 
 	// Point the client at a port nothing is listening on: any real fetch fails.
 	t.Setenv("RAIL0_BASE_URL", "http://127.0.0.1:1")
 
-	// Cold: no cache entry, so it must actually try — and fail.
+	// Cold: no catalogue, so it must actually try — and fail.
 	if _, err := activeTokens(context.Background(), 84532); err == nil {
-		t.Fatal("expected a fetch error with no cache entry and no reachable gateway")
+		t.Fatal("expected a fetch error with no catalogue and no reachable gateway")
 	}
 
 	// A failure must NOT be cached — unlike chainCatalog, an empty token list would
 	// leave the user unable to recover inside the same command.
 	tokenCatalogMu.Lock()
-	_, cached := tokenCatalogCache[84532]
+	cached := tokenCatalogAll != nil
 	tokenCatalogMu.Unlock()
 	if cached {
 		t.Error("a failed fetch must stay retryable, not be cached as an empty list")
 	}
 
-	// Warm: seed the cache and assert it is served without touching the network
-	// (which is still unreachable, so a refetch would error).
-	seeded := []rail0.Token{{Symbol: "USDC", Decimals: 6, ChainID: 84532}}
+	// Warm: seed the catalogue and assert it is served without touching the network
+	// (which is still unreachable, so a refetch would error) — for EVERY chain, and
+	// filtered to that chain's ACTIVE tokens, as the gateway's ?chain_id&active=true was.
 	tokenCatalogMu.Lock()
-	tokenCatalogCache[84532] = seeded
+	tokenCatalogAll = []rail0.Token{
+		{Symbol: "USDC", Decimals: 6, ChainID: 84532, Active: true},
+		{Symbol: "EURC", Decimals: 6, ChainID: 84532, Active: false},
+		{Symbol: "USDC", Decimals: 6, ChainID: 11155420, Active: true},
+	}
 	tokenCatalogMu.Unlock()
 
 	got, err := activeTokens(context.Background(), 84532)
 	if err != nil {
 		t.Fatalf("cached call must not hit the network: %v", err)
 	}
-	if len(got) != 1 || got[0].Symbol != "USDC" {
-		t.Errorf("got %+v, want the seeded catalog", got)
+	if len(got) != 1 || got[0].Symbol != "USDC" || got[0].ChainID != 84532 {
+		t.Errorf("got %+v, want only Base Sepolia's active USDC", got)
+	}
+	if got, err := activeTokens(context.Background(), 11155420); err != nil || len(got) != 1 {
+		t.Errorf("another chain: got %+v, %v; want its token from the same catalogue, no fetch", got, err)
+	}
+}
+
+// One GET /tokens per process answers both questions a create asks — "is this an active
+// token on the chain?" and "what are its decimals?" — and every chain a list renders.
+// It used to be one ?chain_id&active=true call plus one ?chain_id call per chain.
+func TestTokenCatalogIsFetchedOnceForEveryChainAndBothPaths(t *testing.T) {
+	resetTokenCatalog(t)
+	g := newRecordingGateway(t)
+	g.respond = func(r *http.Request) any {
+		if r.URL.Path == "/tokens" {
+			return []any{
+				map[string]any{"symbol": "USDC", "address": "0xAAaa", "chain_id": 84532, "decimals": 6, "active": true},
+				map[string]any{"symbol": "OLD", "address": "0xbbbb", "chain_id": 84532, "decimals": 18, "active": false},
+				map[string]any{"symbol": "USDC", "address": "0xcccc", "chain_id": 11155420, "decimals": 6, "active": true},
+			}
+		}
+		return nil
 	}
 
-	// Cached per CHAIN: another chain is a separate entry, so it still fetches.
-	if _, err := activeTokens(context.Background(), 11155420); err == nil {
-		t.Error("a different chain must not be served from another chain's cache")
+	ctx := context.Background()
+	if got, err := activeTokens(ctx, 84532); err != nil || len(got) != 1 {
+		t.Fatalf("activeTokens = %+v, %v; want the one active token", got, err)
+	}
+	if d, ok := tokenDecimals(ctx, 84532, "0xaaAA"); !ok || d != 6 {
+		t.Errorf("decimals of the active token = %d, %v; want 6", d, ok)
+	}
+	// Retired tokens stay resolvable for rendering: a settled payment keeps its token.
+	if d, ok := tokenDecimals(ctx, 84532, "0xBBBB"); !ok || d != 18 {
+		t.Errorf("decimals of the retired token = %d, %v; want 18", d, ok)
+	}
+	if d, ok := tokenDecimals(ctx, 11155420, "0xcccc"); !ok || d != 6 {
+		t.Errorf("decimals on another chain = %d, %v; want 6", d, ok)
+	}
+	// An address is unique only per chain.
+	if _, ok := tokenDecimals(ctx, 11155420, "0xaaaa"); ok {
+		t.Error("a token must not resolve on a chain it is not on")
+	}
+
+	var calls []recorded
+	for _, r := range g.reqs {
+		if r.path == "/tokens" {
+			calls = append(calls, r)
+		}
+	}
+	if len(calls) != 1 || len(calls[0].query) != 0 {
+		t.Errorf("GET /tokens calls = %+v; want exactly one, unfiltered", calls)
 	}
 }

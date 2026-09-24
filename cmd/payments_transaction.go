@@ -75,7 +75,7 @@ Payee only. Add -w/--wait to block until the transaction confirms (or fails).`,
 			if !waitFlag {
 				return tx, nil
 			}
-			return waitForOp(ctx, client, rail0Id, tx.Operation, tx.ID, waitTimeout)
+			return waitForOp(ctx, client, rail0Id, tx.Operation, tx.ID, true, waitTimeout)
 		})
 	},
 }

@@ -25,6 +25,7 @@ var (
 	analyticsChainID  int
 	analyticsFrom     string
 	analyticsTo       string
+	analyticsPayee    string
 	analyticsInterval string
 	analyticsBy       string
 )
@@ -40,16 +41,27 @@ var analyticsCmd = &cobra.Command{
   breakdown   — the same counts grouped by token, chain, mode, status or operation
 
 All three take the same filters (--mode, --status, --token, --chain-id, --from,
---to). Requires an account: a wallet-only session gets 403 account_required, since
+--to, --payee). By default the figures cover the whole account — every wallet it
+owns; --payee restricts them to ONE of the account's wallets (a 0x address or an
+@alias). A wallet the account does not own is refused with 403. Requires an account: a wallet-only session gets 403 account_required, since
 these are the MERCHANT's figures, not an address's.`,
 	Example: `  rail0 analytics summary
   rail0 analytics summary --from 2026-01-01T00:00:00Z
   rail0 analytics timeseries --interval week
-  rail0 analytics breakdown --by token`,
+  rail0 analytics breakdown --by token
+  rail0 analytics summary --payee @shop-eu`,
 }
 
-// analyticsFilters collects the shared filter flags into the SDK's struct.
-func analyticsFiltersFromFlags() rail0.AnalyticsFilters {
+// analyticsFiltersFromFlags collects the shared filter flags into the SDK's struct.
+// --payee goes through resolveAlias like every other address flag, so "@name" is
+// looked up in the address book (an unknown alias fails locally, before any request)
+// and a literal 0x address passes through. Whether the account owns that wallet is
+// the gateway's call (403), not re-checked here.
+func analyticsFiltersFromFlags() (rail0.AnalyticsFilters, error) {
+	payee, err := resolveAlias(analyticsPayee)
+	if err != nil {
+		return rail0.AnalyticsFilters{}, err
+	}
 	return rail0.AnalyticsFilters{
 		Mode:    analyticsMode,
 		Status:  analyticsStatus,
@@ -57,7 +69,8 @@ func analyticsFiltersFromFlags() rail0.AnalyticsFilters {
 		ChainID: analyticsChainID,
 		From:    analyticsFrom,
 		To:      analyticsTo,
-	}
+		Payee:   payee,
+	}, nil
 }
 
 var analyticsSummaryCmd = &cobra.Command{
@@ -74,8 +87,12 @@ would produce a number that looks addable and is not.`,
 	Example: `  rail0 analytics summary --chain-id 5042002`,
 	Args:    cobra.NoArgs,
 	RunE: func(_ *cobra.Command, _ []string) error {
+		filters, err := analyticsFiltersFromFlags()
+		if err != nil {
+			return err
+		}
 		return ui.RunAPI(func() (any, error) {
-			s, err := newReadClient().Analytics.Summary(context.Background(), analyticsFiltersFromFlags())
+			s, err := newReadClient().Analytics.Summary(context.Background(), filters)
 			if err != nil {
 				return nil, err
 			}
@@ -96,9 +113,13 @@ instead of a number that looks addable.`,
   rail0 analytics timeseries --interval month --chain-id 5042002 --token 0x3600…`,
 	Args: cobra.NoArgs,
 	RunE: func(_ *cobra.Command, _ []string) error {
+		filters, err := analyticsFiltersFromFlags()
+		if err != nil {
+			return err
+		}
 		return ui.RunAPI(func() (any, error) {
 			return newReadClient().Analytics.Timeseries(context.Background(), rail0.TimeseriesParams{
-				AnalyticsFilters: analyticsFiltersFromFlags(),
+				AnalyticsFilters: filters,
 				Interval:         analyticsInterval,
 			})
 		})
@@ -124,9 +145,13 @@ order count.`,
 		if analyticsBy == "" {
 			return fmt.Errorf("--by is required: token, chain, mode, status or operation")
 		}
+		filters, err := analyticsFiltersFromFlags()
+		if err != nil {
+			return err
+		}
 		return ui.RunAPI(func() (any, error) {
 			rows, err := newReadClient().Analytics.Breakdown(context.Background(), rail0.BreakdownParams{
-				AnalyticsFilters: analyticsFiltersFromFlags(),
+				AnalyticsFilters: filters,
 				By:               analyticsBy,
 			})
 			if err != nil {
@@ -211,9 +236,11 @@ func init() {
 		c.Flags().IntVar(&analyticsChainID, "chain-id", 0, "Filter by EVM chain ID")
 		c.Flags().StringVar(&analyticsFrom, "from", "", "Only payments created at/after this ISO-8601 time")
 		c.Flags().StringVar(&analyticsTo, "to", "", "Only payments created at/before this ISO-8601 time")
+		c.Flags().StringVar(&analyticsPayee, "payee", "", "Restrict to one of your account's wallets (0x address or @alias); default: the whole account")
 
 		_ = c.RegisterFlagCompletionFunc("mode", fixedCompletions("authorize", "charge"))
 		_ = c.RegisterFlagCompletionFunc("status", fixedCompletions(paymentStatuses...))
+		_ = c.RegisterFlagCompletionFunc("payee", completeAliasNames)
 	}
 
 	analyticsTimeseriesCmd.Flags().StringVar(&analyticsInterval, "interval", "", "Bucket width: day (default), week or month")

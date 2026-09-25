@@ -30,6 +30,7 @@ rail0 analytics summary [flags]
       --from string     Only payments created at/after this ISO-8601 time
   -h, --help            help for summary
       --mode string     Filter by mode: authorize or charge
+      --payee string    Restrict to one of your account's wallets (0x address or @alias); default: the whole account
       --status string   Filter by payment status (e.g. captured)
       --to string       Only payments created at/before this ISO-8601 time
       --token string    Filter by token address (0x…)

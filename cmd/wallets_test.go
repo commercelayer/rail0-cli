@@ -134,3 +134,15 @@ func TestBothDeactivationSpellingsAreGated(t *testing.T) {
 		t.Errorf("--yes must pass the gate: %v", err)
 	}
 }
+
+// A new wallet accepts no token and so cannot be paid, and the create response says
+// nothing about it: the hint names the consequence and the exact next command.
+func TestWalletCreatedHintNamesTheNextStep(t *testing.T) {
+	addr := "0xA849c2b07fFc16195B7FB7A95150014bE6b3a48c"
+	hint := walletCreatedHint(addr)
+	for _, want := range []string{"can't receive payments", "rail0 wallets tokens add " + addr, "--default"} {
+		if !strings.Contains(hint, want) {
+			t.Errorf("hint %q lacks %q", hint, want)
+		}
+	}
+}

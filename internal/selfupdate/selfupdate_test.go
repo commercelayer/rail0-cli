@@ -308,3 +308,23 @@ func TestCheckDueOncePerInterval(t *testing.T) {
 		t.Error("clock set back before the last check: want due, not silenced")
 	}
 }
+
+// A Homebrew install must be upgraded through Homebrew: swapping the file behind its
+// back leaves `brew` believing the old version is installed.
+func TestManagedByRecognisesHomebrew(t *testing.T) {
+	cases := map[string]string{
+		"/opt/homebrew/Caskroom/rail0/1.4.0/rail0":              "Homebrew",
+		"/home/linuxbrew/.linuxbrew/Caskroom/rail0/1.4.0/rail0": "Homebrew",
+		"/usr/local/Cellar/rail0/1.4.0/bin/rail0":               "Homebrew",
+		"/usr/local/bin/rail0":                                  "",
+		"/Users/me/.local/bin/rail0":                            "",
+	}
+	for path, want := range cases {
+		if got := ManagedBy(path); got != want {
+			t.Errorf("ManagedBy(%q) = %q, want %q", path, got, want)
+		}
+	}
+	if UpgradeCommand("Homebrew") != "brew upgrade rail0" || UpgradeCommand("") != "rail0 update" {
+		t.Error("wrong upgrade command")
+	}
+}

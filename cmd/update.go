@@ -32,6 +32,9 @@ download verifies. The r0 alias follows, since it is a link to the same file.
 If rail0 lives in a directory you cannot write to (e.g. /usr/local/bin, where
 'make install' puts it), run it with sudo.
 
+Installed with Homebrew, rail0 never replaces itself: it tells you to run
+'brew upgrade rail0', so Homebrew keeps track of the installed version.
+
 Interactive sessions also check for a new release once a day and offer to install
 it. The check never runs in CI, with --json or --quiet, when stdin or stderr is not
 a terminal, or with RAIL0_NO_UPDATE_CHECK=1.`,
@@ -61,8 +64,13 @@ a terminal, or with RAIL0_NO_UPDATE_CHECK=1.`,
 			fmt.Printf("rail0 %s is the latest version\n", version)
 			return nil
 		}
-		if updateCheckOnly {
-			fmt.Printf("rail0 %s is available (installed: %s). Run 'rail0 update' to install it.\n", rel.Version, version)
+		// Installed by a package manager: the upgrade goes through it, never around it
+		// (see selfupdate.ManagedBy). Not an error — there is a newer release, and this is
+		// how to get it.
+		manager := installedBy()
+		if updateCheckOnly || manager != "" {
+			fmt.Printf("rail0 %s is available (installed: %s). Run '%s' to install it.\n",
+				rel.Version, version, selfupdate.UpgradeCommand(manager))
 			return nil
 		}
 		if err := installRelease(ctx, up, rel); err != nil {
@@ -76,6 +84,17 @@ a terminal, or with RAIL0_NO_UPDATE_CHECK=1.`,
 func init() {
 	updateCmd.Flags().BoolVar(&updateCheckOnly, "check", false, "Only report whether a newer release is available")
 	rootCmd.AddCommand(updateCmd)
+}
+
+// installedBy is the package manager that owns the running binary, or "" (see
+// selfupdate.ManagedBy). An unresolvable path counts as unmanaged: the install step then
+// reports the real error.
+func installedBy() string {
+	exe, err := selfupdate.Executable()
+	if err != nil {
+		return ""
+	}
+	return selfupdate.ManagedBy(exe)
 }
 
 // installRelease downloads rel and swaps it in place of the running binary, drawing a
@@ -149,6 +168,12 @@ func maybeOfferUpdate(cmd *cobra.Command) {
 		return
 	}
 
+	// A package-managed install is told how to upgrade, not offered an in-place swap.
+	if manager := installedBy(); manager != "" {
+		fmt.Fprintf(os.Stderr, "A new rail0 release is available: %s → %s. Run '%s' to install it.\n\n",
+			version, rel.Version, selfupdate.UpgradeCommand(manager))
+		return
+	}
 	if !promptYes(os.Stdin, os.Stderr, fmt.Sprintf("A new rail0 release is available: %s → %s. Update now?", version, rel.Version)) {
 		fmt.Fprintln(os.Stderr, "Skipped. Run 'rail0 update' whenever you want it.")
 		return

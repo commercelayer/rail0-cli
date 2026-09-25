@@ -11,6 +11,11 @@
 #   `contents: read` on commercelayer/rail0-go. Add it under
 #   Settings → Secrets and variables → Actions in commercelayer/rail0-cli.
 #
+#   Secret HOMEBREW_TAP_TOKEN (optional) — a fine-grained PAT with `contents: read and
+#   write` on commercelayer/homebrew-tap, so GoReleaser can push the rail0 cask there
+#   (`brew install commercelayer/tap/rail0`). Without it the release still publishes and
+#   only the cask push is skipped.
+#
 # Both repos are checked out as siblings under the workspace so `../rail0-go`
 # resolves; GoReleaser runs inside the rail0-cli checkout.
 name: release
@@ -55,3 +60,6 @@ jobs:
           workdir: rail0-cli
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Optional: pushes the Homebrew cask to commercelayer/homebrew-tap. Without it
+          # the release still publishes; only the cask push is skipped (.goreleaser.yaml).
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}

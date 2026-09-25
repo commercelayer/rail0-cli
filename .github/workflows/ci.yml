@@ -129,3 +129,11 @@ jobs:
             git diff --stat -- docs/
             exit 1
           fi
+
+      # install.sh is served straight from main to `curl … | sh`, so a syntax error there
+      # breaks every new install at once and nothing else would notice. `sh -n` parses it
+      # without running it; `sh` here is dash on the runner, the strictest POSIX shell a
+      # user is likely to pipe it into.
+      - name: install.sh parses as POSIX sh
+        working-directory: rail0-cli
+        run: sh -n install.sh

@@ -364,6 +364,30 @@ func notWritable(dir string, err error) error {
 	return err
 }
 
+// ManagedBy names the package manager that owns the binary at exePath, or "" when none
+// does. Only Homebrew for now: its casks live under …/Caskroom/ and formulas under
+// …/Cellar/, on macOS and Linux alike.
+//
+// Such a binary must not be replaced in place. The package manager records the version
+// it installed; swapping the file behind its back leaves `brew list` and `brew upgrade`
+// believing the old version is there, and the next `brew upgrade` would silently put it
+// back. The upgrade has to go through the package manager instead.
+func ManagedBy(exePath string) string {
+	p := filepath.ToSlash(exePath)
+	if strings.Contains(p, "/Caskroom/") || strings.Contains(p, "/Cellar/") {
+		return "Homebrew"
+	}
+	return ""
+}
+
+// UpgradeCommand is the command that upgrades rail0 through its package manager.
+func UpgradeCommand(manager string) string {
+	if manager == "Homebrew" {
+		return "brew upgrade rail0"
+	}
+	return "rail0 update"
+}
+
 // Executable is the path of the running binary with symlinks resolved — the file an
 // update must replace.
 func Executable() (string, error) {

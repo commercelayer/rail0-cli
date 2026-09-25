@@ -30,7 +30,7 @@ rotate is reported rather than silently honoured. Keys are scoped to the payment
 ## Contents
 
 - [Requirements](#requirements)
-- [Installation](#installation) — [release binary](#download-a-release-binary-recommended) · [from source](#build-from-source-contributors) · [`rail0 update`](#updating-rail0-update) · [`rail0 init`](#guided-setup-rail0-init)
+- [Installation](#installation) — [Homebrew](#homebrew-macos-and-linux--recommended) · [install script](#install-script-macos-and-linux) · [manual download](#manual-download-any-platform-windows-included) · [from source](#build-from-source-contributors) · [`rail0 update`](#updating-rail0-update) · [`rail0 init`](#guided-setup-rail0-init)
 - [**Your first payment**](#your-first-payment) — the guided path
 - [Shell completion](#shell-completion)
 - [Configuration](#configuration) — [defaults](#persisted-defaults-config) · [environments](#environments-env) · [address book](#address-book-aliases) · [signing keys](#signing-keys-os-keychain)
@@ -51,22 +51,51 @@ rotate is reported rather than silently honoured. Keys are scoped to the payment
 
 ## Installation
 
-### Download a release binary (recommended)
+Three ways to install a release, all the same static binary with nothing else to set
+up. Every `v*` tag publishes them for macOS and Linux (amd64 and arm64) and Windows
+(amd64).
 
-Every `v*` tag publishes static, cross-platform binaries — no Go toolchain, no
-sibling checkout, nothing to compile. Grab the archive for your platform from
-[Releases](https://github.com/commercelayer/rail0-cli/releases), or in one line:
+### Homebrew (macOS and Linux) — recommended
 
 ```sh
-# macOS arm64 — swap darwin/arm64 for your platform (darwin|linux amd64|arm64; windows amd64, as a .zip)
-VERSION=$(curl -fsSL https://api.github.com/repos/commercelayer/rail0-cli/releases/latest | sed -n 's/.*"tag_name": *"v\([^"]*\)".*/\1/p')
-curl -fsSL "https://github.com/commercelayer/rail0-cli/releases/download/v${VERSION}/rail0_${VERSION}_darwin_arm64.tar.gz" | tar xz
-sudo mv rail0 /usr/local/bin/
-rail0 init          # guided setup
+brew install commercelayer/tap/rail0
 ```
 
-Each archive also carries the **shell completions** (`completions/`), the **man
-pages** (`man/man1/`) and the command reference (`docs/`), so an installed binary is
+Installs `rail0`, the short alias `r0`, the shell completions and the man page
+(`man rail0`). Upgrade with `brew upgrade rail0`. A Homebrew install never replaces
+itself: `rail0 update` and the daily check point you to `brew upgrade` instead, so
+Homebrew keeps track of the installed version.
+
+### Install script (macOS and Linux)
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/commercelayer/rail0-cli/main/install.sh | sh
+```
+
+[`install.sh`](install.sh) does the following:
+
+1. Picks the archive for your OS and CPU.
+2. Verifies it against the release's `checksums.txt`. It refuses to install anything
+   that does not match.
+3. Installs `rail0` and `r0` into `~/.local/bin`, a directory you own, so neither the
+   install nor a later `rail0 update` needs `sudo`.
+4. If that directory is not on your `PATH`, tells you the line to add.
+
+It runs in any POSIX `sh`, including minimal containers. Optional variables:
+
+- `RAIL0_VERSION=1.2.0` pins a release.
+- `RAIL0_INSTALL_DIR=/somewhere/bin` changes the destination.
+- `RAIL0_RELEASES_URL` points at a mirror.
+
+### Manual download (any platform, Windows included)
+
+Grab the archive for your platform from
+[Releases](https://github.com/commercelayer/rail0-cli/releases). On Windows it is a
+`.zip`. Verify it against `checksums.txt` from the same release, then put `rail0` on
+your `PATH`.
+
+Each archive also carries the **shell completions** (`completions/`), the **man pages**
+(`man/man1/`) and the command reference (`docs/`), so an installed binary is
 self-documenting:
 
 ```sh
@@ -74,11 +103,14 @@ sudo cp man/man1/*.1 /usr/local/share/man/man1/   # then: man rail0
 cp completions/_rail0 "${fpath[1]}/"              # zsh; see `rail0 completion --help`
 ```
 
-Verify the download against `checksums.txt` from the same release.
+Whichever way you install, continue with [`rail0 init`](#guided-setup-rail0-init).
 
-> **Building from source is not an option for external users**, and that is why the
-> release binaries matter: the build needs the `rail0-go` SDK as a sibling checkout
-> (`replace` directive in `go.mod`) and that repository is private.
+> **All three need the releases to be publicly downloadable.** While
+> `commercelayer/rail0-cli` is private, they work only for accounts with access to it.
+>
+> **Building from source is not an option for external users**, which is why the release
+> binaries matter: the build needs the `rail0-go` SDK as a sibling checkout (`replace`
+> directive in `go.mod`), and that repository is private.
 
 ### Build from source (contributors)
 
@@ -145,6 +177,11 @@ whatever you answer. The check never runs in CI (`CI` set), with `--json` or
 It is skipped for local builds (`dev` or a `git describe` version), and a failed lookup
 is silent. The last check time lives in the user cache directory, next to the session
 tokens (`update-check.json`).
+
+Installed with **Homebrew**, rail0 does neither: the check and `rail0 update` tell you
+to run `brew upgrade rail0`. Replacing the file behind Homebrew's back would leave it
+believing the old version is installed, and the next `brew upgrade` would put that
+version back.
 
 Both need the releases to be publicly downloadable. While the repository is private,
 `rail0 update` reports that no published release was found.

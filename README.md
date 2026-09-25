@@ -928,6 +928,11 @@ rail0 wallets create --address @merchant -p 0xYourKey…
 
 ¹ Falls back to `RAIL0_PRIVATE_KEY`, then an interactive hidden prompt.
 
+A new wallet **accepts no token**, so it cannot receive payments until you add one:
+payment creation refuses a payee with no active holding. After a successful create the
+command prints that next step on stderr (`rail0 wallets tokens add <address> …`), except
+under `--quiet`. The result on stdout is unchanged.
+
 #### `wallets update <wallet>`
 
 ```sh

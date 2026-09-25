@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 
 	rail0 "github.com/commercelayer/rail0-go"
@@ -176,7 +177,7 @@ one already registered to any account is refused (409).`,
 		}
 
 		client := newClient()
-		return ui.RunAPI(func() (any, error) {
+		err = ui.RunAPI(func() (any, error) {
 			// Same SIWE handshake as login (host-only domain, default chain), but
 			// ProveAddress does NOT log in — the request is authorized by the
 			// existing merchant session (its bearer token is on `client`), while
@@ -193,7 +194,25 @@ one already registered to any account is refused (409).`,
 			}
 			return client.Wallets.Create(context.Background(), account, req)
 		})
+		if err != nil {
+			return err
+		}
+		// stderr, and not under --quiet: the result on stdout stays exactly what it was,
+		// for a script parsing it.
+		if !ui.IsQuiet() {
+			fmt.Fprintln(os.Stderr, walletCreatedHint(addr))
+		}
+		return nil
 	},
+}
+
+// walletCreatedHint is the next step after registering a wallet. The gateway attaches
+// no token to a new wallet, and a wallet that accepts none cannot be paid — payment
+// creation refuses it — yet nothing in the create response says so. Named here so it
+// is not discovered at the first refused payment.
+func walletCreatedHint(addr string) string {
+	return fmt.Sprintf("\nThis wallet accepts no tokens yet, so it can't receive payments. Add one with:\n"+
+		"  rail0 wallets tokens add %s --chain-id <id> --token <symbol> --default", addr)
 }
 
 // ── wallets update ──────────────────────────────────────────────────────────

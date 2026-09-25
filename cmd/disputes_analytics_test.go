@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"net/http"
+	"strings"
 	"testing"
 
 	rail0 "github.com/commercelayer/rail0-go"
@@ -55,7 +57,7 @@ func TestBreakdownRequiresBy(t *testing.T) {
 
 func TestAnalyticsFilterFlagsExistOnEveryVerb(t *testing.T) {
 	for _, c := range []*cobra.Command{analyticsSummaryCmd, analyticsTimeseriesCmd, analyticsBreakdownCmd} {
-		for _, f := range []string{"mode", "status", "token", "chain-id", "from", "to"} {
+		for _, f := range []string{"mode", "status", "token", "chain-id", "from", "to", "payee"} {
 			if c.Flags().Lookup(f) == nil {
 				t.Errorf("analytics %s is missing --%s", c.Name(), f)
 			}
@@ -138,5 +140,63 @@ func TestAliasCompletionIsSorted(t *testing.T) {
 		if got[i] != want[i] {
 			t.Errorf("completions = %v, want %v (sorted)", got, want)
 		}
+	}
+}
+
+// --payee narrows every analytics verb to one of the account's wallets, and accepts an
+// @alias through the same resolver as the other address flags. Dropping it on any verb
+// would silently report the whole account while the merchant believes it sees one wallet,
+// and leaving it unset must keep it off the wire — absent is what means "every wallet".
+func TestAnalyticsPayeeIsResolvedAndSentOnEveryVerb(t *testing.T) {
+	g := newRecordingGateway(t)
+	g.respond = func(r *http.Request) any {
+		if r.URL.Path == "/analytics/summary" {
+			return map[string]any{"orders": 0}
+		}
+		return nil
+	}
+	const shop = "0x00000000000000000000000000000000000000aa"
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+	cfg.Aliases = map[string]string{"shop": shop}
+	if err := cfg.Save(); err != nil {
+		t.Fatalf("save config: %v", err)
+	}
+	t.Cleanup(func() { analyticsPayee, analyticsBy = "", "" })
+
+	analyticsPayee, analyticsBy = "@shop", "token"
+	for _, c := range []*cobra.Command{analyticsSummaryCmd, analyticsTimeseriesCmd, analyticsBreakdownCmd} {
+		run(t, c)
+		q := g.last(t, http.MethodGet, "/analytics/"+c.Name()).query
+		if got := q.Get("payee"); got != shop {
+			t.Errorf("analytics %s payee = %q, want the @shop alias resolved to %s", c.Name(), got, shop)
+		}
+	}
+
+	// A literal address passes through untouched.
+	analyticsPayee = "0x00000000000000000000000000000000000000bb"
+	run(t, analyticsSummaryCmd)
+	if got := g.last(t, http.MethodGet, "/analytics/summary").query.Get("payee"); got != analyticsPayee {
+		t.Errorf("payee = %q, want the literal address", got)
+	}
+
+	// Unset: no payee param, so the gateway keeps the whole-account scope.
+	analyticsPayee = ""
+	run(t, analyticsSummaryCmd)
+	if _, present := g.last(t, http.MethodGet, "/analytics/summary").query["payee"]; present {
+		t.Error("payee sent without --payee, want it absent")
+	}
+
+	// An unknown alias fails locally, before any request is made.
+	analyticsPayee = "@nope"
+	before := len(g.reqs)
+	err = analyticsSummaryCmd.RunE(analyticsSummaryCmd, nil)
+	if err == nil || !strings.Contains(err.Error(), "unknown alias") {
+		t.Errorf("unknown alias error = %v, want an 'unknown alias' error", err)
+	}
+	if len(g.reqs) != before {
+		t.Error("an unknown --payee alias still reached the gateway")
 	}
 }

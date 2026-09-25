@@ -1141,13 +1141,19 @@ The account's sales analytics. Requires an **account**: a wallet-only session ge
 address's.
 
 All three take the same filters — `--mode`, `--status`, `--token`, `--chain-id`,
-`--from`, `--to`.
+`--from`, `--to`, `--payee`.
+
+By default the figures cover the **whole account** — every wallet it owns. `--payee`
+restricts them to **one** of the account's wallets: a `0x` address or an `@alias` from the
+address book (resolved locally, like the other address flags). A wallet the account does
+not own is refused with `403`, a malformed address with `400`.
 
 ```sh
 rail0 analytics summary                          # orders, disputes, refund/dispute rates, volume
 rail0 analytics summary --from 2026-01-01T00:00:00Z
 rail0 analytics timeseries --interval week       # day (default) | week | month
 rail0 analytics breakdown --by token             # token | chain | mode | status | operation
+rail0 analytics summary --payee @shop-eu         # just one of the account's wallets
 ```
 
 Volume figures carry a `*_human` companion (`gross_human`, `captured_human`,

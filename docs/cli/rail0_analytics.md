@@ -12,7 +12,9 @@ Read the account's sales analytics.
   breakdown   — the same counts grouped by token, chain, mode, status or operation
 
 All three take the same filters (--mode, --status, --token, --chain-id, --from,
---to). Requires an account: a wallet-only session gets 403 account_required, since
+--to, --payee). By default the figures cover the whole account — every wallet it
+owns; --payee restricts them to ONE of the account's wallets (a 0x address or an
+@alias). A wallet the account does not own is refused with 403. Requires an account: a wallet-only session gets 403 account_required, since
 these are the MERCHANT's figures, not an address's.
 
 ### Examples
@@ -22,6 +24,7 @@ these are the MERCHANT's figures, not an address's.
   rail0 analytics summary --from 2026-01-01T00:00:00Z
   rail0 analytics timeseries --interval week
   rail0 analytics breakdown --by token
+  rail0 analytics summary --payee @shop-eu
 ```
 
 ### Options

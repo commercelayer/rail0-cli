@@ -54,7 +54,7 @@ func TestValidateKeyName(t *testing.T) {
 // and `help` deliberately do not.
 func TestTopLevelCommandsAreGrouped(t *testing.T) {
 	// The meta commands stay under "Additional Commands" on purpose.
-	ungrouped := map[string]bool{"completion": true, "help": true, "version": true}
+	ungrouped := map[string]bool{"completion": true, "help": true, "version": true, "update": true}
 	for _, c := range rootCmd.Commands() {
 		if ungrouped[c.Name()] {
 			if c.GroupID != "" {

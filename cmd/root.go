@@ -12,6 +12,7 @@ import (
 
 	charmlog "github.com/charmbracelet/log"
 	rail0 "github.com/commercelayer/rail0-go"
+	"github.com/rail0/cli/internal/selfupdate"
 	"github.com/rail0/cli/internal/token"
 	"github.com/rail0/cli/internal/ui"
 	"github.com/spf13/cobra"
@@ -31,8 +32,12 @@ var rootCmd = &cobra.Command{
 	SilenceUsage:  true,
 	SilenceErrors: true,
 	// Runs before every subcommand's RunE (no subcommand defines its own
-	// PersistentPreRunE, which would shadow this one). See checkBaseURL. (#62)
-	PersistentPreRunE: func(cmd *cobra.Command, _ []string) error { return checkBaseURL(cmd) },
+	// PersistentPreRunE, which would shadow this one). See checkBaseURL (#62) and
+	// maybeOfferUpdate, the once-a-day release check for interactive sessions.
+	PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
+		maybeOfferUpdate(cmd)
+		return checkBaseURL(cmd)
+	},
 	Long: `rail0 is a command-line interface for the RAIL0 stablecoin payment gateway.
 
 QUICKSTART
@@ -50,6 +55,7 @@ Use 'rail0 <command> --help' for detailed usage of any command.`,
 }
 
 func Execute() {
+	selfupdate.CleanupOld()
 	rejectUnknownSubcommands(rootCmd)
 	if err := rootCmd.Execute(); err != nil {
 		ui.FatalCode(humanizeError(err), exitCode(err))
@@ -124,9 +130,9 @@ func init() {
 	rootCmd.AddCommand(paymentsCmd, walletsCmd, paymentMethodsCmd, webhooksCmd, chainsCmd, tokensCmd, authCmd, healthCmd, aliasesCmd, keysCmd, configCmd, envCmd, disputesCmd, analyticsCmd)
 }
 
-// Help groups. `completion`, `help` and `version` deliberately have none: cobra lists
-// an ungrouped command under "Additional Commands", which is exactly the weight the
-// three meta commands should carry next to `payments`.
+// Help groups. `completion`, `help`, `update` and `version` deliberately have none:
+// cobra lists an ungrouped command under "Additional Commands", which is exactly the
+// weight the meta commands should carry next to `payments`.
 const (
 	groupPayments = "payments"
 	groupAccount  = "account"
@@ -427,7 +433,7 @@ func resolveBaseURL() string {
 // base URL used to break outright — every completion returned the validation error.
 var localOnlyCommands = map[string]bool{
 	"config": true, "env": true, "keys": true, "aliases": true,
-	"help": true, "completion": true, "version": true, "token": true, "init": true,
+	"help": true, "completion": true, "version": true, "token": true, "init": true, "update": true,
 	cobra.ShellCompRequestCmd: true, cobra.ShellCompNoDescRequestCmd: true,
 }
 

@@ -30,7 +30,7 @@ rotate is reported rather than silently honoured. Keys are scoped to the payment
 ## Contents
 
 - [Requirements](#requirements)
-- [Installation](#installation) — [release binary](#download-a-release-binary-recommended) · [from source](#build-from-source-contributors) · [`rail0 init`](#guided-setup-rail0-init)
+- [Installation](#installation) — [release binary](#download-a-release-binary-recommended) · [from source](#build-from-source-contributors) · [`rail0 update`](#updating-rail0-update) · [`rail0 init`](#guided-setup-rail0-init)
 - [**Your first payment**](#your-first-payment) — the guided path
 - [Shell completion](#shell-completion)
 - [Configuration](#configuration) — [defaults](#persisted-defaults-config) · [environments](#environments-env) · [address book](#address-book-aliases) · [signing keys](#signing-keys-os-keychain)
@@ -120,6 +120,34 @@ path stamps it from `git describe`: `make build` does the compile, `bin/build` a
 That matters more than it looks — a binary that reports `dev` cannot be told apart
 from one built weeks earlier, and a stale CLI fails in ways that point at the server
 rather than at itself.
+
+### Updating (`rail0 update`)
+
+A release binary updates itself:
+
+```sh
+rail0 update           # download the latest release and install it in place
+rail0 update --check   # only report whether a newer release exists
+```
+
+It downloads this platform's archive from the latest GitHub release, with a progress
+bar on a terminal. It verifies the archive's SHA-256 against the release's
+`checksums.txt` and then swaps the binary. The swap is a rename, so an interrupted
+update leaves the old binary intact, and nothing changes unless the download verifies.
+The `r0` alias follows, since it is a link to the same file. If rail0 sits in a
+directory you cannot write to (`/usr/local/bin` after `make install`), run
+`sudo rail0 update`.
+
+Interactive sessions also **check once a day** and, when a newer release exists, ask
+`Update now? [Y/n]` before running your command. The command then runs normally
+whatever you answer. The check never runs in CI (`CI` set), with `--json` or
+`--quiet`, when stdin or stderr is not a terminal, or with `RAIL0_NO_UPDATE_CHECK=1`.
+It is skipped for local builds (`dev` or a `git describe` version), and a failed lookup
+is silent. The last check time lives in the user cache directory, next to the session
+tokens (`update-check.json`).
+
+Both need the releases to be publicly downloadable. While the repository is private,
+`rail0 update` reports that no published release was found.
 
 ### Guided setup (`rail0 init`)
 

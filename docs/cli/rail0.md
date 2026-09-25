@@ -46,6 +46,7 @@ Use 'rail0 <command> --help' for detailed usage of any command.
 * [rail0 payments](rail0_payments.md)	 - Payment lifecycle operations
 * [rail0 token](rail0_token.md)	 - Print the stored session token, or suggest logging in
 * [rail0 tokens](rail0_tokens.md)	 - List supported tokens (symbols used in --token)
+* [rail0 update](rail0_update.md)	 - Update rail0 to the latest release
 * [rail0 version](rail0_version.md)	 - Print the rail0 CLI version
 * [rail0 wallets](rail0_wallets.md)	 - Manage the logged-in account's wallets (lists when run bare)
 * [rail0 webhooks](rail0_webhooks.md)	 - Webhook subscription management (requires login)

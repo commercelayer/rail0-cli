@@ -15,10 +15,16 @@ before:
     # Completions and man pages are GENERATED, so they are built here rather than
     # read from the tree: an archive shipping a stale completion script is worse
     # than one shipping none, since nothing would reveal the drift.
-    - mkdir -p dist/completions dist/man
-    - sh -c 'go run . completion bash > dist/completions/rail0.bash'
-    - sh -c 'go run . completion zsh  > dist/completions/_rail0'
-    - sh -c 'go run . completion fish > dist/completions/rail0.fish'
+    #
+    # Written to .release/, NOT dist/: goreleaser requires dist/ to be empty after the
+    # before hooks ("ensuring distribution directory"), so completions generated there
+    # failed every release before a single binary was built. The man pages need no
+    # directory here — gendocs writes them to docs/man, which the archive reads.
+    - rm -rf .release
+    - mkdir -p .release/completions
+    - sh -c 'go run . completion bash > .release/completions/rail0.bash'
+    - sh -c 'go run . completion zsh  > .release/completions/_rail0'
+    - sh -c 'go run . completion fish > .release/completions/rail0.fish'
     - go run ./tools/gendocs
 
 builds:
@@ -58,7 +64,7 @@ archives:
     # archive has to be self-sufficient: shell completions and man pages travel with
     # the binary instead of living only in the repo. (#105)
     files:
-      - src: dist/completions/*
+      - src: .release/completions/*
         dst: completions
       - src: docs/man/*
         dst: man/man1

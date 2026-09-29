@@ -85,12 +85,14 @@ func humanizeErrorFor(cmd *cobra.Command, err error) error {
 
 // notFoundHint says what a 404 can mean for the resource cmd works on.
 //
-// Every scoped lookup in the gateway answers 404, never 403, for something the
-// session may not see, so "doesn't exist" and "isn't yours" are deliberately
-// indistinguishable (gateway#157) — the hint has to name both. What "yours" means
+// The gateway's scoped lookups (payments, webhooks, wallets, wallet tokens, event
+// callbacks) answer 404, not 403, for something the session may not see, so
+// "doesn't exist" and "isn't yours" are deliberately indistinguishable
+// (gateway#157, #357) — the hint has to name both. (Another account's id is the
+// exception: the gateway answers 403 not_your_account.) What "yours" means
 // differs by resource, though: a payment is visible to its payer and payee only,
-// so the likely fix is the signing key; a webhook, wallet, wallet token, event
-// callback or account belongs to the session's account, where payer/payee advice
+// so the likely fix is the signing key; a webhook, wallet, wallet token or event
+// callback belongs to the session's account, where payer/payee advice
 // (and -p, which those commands do not take) would send the user after the wrong
 // thing. So the payer/payee wording is kept for commands under `rail0 payments`
 // and every other command — or an unknown one — gets the neutral line.

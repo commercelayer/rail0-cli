@@ -1,0 +1,73 @@
+.nh
+.TH "RAIL0" "1" "Aug 2026" "rail0 CLI" ""
+
+.SH NAME
+rail0-account-update - Change the account's name and/or email
+
+
+.SH SYNOPSIS
+\fBrail0 account update [flags]\fP
+
+
+.SH DESCRIPTION
+Change the account's display name and/or contact email. At least one of
+--name / --email is required.
+
+.PP
+Both are unique across accounts: a value another account already holds is refused
+with 409. A deactivated account, or a session signed in with a deactivated wallet,
+cannot change them (403) — a revoked key must not be able to redirect the contact
+email, which is where the merchant's operational notifications go.
+
+.PP
+No confirmation is asked: the change is not destructive and 'account update'
+reverses it.
+
+
+.SH OPTIONS
+\fB--email\fP=""
+	New contact email (unique across accounts)
+
+.PP
+\fB-h\fP, \fB--help\fP[=false]
+	help for update
+
+.PP
+\fB--name\fP=""
+	New display name (unique across accounts)
+
+
+.SH OPTIONS INHERITED FROM PARENT COMMANDS
+\fB--account\fP=""
+	Account id (default: the logged-in session account; another account's needs an admin session)
+
+.PP
+\fB--base-url\fP=""
+	RAIL0 gateway base URL (env: RAIL0_BASE_URL)
+
+.PP
+\fB--debug\fP[=false]
+	Print HTTP request/response details to stderr
+
+.PP
+\fB--json\fP[=false]
+	Force plain (uncolored) JSON output (useful in scripts)
+
+.PP
+\fB--pretty\fP[=false]
+	Use the key-value/table view instead of JSON (terminal only)
+
+.PP
+\fB-q\fP, \fB--quiet\fP[=false]
+	Print only the result's id/hash, one per line (useful in scripts)
+
+
+.SH EXAMPLE
+.EX
+  rail0 account update --name "Acme Store"
+  rail0 account update --name "Acme Store" --email ops@acme.example
+.EE
+
+
+.SH SEE ALSO
+\fBrail0-account(1)\fP

@@ -54,7 +54,7 @@ func humanizeErrorFor(cmd *cobra.Command, err error) error {
 		case apiErr.Status == 404:
 			return fmt.Errorf("not found (HTTP 404)%s — %s", detail(apiHint(apiErr)), notFoundHint(cmd))
 		case apiErr.Status == 409:
-			return fmt.Errorf("already exists / conflict (HTTP 409)%s", detail(apiHint(apiErr)))
+			return fmt.Errorf("already exists / conflict (HTTP 409)%s%s", detail(apiHint(apiErr)), conflictHint(cmd))
 		case apiErr.Status == 422:
 			return fmt.Errorf("request rejected (HTTP 422)%s", detail(apiHint(apiErr)))
 		case apiErr.Status == 429:
@@ -101,6 +101,17 @@ func notFoundHint(cmd *cobra.Command) string {
 		return "the id may be wrong, or you are not the payer/payee of this payment (check the key you passed with -p)"
 	}
 	return "the id may be wrong, or it is not visible to this session ('rail0 auth status' shows who you are signed in as)"
+}
+
+// conflictHint is the command-specific tail of a 409, or "" when the gateway's own
+// detail is all there is to say. Like a 404, a 409 is answered from a unique index
+// rather than by the route, so its body is generic ("already exists") and cannot name
+// the colliding field — only the command knows which fields could have collided.
+func conflictHint(cmd *cobra.Command) string {
+	if cmd == accountUpdateCmd {
+		return " — " + accountConflictHint
+	}
+	return ""
 }
 
 // isPaymentCommand reports whether cmd is `rail0 payments` or one of its

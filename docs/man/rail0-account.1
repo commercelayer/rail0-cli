@@ -1,0 +1,66 @@
+.nh
+.TH "RAIL0" "1" "Aug 2026" "rail0 CLI" ""
+
+.SH NAME
+rail0-account - Show or update the signed-in account's profile (shows when run bare)
+
+
+.SH SYNOPSIS
+\fBrail0 account [flags]\fP
+
+
+.SH DESCRIPTION
+Read and update the profile of the signed-in account: its id, name, email
+and timestamps.
+
+.PP
+Requires a login ('rail0 auth login') by a wallet that belongs to an account — a
+wallet-only session has no account to show. The account is the session's own
+('rail0 auth status' prints its id); --account reads or updates another one, which
+the gateway allows only for an admin (anyone else gets 403 not_your_account).
+
+.PP
+Run bare, or as 'account get', to show it; 'account update' changes the name
+and/or email. The account's active flag is operator-only and is not settable here.
+
+
+.SH OPTIONS
+\fB--account\fP=""
+	Account id (default: the logged-in session account; another account's needs an admin session)
+
+.PP
+\fB-h\fP, \fB--help\fP[=false]
+	help for account
+
+
+.SH OPTIONS INHERITED FROM PARENT COMMANDS
+\fB--base-url\fP=""
+	RAIL0 gateway base URL (env: RAIL0_BASE_URL)
+
+.PP
+\fB--debug\fP[=false]
+	Print HTTP request/response details to stderr
+
+.PP
+\fB--json\fP[=false]
+	Force plain (uncolored) JSON output (useful in scripts)
+
+.PP
+\fB--pretty\fP[=false]
+	Use the key-value/table view instead of JSON (terminal only)
+
+.PP
+\fB-q\fP, \fB--quiet\fP[=false]
+	Print only the result's id/hash, one per line (useful in scripts)
+
+
+.SH EXAMPLE
+.EX
+  rail0 account                          # the signed-in account
+  rail0 account get --account 019e748b-… # another account (admin only)
+  rail0 account update --email ops@example.com
+.EE
+
+
+.SH SEE ALSO
+\fBrail0(1)\fP, \fBrail0-account-get(1)\fP, \fBrail0-account-update(1)\fP

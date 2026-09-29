@@ -434,9 +434,17 @@ get `authorization_expiry_at` / `refund_expiry_at` (RFC3339) and
 `authorization_expires_in` / `refund_expires_in` ("2h 5m", or "expired") beside the raw
 epoch integers.
 
+The scale is the payment's own `decimals` field, which the gateway sets on every
+payment — so these views cost no `GET /tokens`. Only a payment whose `decimals` is null
+(a token the gateway cannot resolve) falls back to the token catalogue.
+
+Every payment also carries `in_flight`, the gateway's own answer to "is a transaction
+on its way to the chain" (submitting, submitted, or signed and pending broadcast) — the
+field to read before deciding whether a balance is settled enough to act on.
+
 The raw fields are untouched, so a script reading `amount` keeps working — the
 companions are additive. They are **omitted** when the token's decimals are unknown
-(a token missing from `rail0 tokens`), because a base-unit integer in a field named
+(null on the payment and missing from `rail0 tokens`), because a base-unit integer in a field named
 `_human` would be worse than no field: `4050000` reads as four million rather than
 4.05, and that is a six-order-of-magnitude error someone can act on. The interactive
 payment picker, which has no script to keep compatible, instead labels it
@@ -783,7 +791,7 @@ Every on-chain action command (`authorize`, `charge`, `capture`, `void`, `releas
 |------|-------|-------------|
 | `--private-key` | `-p` | Caller's secp256k1 private key: 0x-prefixed hex, or `@name` for a key saved in the OS keychain (`rail0 keys add`) |
 | `--wait` | `-w` | Block until the operation confirms on-chain (or fails) instead of returning at the `202` |
-| `--timeout` | — | Max time to wait with `--wait` (default `15m`). The gateway is notified only once the chain calls the block settled, so settlement is minutes, not seconds: ~2 min on Base/OP Sepolia and ~11 min on Arbitrum Sepolia (its `safe` block sits ~2640 blocks back, on L1 batch cadence), ~0 on Arc and Amoy. The old `2m` default could not be reached on Arbitrum at all — and a `--wait` that gives up exits non-zero, which a script reads as a failed capture. Lower it on a fast chain if you want a stuck operation reported sooner |
+| `--timeout` | — | Max time to wait with `--wait`. Unset, it follows the payment's chain: **10× the chain's measured p90 settlement** (`settlement.p90_seconds` on `rail0 chains`), kept between `5m` and `15m` — never longer than the old fixed default, never short enough to report one slow-but-healthy operation as a failure. It stays `15m` when the chain has too few confirmed transactions to be measured, and on `payments redrive`, which holds no payment to read the chain from. Settlement is end to end — the chain's `safe`/`finalized` lag plus the gateway's pipeline — so it is minutes on some chains (~11 min on Arbitrum Sepolia) and seconds on others. A `--wait` that gives up exits non-zero, which a script reads as a failed capture, so raise it rather than lower it when in doubt; an explicit value always wins |
 | `--idempotency-key` | — | Make a re-run safe: the same key returns the first transaction instead of opening a second — see [Safe re-runs](#safe-re-runs---idempotency-key) |
 | `--yes` | `-y` | Skip the confirmation prompt (every action except `authorize`); required to run non-interactively |
 
@@ -1093,6 +1101,13 @@ rail0 chains --network-type testnet
 rail0 chains -s ETH -n mainnet    # combined
 ```
 
+Each chain carries `settlement` — how long an operation has taken to settle **on this
+gateway**, broadcast to confirmation, over a trailing window (`p50_seconds`,
+`p90_seconds`, `sample_size`, `window_days`) — and a one-line `settlement_human` beside
+it: `p50 11s · p90 19s (20 samples, 7d)`, or `n/a (3 samples)` while the chain has too
+few confirmed transactions for the percentiles. A measurement, not a guarantee; the p90
+is what sizes the default [`--timeout`](#payments-wait-rail0id) of a wait.
+
 ---
 
 ### Tokens
@@ -1112,6 +1127,28 @@ rail0 tokens --symbol USDC
 ### Webhooks
 
 Manage webhook subscriptions for the authenticated account. A webhook subscribes to one or more payment-lifecycle topics and delivers a signed callback to your endpoint — one subscription means **one** shared secret and **one** circuit breaker however many topics it carries, and each delivery names the event that fired in `X-Rail0-Topic`. Two subscriptions for the same callback URL must not overlap, since the same event arriving twice under two different secrets is indistinguishable from a duplicate at the receiving end. All webhook commands require authentication.
+
+#### Topics
+
+`-t/--topic` completes these in the shell; the gateway is what validates them.
+
+| Topic | Fires when |
+| --- | --- |
+| `payments.created` | a payment is created |
+| `payments.signed` | the payer's signature is stored |
+| `payments.authorized` | the authorization is confirmed on-chain — funds in escrow |
+| `payments.charged` | a one-shot charge is confirmed |
+| `payments.captured` | a capture (full or partial) is confirmed |
+| `payments.voided` | the authorization is voided |
+| `payments.released` | escrow is released back to the payer |
+| `payments.refunded` | a refund is confirmed |
+| `payments.authorization_expiring` | **a warning, not a transition**: an authorization with capturable funds (`authorized`, `partially_captured`) is about to lapse — its `authorization_expiry` falls inside the gateway's `AUTHORIZATION_EXPIRING_NOTICE` window (24h by default). Sent **once** per payment, while there is still time to capture; the status does not change and the payload's `transaction` is null. Seconds left = `payment.authorization_expiry` − `emitted_at` |
+| `payments.expired` | a never-captured authorization's window lapsed (a window that already closed gets this, never `authorization_expiring`) |
+| `payments.failed` | an on-chain attempt failed |
+| `payments.disputed` | a dispute is opened |
+| `payments.dispute_closed` | a dispute is closed |
+
+Every payment payload carries `capturable_amount` and `authorization_expiry`.
 
 #### Two ways to be off — and only one `enable`
 
@@ -1152,6 +1189,8 @@ rail0 webhooks list --topic payments.captured --active true
 rail0 webhooks get <webhook_id>
 rail0 webhooks create --name "order lifecycle" --callback-url https://example.com/hook \
   -t payments.authorized -t payments.captured -t payments.voided -t payments.refunded
+rail0 webhooks create --name "capture reminder" --callback-url https://example.com/hook \
+  -t payments.authorization_expiring
 rail0 webhooks update <webhook_id> --callback-url https://example.com/new
 rail0 webhooks enable <webhook_id>
 rail0 webhooks disable <webhook_id>
@@ -1322,6 +1361,12 @@ List payments for the authenticated wallet (requires login). Filter with `--stat
 `--rail0-id`, `--min-amount` / `--max-amount`, and `--created-from` / `--created-to`
 (ISO-8601); sort with `--sort`.
 
+`--status` takes **several values**, repeated (`--status authorized --status
+partially_captured`) or comma-separated (`--status authorized,partially_captured`), and
+matches payments in **any** of them — that example is every payment with escrow still
+capturable. Each value is checked against the payment-status vocabulary before any
+request, and an unknown one is refused by name.
+
 `--operation` keeps payments carrying at least one transaction of that operation, so
 `--operation dispute` finds every payment that was **ever** disputed, which `--disputed`
 (an **open** dispute) does not.
@@ -1336,6 +1381,7 @@ millionth of a USDC and matched everything.
 ```sh
 rail0 payments list
 rail0 payments list --sort -created_at
+rail0 payments list --status authorized,partially_captured
 rail0 payments list --chain-id 5042002 --disputed
 rail0 payments list --chain-id 5042002 --token 0x3600… --min-amount 1.00
 rail0 payments list --operation refund --created-from 2026-09-01T00:00:00Z
@@ -1355,11 +1401,14 @@ A payment can hold several rows for the same operation (a retried broadcast, or 
 rail0 payments transactions 0xabc123…
 rail0 payments transactions 0xabc123… --sort -confirmed_at
 rail0 payments transactions 0xabc123… --operation capture --status failed
+rail0 payments transactions 0xabc123… --status submitting,submitted   # on its way to the chain
 ```
 
 `--sort` takes `created_at`, `updated_at`, `block_number` or `confirmed_at`;
 `--operation` and `--status` use the transaction vocabularies (`close_dispute`,
-`failed` and the rest), which `--status` on `payments list` does not.
+`failed` and the rest), which `--status` on `payments list` does not. Like there,
+`--status` takes several values (repeated or comma-separated) and matches any of them;
+each is checked locally first.
 
 #### `payments transaction <rail0Id> <transaction_id>`
 
@@ -1493,7 +1542,12 @@ rail0 payments dispute close <rail0Id> -p @buyer-key --wait
 
 Block until a payment settles — no transaction still in flight — or, with `--until
 <status>`, until it reaches that status; it stops early with an error once the status
-can no longer be reached. `--timeout` defaults to `15m`. Runs on the stored session.
+can no longer be reached. Runs on the stored session.
+
+Without `--timeout` the deadline is sized from the payment's chain: 10× its measured p90
+settlement (see `rail0 chains`), kept between `5m` and `15m`, and `15m` when the chain
+is not measured yet. The first poll is what names the chain, so this costs no extra
+read of the payment (at most one `GET /blockchains` per process).
 
 ```sh
 rail0 payments wait <rail0Id> --until captured

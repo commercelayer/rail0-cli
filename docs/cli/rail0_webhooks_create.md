@@ -31,6 +31,10 @@ rail0 webhooks create [flags]
   rail0 webhooks create --name "order lifecycle" \
     --callback-url https://example.com/hook \
     -t payments.authorized -t payments.captured -t payments.voided -t payments.refunded
+
+  # warned before an uncaptured authorization lapses
+  rail0 webhooks create --name "capture reminder" \
+    --callback-url https://example.com/hook -t payments.authorization_expiring
 ```
 
 ### Options

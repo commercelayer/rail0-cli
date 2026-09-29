@@ -103,13 +103,69 @@ func TestPaymentsListSendsOperationAndRail0ID(t *testing.T) {
 
 func TestPaymentsTransactionsSendsOperationAndStatus(t *testing.T) {
 	g := newRecordingGateway(t)
-	paymentsTransactionsOperation, paymentsTransactionsStatus = "capture", "failed"
-	t.Cleanup(func() { paymentsTransactionsOperation, paymentsTransactionsStatus = "", "" })
+	paymentsTransactionsOperation, paymentsTransactionsStatuses = "capture", []string{"failed"}
+	t.Cleanup(func() { paymentsTransactionsOperation, paymentsTransactionsStatuses = "", nil })
 
 	run(t, paymentsTransactionsCmd, lcRail0ID)
 	q := g.last(t, http.MethodGet, "/transactions").query
 	if q.Get("operation") != "capture" || q.Get("status") != "failed" {
 		t.Errorf("query = %v, want operation=capture&status=failed", q)
+	}
+}
+
+// Several --status values go out as ONE `status=a,b` (the SDK's Statuses), which the
+// gateway matches as any of them — on both status filters. Repeated and
+// comma-separated flags land in the same slice (StringSlice), so both forms are
+// covered by what reaches the query.
+func TestStatusFiltersSendSeveralValues(t *testing.T) {
+	g := newRecordingGateway(t)
+	paymentsListStatuses = []string{"authorized", " partially_captured", ""}
+	paymentsTransactionsStatuses = []string{"submitting", "submitted"}
+	t.Cleanup(func() { paymentsListStatuses, paymentsTransactionsStatuses = nil, nil })
+
+	run(t, paymentsListCmd)
+	if q := g.last(t, http.MethodGet, "/payments").query; q.Get("status") != "authorized,partially_captured" {
+		t.Errorf("payments list query = %v, want status=authorized,partially_captured", q)
+	}
+	run(t, paymentsTransactionsCmd, lcRail0ID)
+	if q := g.last(t, http.MethodGet, "/transactions").query; q.Get("status") != "submitting,submitted" {
+		t.Errorf("payments transactions query = %v, want status=submitting,submitted", q)
+	}
+}
+
+// Each value is checked against ITS vocabulary before any request, and the error names
+// the one that is wrong — which the gateway's 400 for the whole filter does not.
+func TestStatusFiltersRejectAnUnknownValueLocally(t *testing.T) {
+	g := newRecordingGateway(t)
+	t.Cleanup(func() { paymentsListStatuses, paymentsTransactionsStatuses = nil, nil })
+
+	paymentsListStatuses = []string{"authorized", "failed"} // a transaction status
+	err := paymentsListCmd.RunE(paymentsListCmd, nil)
+	if err == nil || !strings.Contains(err.Error(), `"failed"`) {
+		t.Errorf("payments list --status authorized,failed: err = %v, want it to name \"failed\"", err)
+	}
+	paymentsTransactionsStatuses = []string{"captured"} // a payment status
+	err = paymentsTransactionsCmd.RunE(paymentsTransactionsCmd, []string{lcRail0ID})
+	if err == nil || !strings.Contains(err.Error(), `"captured"`) {
+		t.Errorf("payments transactions --status captured: err = %v, want it to name \"captured\"", err)
+	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if len(g.reqs) != 0 {
+		t.Errorf("%d requests sent; an unknown status must be refused before any", len(g.reqs))
+	}
+}
+
+// Completion after a comma continues the list and leaves out what is already there.
+func TestFixedListCompletionsContinueAfterAComma(t *testing.T) {
+	complete := fixedListCompletions("authorized", "captured", "expired")
+	got, _ := complete(nil, nil, "authorized,")
+	want := []string{"authorized,captured", "authorized,expired"}
+	if !slices.Equal(got, want) {
+		t.Errorf("completions = %v, want %v", got, want)
+	}
+	if got, _ := complete(nil, nil, ""); len(got) != 3 {
+		t.Errorf("completions for an empty value = %v, want all three", got)
 	}
 }
 

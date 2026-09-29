@@ -94,17 +94,34 @@ func lowerHex(s string) string {
 	return string(b)
 }
 
-// humanAmount renders a base-unit amount as a decimal, or "" when the token's
-// decimals are unknown or the amount is empty.
+// paymentDecimals returns the decimals that scale a payment's amounts, and whether they
+// are known.
+//
+// The payment's own `decimals` comes first (rail0-gateway#367): the gateway resolves it
+// from its chain catalogue, retired tokens and archived contract versions included, so
+// it is the same figure the /tokens join produced — without the join. A payment view
+// therefore no longer fetches the token catalogue at all. The catalogue stays the
+// fallback for a payment whose `decimals` is null (a token the gateway cannot resolve)
+// or a gateway older than the field, so nothing renders worse than it did.
+func paymentDecimals(ctx context.Context, p *rail0.Payment) (int, bool) {
+	if p.Decimals != nil {
+		return *p.Decimals, true
+	}
+	return tokenDecimals(ctx, p.ChainID, string(p.Token))
+}
+
+// paymentAmountHuman renders a base-unit amount of payment p's token as a decimal, on
+// the scale paymentDecimals resolves, or "" when the amount is empty (the scale is then
+// not looked up) or the scale is unknown.
 //
 // "" rather than the raw value on purpose: the companion field is dropped
 // (omitempty) instead of carrying a number at an unstated scale next to one that
 // says _human. The raw field is right there for anyone who needs it.
-func humanAmount(ctx context.Context, base string, chainID int, token string) string {
+func paymentAmountHuman(ctx context.Context, p *rail0.Payment, base string) string {
 	if base == "" {
 		return ""
 	}
-	decimals, ok := tokenDecimals(ctx, chainID, token)
+	decimals, ok := paymentDecimals(ctx, p)
 	if !ok {
 		return ""
 	}
@@ -169,15 +186,12 @@ func humanizeTransactions(ctx context.Context, client *rail0.Client, paymentID s
 // humanizeTransactionsOf is humanizeTransactions for a caller that already holds the
 // payment (nil = unknown, rows stay raw).
 func humanizeTransactionsOf(ctx context.Context, p *rail0.Payment, txs []rail0.Transaction) []*transactionView {
-	chainID, token := 0, ""
-	if p != nil && !ui.IsQuiet() {
-		chainID, token = p.ChainID, string(p.Token)
-	}
+	scaled := p != nil && !ui.IsQuiet()
 	out := make([]*transactionView, len(txs))
 	for i := range txs {
 		v := &transactionView{Transaction: &txs[i]}
-		if chainID != 0 && txs[i].Amount != "" {
-			v.AmountHuman = humanAmount(ctx, txs[i].Amount, chainID, token)
+		if scaled {
+			v.AmountHuman = paymentAmountHuman(ctx, p, txs[i].Amount)
 		}
 		out[i] = v
 	}
@@ -204,12 +218,11 @@ func humanize(ctx context.Context, p *rail0.Payment) *paymentView {
 	if ui.IsQuiet() {
 		return &paymentView{Payment: p}
 	}
-	chainID, token := p.ChainID, string(p.Token)
 	return &paymentView{
 		Payment:                p,
-		AmountHuman:            humanAmount(ctx, string(p.Amount), chainID, token),
-		CapturableAmountHuman:  humanAmount(ctx, p.CapturableAmount, chainID, token),
-		RefundableAmountHuman:  humanAmount(ctx, p.RefundableAmount, chainID, token),
+		AmountHuman:            paymentAmountHuman(ctx, p, string(p.Amount)),
+		CapturableAmountHuman:  paymentAmountHuman(ctx, p, p.CapturableAmount),
+		RefundableAmountHuman:  paymentAmountHuman(ctx, p, p.RefundableAmount),
 		AuthorizationExpiryAt:  expiryAt(p.AuthorizationExpiry),
 		AuthorizationExpiresIn: expiresIn(p.AuthorizationExpiry),
 		RefundExpiryAt:         expiryAt(p.RefundExpiry),
@@ -217,8 +230,9 @@ func humanize(ctx context.Context, p *rail0.Payment) *paymentView {
 	}
 }
 
-// humanizeAll wraps a list. One catalogue fetch covers the whole page, whatever its
-// chains (tokenCatalog).
+// humanizeAll wraps a list. Each payment carries its own decimals, so a page normally
+// costs no catalogue fetch; one covers the whole page, whatever its chains
+// (tokenCatalog), when some payment's decimals are null.
 func humanizeAll(ctx context.Context, payments []rail0.Payment) []*paymentView {
 	out := make([]*paymentView, 0, len(payments))
 	for i := range payments {
@@ -233,8 +247,8 @@ func humanizeAll(ctx context.Context, payments []rail0.Payment) []*paymentView {
 //
 // Marked rather than bare, for the reason in this file's header: an unlabelled
 // 4050000 next to a 4.05 in the same list is worse than no figure at all.
-func amountLabel(ctx context.Context, base string, chainID int, token string) string {
-	if human := humanAmount(ctx, base, chainID, token); human != "" {
+func amountLabel(ctx context.Context, p *rail0.Payment, base string) string {
+	if human := paymentAmountHuman(ctx, p, base); human != "" {
 		return human
 	}
 	if base == "" {

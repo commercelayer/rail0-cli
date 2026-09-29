@@ -25,6 +25,10 @@ A payment can hold several rows for the same operation (a retried broadcast, or
 successive partial captures), which is why the balances a payment reports are
 the last CONFIRMED ones and not the last submitted.
 
+.PP
+--status takes several values, repeated or comma-separated, and matches ANY of
+them: '--status submitting,submitted' is what is on its way to the chain.
+
 
 .SH OPTIONS
 \fB-h\fP, \fB--help\fP[=false]
@@ -47,8 +51,8 @@ the last CONFIRMED ones and not the last submitted.
 	Sort fields: created_at, updated_at, block_number, confirmed_at (prefix - for descending, comma-separated)
 
 .PP
-\fB--status\fP=""
-	Filter by transaction status (pending, submitting, submitted, confirmed, failed)
+\fB--status\fP=[]
+	Filter by transaction status (pending, submitting, submitted, confirmed, failed); repeat or comma-separate for any of several
 
 
 .SH OPTIONS INHERITED FROM PARENT COMMANDS
@@ -77,6 +81,7 @@ the last CONFIRMED ones and not the last submitted.
   rail0 payments transactions 0xabc123…
   rail0 payments transactions 0xabc123… --sort -confirmed_at
   rail0 payments transactions 0xabc123… --operation capture --status failed
+  rail0 payments transactions 0xabc123… --status submitting,submitted
 .EE
 
 

@@ -97,7 +97,7 @@ var (
 	paymentsListSort        string
 	paymentsListChainID     int
 	paymentsListDisputed    bool
-	paymentsListStatus      string
+	paymentsListStatuses    []string
 	paymentsListMode        string
 	paymentsListPayer       string
 	paymentsListPayee       string
@@ -125,6 +125,11 @@ Filter with --status, --mode, --payer, --payee, --token, --chain-id, --disputed,
 transaction of that operation — '--operation dispute' finds every payment ever
 disputed, which --disputed (an OPEN dispute) does not.
 
+--status takes several values, repeated or comma-separated, and matches ANY of
+them: '--status authorized,partially_captured' is every payment with escrow still
+capturable. Each value is checked against the payment-status vocabulary before
+any request.
+
 --min-amount / --max-amount are DECIMALS in token units ('1.00'), like every other
 amount flag. Converting them to the base units the gateway filters on needs the
 token's decimals, so both --chain-id and --token are required with them — and an
@@ -132,11 +137,16 @@ amount range only means something within one token anyway.`,
 	Example: `  rail0 payments list
   rail0 payments list --sort -created_at
   rail0 payments list --status authorized --mode charge
+  rail0 payments list --status authorized,partially_captured
   rail0 payments list --chain-id 5042002 --disputed
   rail0 payments list --chain-id 5042002 --token 0x3600… --min-amount 1.00 --created-from 2026-01-01T00:00:00Z`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := context.Background()
+		statuses, err := statusFilterValues("--status", paymentsListStatuses, paymentStatuses)
+		if err != nil {
+			return err
+		}
 		// The gateway filters in base units; these flags now take decimals like every
 		// other --amount in the CLI, so they are converted here.
 		minAmount, maxAmount, err := amountFilters(ctx, paymentsListMinAmount, paymentsListMaxAmount,
@@ -146,7 +156,7 @@ amount range only means something within one token anyway.`,
 		}
 		p := rail0.ListPaymentsParams{
 			Sort:        paymentsListSort,
-			Status:      paymentsListStatus,
+			Statuses:    statuses,
 			Mode:        paymentsListMode,
 			Payer:       paymentsListPayer,
 			Payee:       paymentsListPayee,
@@ -218,7 +228,7 @@ func fetchAllPayments(ctx context.Context, client *rail0.Client, p rail0.ListPay
 var (
 	paymentsTransactionsSort      string
 	paymentsTransactionsOperation string
-	paymentsTransactionsStatus    string
+	paymentsTransactionsStatuses  []string
 	paymentsTransactionsPage      int
 	paymentsTransactionsPerPage   int
 )
@@ -238,17 +248,25 @@ failed row carries the decoded revert reason.
 
 A payment can hold several rows for the same operation (a retried broadcast, or
 successive partial captures), which is why the balances a payment reports are
-the last CONFIRMED ones and not the last submitted.`,
+the last CONFIRMED ones and not the last submitted.
+
+--status takes several values, repeated or comma-separated, and matches ANY of
+them: '--status submitting,submitted' is what is on its way to the chain.`,
 	Example: `  rail0 payments transactions 0xabc123…
   rail0 payments transactions 0xabc123… --sort -confirmed_at
-  rail0 payments transactions 0xabc123… --operation capture --status failed`,
+  rail0 payments transactions 0xabc123… --operation capture --status failed
+  rail0 payments transactions 0xabc123… --status submitting,submitted`,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		statuses, err := statusFilterValues("--status", paymentsTransactionsStatuses, transactionStatuses)
+		if err != nil {
+			return err
+		}
 		return ui.RunAPI(func() (any, error) {
 			ctx := context.Background()
 			client := newReadClient()
 			id := args[0]
 			p := rail0.ListTransactionsParams{
-				Sort: paymentsTransactionsSort, Operation: paymentsTransactionsOperation, Status: paymentsTransactionsStatus,
+				Sort: paymentsTransactionsSort, Operation: paymentsTransactionsOperation, Statuses: statuses,
 				Page: paymentsTransactionsPage, PerPage: paymentsTransactionsPerPage,
 			}
 			resp, err := client.Payments.Transactions(ctx, id, p)
@@ -685,7 +703,7 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 				return nil, err
 			}
 			if replayedPastPending(prep) {
-				return resumeReplayed(ctx, client, rail0Id, "authorize", prep)
+				return resumeReplayed(ctx, client, rail0Id, sc.payment.ChainID, "authorize", prep)
 			}
 			if err := sc.verify(prep.UnsignedTransaction); err != nil {
 				return nil, err
@@ -694,7 +712,7 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 			if err != nil {
 				return nil, fmt.Errorf("sign: %w", err)
 			}
-			return submitThenWait(ctx, client, rail0Id, "authorize", func() (any, error) {
+			return submitThenWait(ctx, client, rail0Id, sc.payment.ChainID, "authorize", func() (any, error) {
 				return client.Payments.Authorize(ctx, rail0Id,
 					rail0.SubmitTransactionRequest{SignedTransaction: signedTx})
 			})
@@ -752,7 +770,7 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 				return nil, err
 			}
 			if replayedPastPending(prep) {
-				return resumeReplayed(ctx, client, rail0Id, "charge", prep)
+				return resumeReplayed(ctx, client, rail0Id, sc.payment.ChainID, "charge", prep)
 			}
 			if err := sc.verify(prep.UnsignedTransaction); err != nil {
 				return nil, err
@@ -761,7 +779,7 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 			if err != nil {
 				return nil, fmt.Errorf("sign: %w", err)
 			}
-			return submitThenWait(ctx, client, rail0Id, "charge", func() (any, error) {
+			return submitThenWait(ctx, client, rail0Id, sc.payment.ChainID, "charge", func() (any, error) {
 				return client.Payments.Charge(ctx, rail0Id,
 					rail0.SubmitTransactionRequest{SignedTransaction: signedTx})
 			})
@@ -844,7 +862,7 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 				return nil, err
 			}
 			if replayedPastPending(prep) {
-				return resumeReplayed(ctx, client, rail0Id, "capture", prep)
+				return resumeReplayed(ctx, client, rail0Id, sc.payment.ChainID, "capture", prep)
 			}
 			// The calldata's amount is checked against what the user typed, scaled
 			// locally — fail-closed like refund's authorization value (see
@@ -859,7 +877,7 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 			if err != nil {
 				return nil, fmt.Errorf("sign: %w", err)
 			}
-			return submitThenWait(ctx, client, rail0Id, "capture", func() (any, error) {
+			return submitThenWait(ctx, client, rail0Id, sc.payment.ChainID, "capture", func() (any, error) {
 				return client.Payments.Capture(ctx, rail0Id,
 					rail0.SubmitTransactionRequest{SignedTransaction: signedTx})
 			})
@@ -915,7 +933,7 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 				return nil, err
 			}
 			if replayedPastPending(prep) {
-				return resumeReplayed(ctx, client, rail0Id, "void", prep)
+				return resumeReplayed(ctx, client, rail0Id, sc.payment.ChainID, "void", prep)
 			}
 			if err := sc.verify(prep.UnsignedTransaction); err != nil {
 				return nil, err
@@ -924,7 +942,7 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 			if err != nil {
 				return nil, fmt.Errorf("sign: %w", err)
 			}
-			return submitThenWait(ctx, client, rail0Id, "void", func() (any, error) {
+			return submitThenWait(ctx, client, rail0Id, sc.payment.ChainID, "void", func() (any, error) {
 				return client.Payments.Void(ctx, rail0Id,
 					rail0.SubmitTransactionRequest{SignedTransaction: signedTx})
 			})
@@ -999,7 +1017,7 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 				return nil, err
 			}
 			if replayedPastPending(prep) {
-				return resumeReplayed(ctx, client, rail0Id, "release", prep)
+				return resumeReplayed(ctx, client, rail0Id, sc.payment.ChainID, "release", prep)
 			}
 			if err := sc.verify(prep.UnsignedTransaction); err != nil {
 				return nil, err
@@ -1008,7 +1026,7 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 			if err != nil {
 				return nil, fmt.Errorf("sign: %w", err)
 			}
-			return submitThenWait(ctx, client, rail0Id, "release", func() (any, error) {
+			return submitThenWait(ctx, client, rail0Id, sc.payment.ChainID, "release", func() (any, error) {
 				return client.Payments.Release(ctx, rail0Id,
 					rail0.SubmitTransactionRequest{SignedTransaction: signedTx})
 			})
@@ -1093,7 +1111,7 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 				return nil, err
 			}
 			if replayedPastPending(phase1) {
-				return resumeReplayed(ctx, client, rail0Id, "refund", phase1)
+				return resumeReplayed(ctx, client, rail0Id, sc.payment.ChainID, "refund", phase1)
 			}
 			// `refundAmount` is what the user typed, scaled locally. It is the right-hand
 			// side of BOTH refund checks: the authorization's value and the amount the
@@ -1113,7 +1131,7 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 				if err != nil {
 					return nil, fmt.Errorf("sign tx: %w", err)
 				}
-				return submitThenWait(ctx, client, rail0Id, "refund", func() (any, error) {
+				return submitThenWait(ctx, client, rail0Id, sc.payment.ChainID, "refund", func() (any, error) {
 					return client.Payments.Refund(ctx, rail0Id,
 						rail0.SubmitTransactionRequest{SignedTransaction: signedTx})
 				})
@@ -1154,7 +1172,7 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 			if err != nil {
 				return nil, fmt.Errorf("sign tx: %w", err)
 			}
-			return submitThenWait(ctx, client, rail0Id, "refund", func() (any, error) {
+			return submitThenWait(ctx, client, rail0Id, sc.payment.ChainID, "refund", func() (any, error) {
 				return client.Payments.Refund(ctx, rail0Id,
 					rail0.SubmitTransactionRequest{SignedTransaction: signedTx})
 			})
@@ -1218,7 +1236,7 @@ Pass --private-key (-p): the CLI signs locally with the payer key and broadcasts
 				return nil, err
 			}
 			if replayedPastPending(prep) {
-				return resumeReplayed(ctx, client, rail0Id, "dispute", prep)
+				return resumeReplayed(ctx, client, rail0Id, sc.payment.ChainID, "dispute", prep)
 			}
 			if err := sc.verify(prep.UnsignedTransaction); err != nil {
 				return nil, err
@@ -1227,7 +1245,7 @@ Pass --private-key (-p): the CLI signs locally with the payer key and broadcasts
 			if err != nil {
 				return nil, fmt.Errorf("sign: %w", err)
 			}
-			return submitThenWait(ctx, client, rail0Id, "dispute", func() (any, error) {
+			return submitThenWait(ctx, client, rail0Id, sc.payment.ChainID, "dispute", func() (any, error) {
 				return client.Payments.Dispute(ctx, rail0Id,
 					rail0.SubmitTransactionRequest{SignedTransaction: signedTx})
 			})
@@ -1285,7 +1303,7 @@ Pass --private-key (-p): the CLI signs locally with the payer key and broadcasts
 				return nil, err
 			}
 			if replayedPastPending(prep) {
-				return resumeReplayed(ctx, client, rail0Id, "close_dispute", prep)
+				return resumeReplayed(ctx, client, rail0Id, sc.payment.ChainID, "close_dispute", prep)
 			}
 			if err := sc.verify(prep.UnsignedTransaction); err != nil {
 				return nil, err
@@ -1294,7 +1312,7 @@ Pass --private-key (-p): the CLI signs locally with the payer key and broadcasts
 			if err != nil {
 				return nil, fmt.Errorf("sign: %w", err)
 			}
-			return submitThenWait(ctx, client, rail0Id, "close_dispute", func() (any, error) {
+			return submitThenWait(ctx, client, rail0Id, sc.payment.ChainID, "close_dispute", func() (any, error) {
 				return client.Payments.CloseDispute(ctx, rail0Id,
 					rail0.SubmitTransactionRequest{SignedTransaction: signedTx})
 			})
@@ -1355,7 +1373,9 @@ func init() {
 
 	// payments list
 	paymentsListCmd.Flags().StringVar(&paymentsListSort, "sort", "", "Sort fields (e.g. -created_at,amount)")
-	paymentsListCmd.Flags().StringVar(&paymentsListStatus, "status", "", "Filter by payment status (e.g. authorized, captured, refunded)")
+	// StringSlice, so --status repeats and also accepts a comma-separated list.
+	paymentsListCmd.Flags().StringSliceVar(&paymentsListStatuses, "status", nil,
+		"Filter by payment status; repeat or comma-separate for any of several (e.g. authorized,partially_captured)")
 	paymentsListCmd.Flags().StringVar(&paymentsListMode, "mode", "", "Filter by mode (authorize or charge)")
 	paymentsListCmd.Flags().StringVar(&paymentsListPayer, "payer", "", "Filter by payer address")
 	paymentsListCmd.Flags().StringVar(&paymentsListPayee, "payee", "", "Filter by payee address")
@@ -1375,7 +1395,7 @@ func init() {
 	paymentsListCmd.Flags().IntVar(&paymentsListPage, "page", 0, "Page number (1-based)")
 	paymentsListCmd.Flags().IntVar(&paymentsListPerPage, "per-page", 0, "Results per page")
 	paymentsListCmd.Flags().BoolVar(&paymentsListAll, "all", false, "Fetch every page (ignores --page)")
-	_ = paymentsListCmd.RegisterFlagCompletionFunc("status", fixedCompletions(paymentStatuses...))
+	_ = paymentsListCmd.RegisterFlagCompletionFunc("status", fixedListCompletions(paymentStatuses...))
 	_ = paymentsListCmd.RegisterFlagCompletionFunc("mode", fixedCompletions("authorize", "charge"))
 	_ = paymentsListCmd.RegisterFlagCompletionFunc("payer", completeAliasNames)
 	_ = paymentsListCmd.RegisterFlagCompletionFunc("payee", completeAliasNames)
@@ -1385,10 +1405,10 @@ func init() {
 	paymentsTransactionsCmd.Flags().StringVar(&paymentsTransactionsSort, "sort", "", "Sort fields: created_at, updated_at, block_number, confirmed_at (prefix - for descending, comma-separated)")
 	paymentsTransactionsCmd.Flags().StringVar(&paymentsTransactionsOperation, "operation", "",
 		"Filter by operation ("+strings.Join(transactionOperations, ", ")+")")
-	paymentsTransactionsCmd.Flags().StringVar(&paymentsTransactionsStatus, "status", "",
-		"Filter by transaction status ("+strings.Join(transactionStatuses, ", ")+")")
+	paymentsTransactionsCmd.Flags().StringSliceVar(&paymentsTransactionsStatuses, "status", nil,
+		"Filter by transaction status ("+strings.Join(transactionStatuses, ", ")+"); repeat or comma-separate for any of several")
 	_ = paymentsTransactionsCmd.RegisterFlagCompletionFunc("operation", fixedCompletions(transactionOperations...))
-	_ = paymentsTransactionsCmd.RegisterFlagCompletionFunc("status", fixedCompletions(transactionStatuses...))
+	_ = paymentsTransactionsCmd.RegisterFlagCompletionFunc("status", fixedListCompletions(transactionStatuses...))
 	paymentsTransactionsCmd.Flags().IntVar(&paymentsTransactionsPage, "page", 0, "Page number (1-based)")
 	paymentsTransactionsCmd.Flags().IntVar(&paymentsTransactionsPerPage, "per-page", 0, "Results per page")
 	paymentsCmd.AddCommand(paymentsTransactionsCmd)

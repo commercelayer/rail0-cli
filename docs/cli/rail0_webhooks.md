@@ -31,6 +31,20 @@ stays silent, because the breaker is still open. Read 'active' in the response
 rather than trusting the exit code: it is false whenever either switch is off,
 and 'circuit_state' says which.
 
+Topics (-t/--topic completes them):
+
+  payments.created, payments.signed, payments.authorized, payments.charged,
+  payments.captured, payments.voided, payments.released, payments.refunded,
+  payments.expired, payments.failed, payments.disputed, payments.dispute_closed
+                                   a payment's lifecycle, one event per transition
+  payments.authorization_expiring  a WARNING, not a transition: fires once, while
+                                   there is still time to capture, when an
+                                   authorization with capturable funds is about to
+                                   lapse (inside the gateway's
+                                   AUTHORIZATION_EXPIRING_NOTICE window, 24h by
+                                   default). The status does not change; a window
+                                   that already closed sends payments.expired.
+
 ### Examples
 
 ```

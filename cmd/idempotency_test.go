@@ -101,7 +101,7 @@ func TestResumeReplayedWaitsOnTheOriginalTransaction(t *testing.T) {
 
 	waitFlag = true
 	t.Cleanup(func() { waitFlag = false })
-	got, err := resumeReplayed(context.Background(), client, "0xab", "capture",
+	got, err := resumeReplayed(context.Background(), client, "0xab", 0, "capture",
 		&rail0.Transaction{ID: "tx-1", Status: "submitted"})
 	if err != nil {
 		t.Fatalf("resumeReplayed: %v", err)

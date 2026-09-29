@@ -71,20 +71,96 @@ func nextPollDelay(elapsed, previous time.Duration) time.Duration {
 // settled yet — and a script reads non-zero as failure, so the natural retry of a capture
 // attempts a SECOND capture. That is the cost this number carries.
 //
-// 15 minutes covers the slowest chain served today with margin. It is deliberately a
-// single number rather than a per-chain one: the wait a chain needs is a fact the GATEWAY
-// knows (`finality_tag`, `required_confirmations`) but does not publish in seconds and
-// cannot today — neither it nor the seeds carry a block time — and the public catalog
-// omits both fields anyway. Guessing per-chain here would put chain knowledge in the
-// client, which is what #193 and the catalog exist to avoid. See
-// commercelayer/rail0-gateway#200.
+// 15 minutes covers the slowest chain served today with margin, and it stays the
+// CEILING of every default. It used to be the only number, because the wait a chain
+// needs was a fact the gateway knew but did not publish in seconds. It publishes it now
+// (commercelayer/rail0-gateway#365): every chain on `GET /blockchains` carries
+// `settlement`, the p50/p90 of broadcast → confirmation measured end to end over a
+// trailing window — the chain's finality lag plus the notifier and the apply, which is
+// exactly what a wait sits through. settlementWaitTimeout turns that into the default
+// (see there); this constant is what remains when the figure is missing.
 //
-// The trade is honest and one-sided: on a fast chain a genuinely stuck operation now
-// takes 15 minutes to be reported instead of 2. Nothing is lost by waiting — the progress
-// line keeps saying the wait is alive, Ctrl-C says what is still running, and the give-up
+// The trade is honest and one-sided: on a fast chain a genuinely stuck operation takes
+// the whole deadline to be reported. Nothing is lost by waiting — the progress line
+// keeps saying the wait is alive, Ctrl-C says what is still running, and the give-up
 // message names the check command. Whereas a deadline shorter than settlement reports a
 // healthy operation as a failure, which is the error that costs money.
 const defaultWaitTimeout = 15 * time.Minute
+
+// Bounds and multiplier of the settlement-derived default (settlementWaitTimeout).
+const (
+	minSettlementWaitTimeout = 5 * time.Minute
+	settlementWaitMultiplier = 10
+)
+
+// settlementWaitTimeout is the default deadline for a chain whose measured p90
+// settlement is p90Seconds: min(defaultWaitTimeout, max(5m, 10 × p90)).
+//
+// Why each bound:
+//   - The ceiling keeps it never LONGER than the fixed default it replaces, so the
+//     figure can only shorten how long a stuck operation takes to be reported — a
+//     chain slower than 15 minutes' worth of p90 is served exactly as before.
+//   - The floor is there because the figure is a trailing 7-day percentile, not a live
+//     reading: a chain that settles in 5s over the week can have a slow hour, and a
+//     deadline of 50s would report that hour's healthy operations as failures — the
+//     expensive error (see defaultWaitTimeout). Five minutes is well past any tail seen
+//     on a chain whose p90 is seconds.
+//   - 10× rather than the 3× the gateway suggests, for the same reason as the floor:
+//     p90 leaves one operation in ten slower, and a timeout on one of them invites the
+//     script to retry a capture that is still in flight.
+//
+// A nil p90 (fewer confirmed transactions than the gateway's minimum sample, or no
+// catalog at all) keeps defaultWaitTimeout.
+func settlementWaitTimeout(p90Seconds *int) time.Duration {
+	if p90Seconds == nil || *p90Seconds <= 0 {
+		return defaultWaitTimeout
+	}
+	derived := time.Duration(*p90Seconds) * time.Second * settlementWaitMultiplier
+	return min(defaultWaitTimeout, max(minSettlementWaitTimeout, derived))
+}
+
+// waitTimeoutExplicit records whether --timeout was passed. An explicit value always
+// wins; only the DEFAULT is derived from the chain's settlement.
+var waitTimeoutExplicit bool
+
+// timeoutFlag is the --timeout value: a plain duration that also notes it was set, so
+// the default can be told apart from `--timeout 15m` typed on purpose. pflag's own
+// Changed would need the *cobra.Command, which the wait helpers are not handed.
+type timeoutFlag struct{}
+
+func (timeoutFlag) String() string { return waitTimeout.String() }
+func (timeoutFlag) Type() string   { return "duration" }
+func (timeoutFlag) Set(s string) error {
+	d, err := time.ParseDuration(s)
+	if err != nil {
+		return err
+	}
+	waitTimeout, waitTimeoutExplicit = d, true
+	return nil
+}
+
+// addTimeoutFlag registers --timeout (default defaultWaitTimeout) on a waiting command.
+func addTimeoutFlag(cmd *cobra.Command, usage string) {
+	waitTimeout = defaultWaitTimeout
+	cmd.Flags().Var(timeoutFlag{}, "timeout", usage)
+}
+
+// waitTimeoutFor is the deadline for a wait on a payment of chain `chainID`: --timeout
+// when passed, otherwise the default derived from that chain's settlement
+// (settlementWaitTimeout), read from the per-process chain catalog (chainCatalog) — at
+// most one `GET /blockchains` per process, and none when a picker already loaded it.
+// chainID 0 (unknown) or a chain the catalog does not list keeps the fixed default.
+func waitTimeoutFor(chainID int) time.Duration {
+	if waitTimeoutExplicit || chainID == 0 {
+		return waitTimeout
+	}
+	for _, c := range chainCatalog() {
+		if c.ChainID == chainID {
+			return settlementWaitTimeout(c.Settlement.P90Seconds)
+		}
+	}
+	return waitTimeout
+}
 
 // How often a progress line goes to stderr. Off a TTY (--json, -q, CI) there is no
 // spinner, so a wait used to be COMPLETELY silent for up to two minutes with no way to
@@ -226,8 +302,7 @@ func transientPollError(err error) bool {
 // returning at the gateway's 202.
 func addWaitFlags(cmd *cobra.Command) {
 	cmd.Flags().BoolVarP(&waitFlag, "wait", "w", false, "Block until the operation confirms on-chain (or fails)")
-	cmd.Flags().DurationVar(&waitTimeout, "timeout", defaultWaitTimeout,
-		"Max time to wait when --wait is set — the default covers the slowest chain\x27s finality")
+	addTimeoutFlag(cmd, "Max time to wait when --wait is set; unset, 10× the chain\x27s measured p90 settlement, kept within 5m–15m")
 }
 
 // actionLabel appends a "waiting" hint to the spinner label when --wait is set,
@@ -247,7 +322,11 @@ func actionLabel(base string) string {
 // The submit response is no longer discarded: every submit endpoint answers 202 with
 // the transaction row it just created, so its id is what the wait follows. See
 // pickWaitTarget for what that fixes. (#66)
-func submitThenWait(ctx context.Context, client *rail0.Client, rail0Id, op string, submit func() (any, error)) (any, error) {
+//
+// `chainID` is the payment's chain, which sizes the default deadline (waitTimeoutFor).
+func submitThenWait(ctx context.Context, client *rail0.Client, rail0Id string, chainID int, op string,
+	submit func() (any, error),
+) (any, error) {
 	res, err := submit()
 	if err != nil {
 		return nil, err
@@ -255,7 +334,7 @@ func submitThenWait(ctx context.Context, client *rail0.Client, rail0Id, op strin
 	if !waitFlag {
 		return res, nil
 	}
-	return waitForOp(ctx, client, rail0Id, op, submittedTransactionID(res), true, waitTimeout)
+	return waitForOp(ctx, client, rail0Id, op, submittedTransactionID(res), true, waitTimeoutFor(chainID))
 }
 
 // submittedTransactionID extracts the transaction id from a submit response. All
@@ -302,7 +381,9 @@ func replayedPastPending(tx *rail0.Transaction) bool {
 // script reads as "the capture went through". The hint names the way forward,
 // because the key is what brought this row back: the same key can only ever replay
 // it, so a retry needs a new one.
-func resumeReplayed(ctx context.Context, client *rail0.Client, rail0Id, op string, tx *rail0.Transaction) (any, error) {
+func resumeReplayed(ctx context.Context, client *rail0.Client, rail0Id string, chainID int, op string,
+	tx *rail0.Transaction,
+) (any, error) {
 	ui.Progressf("idempotency key already used: %s transaction %s is %s — nothing re-broadcast", op, tx.ID, tx.Status)
 	if tx.Status == "failed" {
 		return nil, fmt.Errorf("%w (replayed by the idempotency key; to retry, pass a NEW --idempotency-key)",
@@ -313,7 +394,7 @@ func resumeReplayed(ctx context.Context, client *rail0.Client, rail0Id, op strin
 	}
 	// Polled at once (afterSubmit false): unlike a fresh submit, a replayed row may
 	// already be settled, and the first read is what finds that out.
-	return waitForOp(ctx, client, rail0Id, op, tx.ID, false, waitTimeout)
+	return waitForOp(ctx, client, rail0Id, op, tx.ID, false, waitTimeoutFor(chainID))
 }
 
 // pollUntil is the one polling loop behind both --wait and `payments wait`. It
@@ -586,9 +667,14 @@ With --until it instead waits for a specific payment status, and stops with an
 error as soon as the payment can no longer reach it — a charge-mode payment never
 becomes 'captured', a captured one never becomes 'authorized' again. An
 'expired' payment is over for a capture but not for its escrow: waiting for
-'released' or 'voided' keeps going.`,
+'released' or 'voided' keeps going.
+
+Without --timeout the deadline follows the payment's chain: 10× its measured p90
+settlement time ('rail0 chains'), never under 5m nor over 15m — and 15m when the
+chain has too few confirmed transactions to be measured. --timeout always wins.`,
 	Example: `  rail0 payments wait 0xrail0Id…
-  rail0 payments wait 0xrail0Id… --until captured`,
+  rail0 payments wait 0xrail0Id… --until captured
+  rail0 payments wait 0xrail0Id… --timeout 30m`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// Validated before any request: an unknown status can never be reached, so
@@ -603,11 +689,27 @@ becomes 'captured', a captured one never becomes 'authorized' again. An
 		ctx := context.Background()
 		rail0Id := args[0]
 		return ui.RunAPIWithMessage("Waiting…", func() (any, error) {
-			// Polled at once: the payment may already be where the caller wants it.
-			return pollUntil(ctx, waitTimeout, fmt.Sprintf("rail0 payments get %s", rail0Id), false,
+			// The first read goes out before the loop, because it is also what names the
+			// payment's chain — and the chain is what sizes the default deadline
+			// (waitTimeoutFor). It is not an extra request: getPayment hands it to the
+			// loop as its first poll, which went out at once anyway. A failed first read
+			// just leaves the fixed default and lets the loop retry it as before.
+			var primed *rail0.Payment
+			timeout := waitTimeout
+			if p, err := client.Payments.Get(ctx, rail0Id); err == nil {
+				primed, timeout = p, waitTimeoutFor(p.ChainID)
+			}
+			getPayment := func(ctx context.Context) (*rail0.Payment, error) {
+				if p := primed; p != nil {
+					primed = nil
+					return p, nil
+				}
+				return client.Payments.Get(ctx, rail0Id)
+			}
+			return pollUntil(ctx, timeout, fmt.Sprintf("rail0 payments get %s", rail0Id), false,
 				func(ctx context.Context) (any, bool, error) {
 					if waitUntil != "" {
-						p, err := client.Payments.Get(ctx, rail0Id)
+						p, err := getPayment(ctx)
 						if err != nil {
 							return nil, false, err
 						}
@@ -629,7 +731,7 @@ becomes 'captured', a captured one never becomes 'authorized' again. An
 					// The payment embeds EVERY transaction; the list endpoint this used
 					// to read returned its first page (25 rows), so a payment with more
 					// could report settled while a later operation was still in flight.
-					p, err := client.Payments.Get(ctx, rail0Id)
+					p, err := getPayment(ctx)
 					if err != nil {
 						return nil, false, err
 					}
@@ -657,7 +759,6 @@ func init() {
 		func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
 			return waitableStatuses, cobra.ShellCompDirectiveNoFileComp
 		})
-	paymentsWaitCmd.Flags().DurationVar(&waitTimeout, "timeout", defaultWaitTimeout,
-		"Max time to wait — the default covers the slowest chain\x27s finality")
+	addTimeoutFlag(paymentsWaitCmd, "Max time to wait; unset, 10× the chain\x27s measured p90 settlement, kept within 5m–15m")
 	paymentsCmd.AddCommand(paymentsWaitCmd)
 }

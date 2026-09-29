@@ -15,6 +15,10 @@ becomes 'captured', a captured one never becomes 'authorized' again. An
 'expired' payment is over for a capture but not for its escrow: waiting for
 'released' or 'voided' keeps going.
 
+Without --timeout the deadline follows the payment's chain: 10× its measured p90
+settlement time ('rail0 chains'), never under 5m nor over 15m — and 15m when the
+chain has too few confirmed transactions to be measured. --timeout always wins.
+
 ```
 rail0 payments wait <rail0Id> [flags]
 ```
@@ -24,13 +28,14 @@ rail0 payments wait <rail0Id> [flags]
 ```
   rail0 payments wait 0xrail0Id…
   rail0 payments wait 0xrail0Id… --until captured
+  rail0 payments wait 0xrail0Id… --timeout 30m
 ```
 
 ### Options
 
 ```
   -h, --help               help for wait
-      --timeout duration   Max time to wait — the default covers the slowest chain's finality (default 15m0s)
+      --timeout duration   Max time to wait; unset, 10× the chain's measured p90 settlement, kept within 5m–15m (default 15m0s)
       --until string       Wait until the payment reaches this status (unsigned, signed, authorized, partially_captured, captured, charged, voided, released, refunded, expired)
 ```
 

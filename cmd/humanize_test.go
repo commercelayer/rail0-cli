@@ -3,7 +3,11 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"slices"
+	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -29,29 +33,89 @@ func seedDecimals(t *testing.T, chainID int, address string, decimals int) {
 
 const testToken = "0x3600000000000000000000000000000000000000"
 
-func TestHumanAmount(t *testing.T) {
+// payOn is a payment of `token` on `chainID` with no decimals of its own, so its scale
+// comes from the token catalogue — the fallback path.
+func payOn(chainID int, token string) *rail0.Payment {
+	return &rail0.Payment{ChainID: chainID, Token: rail0.Address(token)}
+}
+
+func TestPaymentAmountHumanFallsBackToTheCatalogue(t *testing.T) {
 	ctx := context.Background()
 	seedDecimals(t, 5042002, testToken, 6)
 
 	// The case the whole file exists for: 4050000 base units is 4.05, not four
 	// million.
-	if got := humanAmount(ctx, "4050000", 5042002, testToken); got != "4.05" {
-		t.Errorf("humanAmount = %q, want 4.05", got)
+	if got := paymentAmountHuman(ctx, payOn(5042002, testToken), "4050000"); got != "4.05" {
+		t.Errorf("paymentAmountHuman = %q, want 4.05", got)
 	}
 	// Case-insensitive on the address: the gateway may checksum it.
-	if got := humanAmount(ctx, "1000000", 5042002, "0x3600000000000000000000000000000000000000"); got != "1" {
-		t.Errorf("humanAmount = %q, want 1", got)
+	if got := paymentAmountHuman(ctx, payOn(5042002, "0x3600000000000000000000000000000000000000"), "1000000"); got != "1" {
+		t.Errorf("paymentAmountHuman = %q, want 1", got)
 	}
 	// Unknown scale → EMPTY, never the raw value: a base-unit integer sitting in a
 	// field named _human is worse than no field at all.
-	if got := humanAmount(ctx, "4050000", 5042002, "0xUnknownToken"); got != "" {
-		t.Errorf("humanAmount for an unknown token = %q, want empty", got)
+	if got := paymentAmountHuman(ctx, payOn(5042002, "0xUnknownToken"), "4050000"); got != "" {
+		t.Errorf("paymentAmountHuman for an unknown token = %q, want empty", got)
 	}
-	if got := humanAmount(ctx, "4050000", 999, testToken); got != "" {
-		t.Errorf("humanAmount on an unknown chain = %q, want empty", got)
+	if got := paymentAmountHuman(ctx, payOn(999, testToken), "4050000"); got != "" {
+		t.Errorf("paymentAmountHuman on an unknown chain = %q, want empty", got)
 	}
-	if got := humanAmount(ctx, "", 5042002, testToken); got != "" {
-		t.Errorf("humanAmount of an empty amount = %q, want empty", got)
+	if got := paymentAmountHuman(ctx, payOn(5042002, testToken), ""); got != "" {
+		t.Errorf("paymentAmountHuman of an empty amount = %q, want empty", got)
+	}
+}
+
+// A payment that carries its own decimals (rail0-gateway#367) is scaled by them and
+// never touches the token catalogue — the /tokens request a payment view used to cost.
+// They win over the catalogue too, since they are the gateway's answer for THIS payment.
+func TestPaymentAmountHumanPrefersThePaymentsDecimals(t *testing.T) {
+	isolate(t)
+	var tokenCalls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/tokens") {
+			tokenCalls.Add(1)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[]`))
+	}))
+	t.Cleanup(srv.Close)
+	t.Setenv("RAIL0_BASE_URL", srv.URL)
+	tokenCatalogMu.Lock()
+	previous := tokenCatalogAll
+	tokenCatalogAll = nil // not fetched: any lookup would go to the server above
+	tokenCatalogMu.Unlock()
+	t.Cleanup(func() {
+		tokenCatalogMu.Lock()
+		tokenCatalogAll = previous
+		tokenCatalogMu.Unlock()
+	})
+
+	ctx := context.Background()
+	six, eighteen := 6, 18
+	p := payOn(5042002, "0xNotInAnyCatalogue")
+	p.Decimals = &six
+	p.Amount, p.CapturableAmount = "4050000", "1500000"
+	view := humanize(ctx, p)
+	if view.AmountHuman != "4.05" || view.CapturableAmountHuman != "1.5" {
+		t.Errorf("amount_human = %q, capturable_amount_human = %q; want 4.05 and 1.5",
+			view.AmountHuman, view.CapturableAmountHuman)
+	}
+	txs := humanizeTransactionsOf(ctx, p, []rail0.Transaction{{Amount: "250000"}})
+	if txs[0].AmountHuman != "0.25" {
+		t.Errorf("transaction amount_human = %q, want 0.25", txs[0].AmountHuman)
+	}
+	if got := amountLabel(ctx, p, "4050000"); got != "4.05" {
+		t.Errorf("amountLabel = %q, want 4.05", got)
+	}
+	if n := tokenCalls.Load(); n != 0 {
+		t.Errorf("GET /tokens called %d times; the payment's own decimals need no catalogue", n)
+	}
+
+	seedDecimals(t, 5042002, testToken, 6)
+	q := payOn(5042002, testToken)
+	q.Decimals = &eighteen
+	if got := paymentAmountHuman(ctx, q, "1000000000000000000"); got != "1" {
+		t.Errorf("paymentAmountHuman = %q; the payment's decimals (18) must win over the catalogue's (6)", got)
 	}
 }
 
@@ -63,13 +127,13 @@ func TestAmountLabelMarksUnknownScale(t *testing.T) {
 	ctx := context.Background()
 	seedDecimals(t, 5042002, testToken, 6)
 
-	if got := amountLabel(ctx, "4050000", 5042002, testToken); got != "4.05" {
+	if got := amountLabel(ctx, payOn(5042002, testToken), "4050000"); got != "4.05" {
 		t.Errorf("amountLabel = %q, want 4.05", got)
 	}
-	if got := amountLabel(ctx, "4050000", 5042002, "0xOther"); got != "4050000 (base units)" {
+	if got := amountLabel(ctx, payOn(5042002, "0xOther"), "4050000"); got != "4050000 (base units)" {
 		t.Errorf("amountLabel with unknown decimals = %q", got)
 	}
-	if got := amountLabel(ctx, "", 5042002, testToken); got != "—" {
+	if got := amountLabel(ctx, payOn(5042002, testToken), ""); got != "—" {
 		t.Errorf("amountLabel of an empty amount = %q, want an em dash", got)
 	}
 }

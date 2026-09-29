@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	rail0 "github.com/commercelayer/rail0-go"
 
@@ -25,7 +26,13 @@ var chainsCmd = &cobra.Command{
 
 Filter with --symbol (the chain's native symbol, e.g. ETH / USDC / CELO) and/or
 --network-type (testnet | mainnet). Both match case-insensitively; combine them
-to narrow further.`,
+to narrow further.
+
+Each chain carries 'settlement': how long an operation has taken to settle on
+this gateway, broadcast to confirmation, as p50/p90 over a trailing window. The
+percentiles are null until the chain has enough confirmed transactions to be
+measured. 'settlement_human' says it in one line ("p50 11s · p90 19s …", or
+"n/a (3 samples)"). The p90 is also what sizes the default --wait deadline.`,
 	Example: `  rail0 chains
   rail0 chains --symbol USDC
   rail0 chains --network-type testnet
@@ -37,10 +44,42 @@ to narrow further.`,
 			return fmt.Errorf("invalid --network-type %q: must be 'testnet' or 'mainnet'", chainsNetworkType)
 		}
 		return ui.RunAPI(func() (any, error) {
-			return newReadClient().Chains.List(context.Background(),
+			chains, err := newReadClient().Chains.List(context.Background(),
 				rail0.ListChainsParams{NetworkType: networkType, Symbol: chainsSymbol})
+			if err != nil {
+				return nil, err
+			}
+			out := make([]chainView, len(chains))
+			for i := range chains {
+				out[i] = chainView{Blockchain: chains[i], SettlementHuman: settlementLabel(chains[i].Settlement)}
+			}
+			return out, nil
 		})
 	},
+}
+
+// chainView is a chain plus its settlement in words. Embedded, so the JSON is the
+// gateway's chain with one extra key — the raw `settlement` object stays for scripts,
+// the companion is for the eye (the same pattern as paymentView's *_human fields).
+type chainView struct {
+	rail0.Blockchain
+	SettlementHuman string `json:"settlement_human,omitempty"`
+}
+
+// settlementLabel renders a chain's measured settlement (rail0-gateway#365) as
+// "p50 11s · p90 19s (20 samples, 7d)", or "n/a (N samples)" while the percentiles are
+// null — below the gateway's minimum sample. The sample count is kept in both forms:
+// it is what tells "not measured yet" apart from "measured and fast".
+func settlementLabel(st rail0.BlockchainSettlement) string {
+	if st.P50Seconds == nil || st.P90Seconds == nil {
+		return fmt.Sprintf("n/a (%d samples)", st.SampleSize)
+	}
+	secs := func(n int) string { return (time.Duration(n) * time.Second).String() }
+	label := fmt.Sprintf("p50 %s · p90 %s (%d samples", secs(*st.P50Seconds), secs(*st.P90Seconds), st.SampleSize)
+	if st.WindowDays > 0 {
+		label += fmt.Sprintf(", %dd", st.WindowDays)
+	}
+	return label + ")"
 }
 
 var (

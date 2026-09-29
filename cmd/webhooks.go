@@ -44,7 +44,41 @@ They are not interchangeable. A tripped breaker also marks the webhook
 disabled, so 'enable' appears to work — it returns 200 — while the webhook
 stays silent, because the breaker is still open. Read 'active' in the response
 rather than trusting the exit code: it is false whenever either switch is off,
-and 'circuit_state' says which.`,
+and 'circuit_state' says which.
+
+Topics (-t/--topic completes them):
+
+  payments.created, payments.signed, payments.authorized, payments.charged,
+  payments.captured, payments.voided, payments.released, payments.refunded,
+  payments.expired, payments.failed, payments.disputed, payments.dispute_closed
+                                   a payment's lifecycle, one event per transition
+  payments.authorization_expiring  a WARNING, not a transition: fires once, while
+                                   there is still time to capture, when an
+                                   authorization with capturable funds is about to
+                                   lapse (inside the gateway's
+                                   AUTHORIZATION_EXPIRING_NOTICE window, 24h by
+                                   default). The status does not change; a window
+                                   that already closed sends payments.expired.`,
+}
+
+// webhookTopics is the topic vocabulary, taken from the SDK's constants rather than
+// spelled out here. It backs shell completion ONLY: the gateway validates topics, and
+// refusing one locally would turn a CLI older than the gateway into a CLI that cannot
+// subscribe to a new event.
+var webhookTopics = []string{
+	rail0.TopicPaymentsCreated,
+	rail0.TopicPaymentsSigned,
+	rail0.TopicPaymentsAuthorized,
+	rail0.TopicPaymentsCharged,
+	rail0.TopicPaymentsCaptured,
+	rail0.TopicPaymentsVoided,
+	rail0.TopicPaymentsReleased,
+	rail0.TopicPaymentsRefunded,
+	rail0.TopicPaymentsAuthorizationExpiring,
+	rail0.TopicPaymentsExpired,
+	rail0.TopicPaymentsFailed,
+	rail0.TopicPaymentsDisputed,
+	rail0.TopicPaymentsDisputeClosed,
 }
 
 // ── webhooks list ──────────────────────────────────────────────────────────────
@@ -125,7 +159,11 @@ delivery whose signature you cannot verify should be treated as untrusted, not
 as a malformed request.`,
 	Example: `  rail0 webhooks create --name "order lifecycle" \
     --callback-url https://example.com/hook \
-    -t payments.authorized -t payments.captured -t payments.voided -t payments.refunded`,
+    -t payments.authorized -t payments.captured -t payments.voided -t payments.refunded
+
+  # warned before an uncaptured authorization lapses
+  rail0 webhooks create --name "capture reminder" \
+    --callback-url https://example.com/hook -t payments.authorization_expiring`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		req := rail0.CreateWebhookRequest{
 			Name:        webhooksCreateName,
@@ -441,6 +479,7 @@ func parseBoolFlag(s string) (*bool, error) {
 func init() {
 	webhooksListCmd.Flags().StringVar(&webhooksListTopic, "topic", "",
 		"Show subscriptions that INCLUDE this topic (e.g. payments.captured)")
+	_ = webhooksListCmd.RegisterFlagCompletionFunc("topic", fixedCompletions(webhookTopics...))
 	webhooksListCmd.Flags().StringVar(&webhooksListActive, "active", "", "Filter by active flag ('true' or 'false')")
 	webhooksListCmd.Flags().StringVar(&webhooksListCircuit, "circuit-state", "", "Filter by circuit state ('closed' or 'open')")
 	webhooksListCmd.Flags().StringVar(&webhooksListSort, "sort", "", "Sort fields (e.g. -created_at)")
@@ -458,12 +497,14 @@ func init() {
 	_ = webhooksCreateCmd.MarkFlagRequired("name")
 	_ = webhooksCreateCmd.MarkFlagRequired("callback-url")
 	_ = webhooksCreateCmd.MarkFlagRequired("topic")
+	_ = webhooksCreateCmd.RegisterFlagCompletionFunc("topic", fixedListCompletions(webhookTopics...))
 	webhooksCmd.AddCommand(webhooksCreateCmd)
 
 	webhooksUpdateCmd.Flags().StringVarP(&webhooksUpdateName, "name", "n", "", "New webhook name")
 	webhooksUpdateCmd.Flags().StringVarP(&webhooksUpdateURL, "callback-url", "u", "", "New callback URL")
 	webhooksUpdateCmd.Flags().StringSliceVarP(&webhooksUpdateTopics, "topic", "t", nil,
 		"REPLACE the topic set; repeat for several. Omitting a topic removes it")
+	_ = webhooksUpdateCmd.RegisterFlagCompletionFunc("topic", fixedListCompletions(webhookTopics...))
 	webhooksCmd.AddCommand(webhooksUpdateCmd)
 
 	webhooksCmd.AddCommand(webhooksEnableCmd)
@@ -474,6 +515,7 @@ func init() {
 
 	webhooksEventCallbacksCmd.Flags().StringVar(&webhooksEventsStatus, "status", "", "Filter by delivery status ('delivered', 'failed')")
 	webhooksEventCallbacksCmd.Flags().StringVar(&webhooksEventsTopic, "topic", "", "Filter by event topic (e.g. payments.captured)")
+	_ = webhooksEventCallbacksCmd.RegisterFlagCompletionFunc("topic", fixedCompletions(webhookTopics...))
 	webhooksEventCallbacksCmd.Flags().StringVar(&webhooksEventsPaymentID, "payment-id", "", "Filter by the payment the delivery is for: its UUID or its 0x rail0_id")
 	webhooksEventCallbacksCmd.Flags().StringVar(&webhooksEventsResponseCode, "response-code", "", "Filter by the receiver's exact HTTP response code (e.g. 500)")
 	// Without these the log stopped, silently, at the gateway's default page.

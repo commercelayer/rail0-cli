@@ -99,6 +99,33 @@ func TestNotFoundWordingDependsOnTheResource(t *testing.T) {
 	}
 }
 
+// The codes the gateway added for deactivation, account scoping, release senders and
+// chain lookups each carry a CLI next step, and a 400 validation_failed is shaped
+// through apiHint (gateway detail + hint) instead of the SDK's bare line.
+func TestHintsForAccountWalletReleaseAndChainCodes(t *testing.T) {
+	for code, want := range map[string]string{
+		"account_deactivated":           "void, release and refund still work",
+		"wallet_deactivated":            "rail0 wallets update <wallet> --active true",
+		"not_your_account":              "--account",
+		"release_submitter_not_a_party": "payer or the payee",
+		"unknown_chain":                 "rail0 chains",
+		"validation_failed":             "--help",
+	} {
+		if got := hintFor(code, ""); !strings.Contains(got, want) {
+			t.Errorf("hintFor(%q) = %q, want substring %q", code, got, want)
+		}
+	}
+
+	e := &rail0.APIError{Status: 400, Code: "validation_failed", Detail: "amount is invalid"}
+	got := humanizeError(e).Error()
+	if !strings.HasPrefix(got, "invalid request (HTTP 400): amount is invalid — fix the field") {
+		t.Errorf("400 = %q, want the detail followed by the validation hint", got)
+	}
+	if exitCode(e) != 1 {
+		t.Errorf("exitCode(400) = %d, want 1 (unchanged)", exitCode(e))
+	}
+}
+
 // A cancelled operation must never exit 0. `rail0 payments refund <id> &&
 // mark_refunded_in_db` used to run the second command when the operator hit Ctrl-C at
 // the amount prompt, so a database recorded a refund that never happened (#65).

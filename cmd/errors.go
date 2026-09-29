@@ -40,6 +40,11 @@ func humanizeErrorFor(cmd *cobra.Command, err error) error {
 	var apiErr *rail0.APIError
 	if errors.As(err, &apiErr) {
 		switch {
+		case apiErr.Status == 400:
+			// validation_failed and its siblings: the gateway's detail names the
+			// offending field, so it goes through apiHint like every other status
+			// rather than the SDK's bare "rail0 <code> (HTTP 400)" line.
+			return fmt.Errorf("invalid request (HTTP 400)%s", detail(apiHint(apiErr)))
 		case apiErr.Status == 401:
 			// The gateway distinguishes missing_authorization from token_expired and
 			// invalid_token; say which one rather than collapsing all three.
@@ -220,6 +225,10 @@ var errorHints = map[string]string{
 	// authorization: which party the session is missing
 	"not_the_payee": "only the merchant (payee) can do this — 'rail0 auth login' with the payee's key",
 	"not_the_payer": "only the buyer (payer) can do this — 'rail0 auth login' with the payer's key",
+	// deactivation and account scoping: the session is fine, the thing it acts for is not
+	"account_deactivated": "the merchant account is deactivated — reads, void, release and refund still work; new payments, authorize, charge and capture need an operator to reactivate it",
+	"wallet_deactivated":  "this wallet is deactivated and can only read — sign in with another of the account's wallets ('rail0 auth login') and reactivate it with 'rail0 wallets update <wallet> --active true'",
+	"not_your_account":    "that account id is not the session's — pass your own to --account, or omit it to use the signed-in account ('rail0 auth status' shows which)",
 	// `not_a_participant` was retired by gateway#157: a non-party now gets a plain
 	// 404, deliberately, so a payment endpoint can't be used as an existence
 	// oracle. The advice for that case therefore belongs on the 404 branch below,
@@ -234,8 +243,13 @@ var errorHints = map[string]string{
 	"unsupported_payment_method": "the payee (merchant) doesn't accept this token/chain — check 'rail0 payment-methods --address <payee>'",
 	"idempotency_key_reused":     "that Idempotency-Key was already used for a payment with different terms — reuse it only to retry the same request, or pick a new key",
 	"unknown_token":              "the token isn't configured on this chain — see 'rail0 tokens'",
-	"no_active_contract":         "no active RAIL0 contract on that chain — see 'rail0 chains'",
-	"missing_param":              "a required parameter is missing from the request",
+	"unknown_chain":              "that chain id isn't configured on this gateway — see 'rail0 chains' for the ones it serves",
+	"validation_failed":          "fix the field it names and retry — 'rail0 <command> --help' lists the accepted flags and values",
+	// release is not permissionless: the contract accepts only the two parties as its
+	// sender (gateway#356), and the CLI derives the sender from the signing key.
+	"release_submitter_not_a_party": "only the payer or the payee can release — sign with one of their keys (-p)",
+	"no_active_contract":            "no active RAIL0 contract on that chain — see 'rail0 chains'",
+	"missing_param":                 "a required parameter is missing from the request",
 	// A BARE forbidden is not a party mismatch: the gateway split those into codes of
 	// their own (not_the_payee, not_the_payer, wallet_deactivated, account_deactivated,
 	// not_your_account) because they need different fixes. This entry kept describing

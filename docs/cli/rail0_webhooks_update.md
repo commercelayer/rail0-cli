@@ -18,9 +18,11 @@ second half of the repair sequence worth knowing:
   1. 'webhooks event-callbacks <id> --status failed'   what was it failing on
   2. 'webhooks update <id> --callback-url …'           fix it
   3. 'webhooks reset-circuit <id>'                     let it deliver again
+  4. 'webhooks redeliver <id> <callback_id>'           replay what was lost
 
 Step 3 is not optional after a tripped breaker, and doing it before step 2 just
-spends another 10 events reopening it.
+spends another 10 events reopening it. Step 4 replays one failed attempt's
+payload per call; skipping step 3 makes the replay drop silently.
 
 ```
 rail0 webhooks update <webhook_id> [flags]

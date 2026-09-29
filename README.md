@@ -301,7 +301,7 @@ the payer key, so a buyer with a wallet and nothing else can pay. The signing
 commands (`authorize`, `capture`, …) do the same with their own `-p` key, so the
 merchant does not log in for those either: the login stores the merchant's session
 for the commands that take no key — the reads (`payments get`, `list`, `wait`) and
-the account views (`wallets`, `webhooks`, `analytics`).
+the account views (`account`, `wallets`, `webhooks`, `analytics`).
 
 ### 5. Check what the merchant accepts
 
@@ -484,6 +484,8 @@ an id that does not exist and one this session may not see. For a `payments` com
 the CLI adds that you may not be the payment's payer or payee (check `-p`); for
 webhooks, wallets, wallet tokens and accounts, which belong to the account rather
 than to a party, it says only that the id may be wrong or not visible to this session.
+A `409` on [`account update`](#account-update) adds that the name or email is already
+used by another account — the gateway's conflict body cannot say which field collided.
 
 The failures you actually hit are mostly not raised by RAIL0: the token reverts when
 the buyer is short of balance (`insufficient_token_balance`), signed with the wrong
@@ -915,6 +917,43 @@ TOKEN="$(rail0 token --json | jq -r .token)"   # e.g. to call the gateway with c
 
 Exporting it does **not** configure the CLI — it reads the session from its cache file
 and nowhere else.
+
+---
+
+### Account
+
+`account` shows and edits the **profile** of the signed-in account — its id, name, email and timestamps — as opposed to [`wallets`](#wallets), which manages the addresses under it. It needs a login (`auth login`) by a wallet that belongs to an account; the account is the session's own, the id `auth status` prints. `--account <id>` (on the bare command and both verbs) names another account, which the gateway answers only for an **admin** — anyone else gets `403 not_your_account`. The account's `active` flag is operator-only and is not exposed.
+
+#### `account` / `account get`
+
+Show the account. Run bare or as `account get` — the same read.
+
+```sh
+rail0 account                          # the signed-in account
+rail0 account get --pretty
+rail0 account get --account 019e748b-… # another account (admin only)
+```
+
+| Flag | Short | Description |
+|------|-------|-------------|
+| `--account` | — | Account id; defaults to the logged-in session account (another account's needs an admin session) |
+
+#### `account update`
+
+Change the display name and/or contact email. At least one of `--name` / `--email` is required, and neither may be blank — both are refused locally, before any request.
+
+```sh
+rail0 account update --name "Acme Store"
+rail0 account update --name "Acme Store" --email ops@acme.example
+```
+
+| Flag | Short | Description |
+|------|-------|-------------|
+| `--name` | — | New display name (unique across accounts) |
+| `--email` | — | New contact email (unique across accounts) |
+| `--account` | — | Account id; defaults to the logged-in session account (another account's needs an admin session) |
+
+Both values are **unique across accounts**: one another account already holds is refused with `409`, and the CLI says it is the name or email. A deactivated account, or a session signed in with a deactivated wallet, cannot change them (`403 account_deactivated` / `wallet_deactivated`) — a revoked key must not be able to redirect the contact email. No confirmation is asked: the change is not destructive, and another `account update` reverses it.
 
 ---
 

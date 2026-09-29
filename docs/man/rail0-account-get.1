@@ -1,0 +1,54 @@
+.nh
+.TH "RAIL0" "1" "Aug 2026" "rail0 CLI" ""
+
+.SH NAME
+rail0-account-get - Show the account's profile (the same as 'rail0 account')
+
+
+.SH SYNOPSIS
+\fBrail0 account get [flags]\fP
+
+
+.SH DESCRIPTION
+Show the account's profile (the same as 'rail0 account')
+
+
+.SH OPTIONS
+\fB-h\fP, \fB--help\fP[=false]
+	help for get
+
+
+.SH OPTIONS INHERITED FROM PARENT COMMANDS
+\fB--account\fP=""
+	Account id (default: the logged-in session account; another account's needs an admin session)
+
+.PP
+\fB--base-url\fP=""
+	RAIL0 gateway base URL (env: RAIL0_BASE_URL)
+
+.PP
+\fB--debug\fP[=false]
+	Print HTTP request/response details to stderr
+
+.PP
+\fB--json\fP[=false]
+	Force plain (uncolored) JSON output (useful in scripts)
+
+.PP
+\fB--pretty\fP[=false]
+	Use the key-value/table view instead of JSON (terminal only)
+
+.PP
+\fB-q\fP, \fB--quiet\fP[=false]
+	Print only the result's id/hash, one per line (useful in scripts)
+
+
+.SH EXAMPLE
+.EX
+  rail0 account get
+  rail0 account get --account 019e748b-…
+.EE
+
+
+.SH SEE ALSO
+\fBrail0-account(1)\fP

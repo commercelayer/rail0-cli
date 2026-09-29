@@ -54,7 +54,7 @@ timeline is readable only by the payment's payer or payee.`,
 func paymentHistory(ctx context.Context, p *rail0.Payment) []any {
 	// Resolved once for the whole timeline; every event's amount is in this
 	// payment's token.
-	human := func(base string) string { return humanAmount(ctx, base, p.ChainID, string(p.Token)) }
+	human := func(base string) string { return paymentAmountHuman(ctx, p, base) }
 	type event struct {
 		at     string
 		fields map[string]any

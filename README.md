@@ -434,9 +434,17 @@ get `authorization_expiry_at` / `refund_expiry_at` (RFC3339) and
 `authorization_expires_in` / `refund_expires_in` ("2h 5m", or "expired") beside the raw
 epoch integers.
 
+The scale is the payment's own `decimals` field, which the gateway sets on every
+payment — so these views cost no `GET /tokens`. Only a payment whose `decimals` is null
+(a token the gateway cannot resolve) falls back to the token catalogue.
+
+Every payment also carries `in_flight`, the gateway's own answer to "is a transaction
+on its way to the chain" (submitting, submitted, or signed and pending broadcast) — the
+field to read before deciding whether a balance is settled enough to act on.
+
 The raw fields are untouched, so a script reading `amount` keeps working — the
 companions are additive. They are **omitted** when the token's decimals are unknown
-(a token missing from `rail0 tokens`), because a base-unit integer in a field named
+(null on the payment and missing from `rail0 tokens`), because a base-unit integer in a field named
 `_human` would be worse than no field: `4050000` reads as four million rather than
 4.05, and that is a six-order-of-magnitude error someone can act on. The interactive
 payment picker, which has no script to keep compatible, instead labels it

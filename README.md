@@ -1330,6 +1330,12 @@ List payments for the authenticated wallet (requires login). Filter with `--stat
 `--rail0-id`, `--min-amount` / `--max-amount`, and `--created-from` / `--created-to`
 (ISO-8601); sort with `--sort`.
 
+`--status` takes **several values**, repeated (`--status authorized --status
+partially_captured`) or comma-separated (`--status authorized,partially_captured`), and
+matches payments in **any** of them — that example is every payment with escrow still
+capturable. Each value is checked against the payment-status vocabulary before any
+request, and an unknown one is refused by name.
+
 `--operation` keeps payments carrying at least one transaction of that operation, so
 `--operation dispute` finds every payment that was **ever** disputed, which `--disputed`
 (an **open** dispute) does not.
@@ -1344,6 +1350,7 @@ millionth of a USDC and matched everything.
 ```sh
 rail0 payments list
 rail0 payments list --sort -created_at
+rail0 payments list --status authorized,partially_captured
 rail0 payments list --chain-id 5042002 --disputed
 rail0 payments list --chain-id 5042002 --token 0x3600… --min-amount 1.00
 rail0 payments list --operation refund --created-from 2026-09-01T00:00:00Z
@@ -1363,11 +1370,14 @@ A payment can hold several rows for the same operation (a retried broadcast, or 
 rail0 payments transactions 0xabc123…
 rail0 payments transactions 0xabc123… --sort -confirmed_at
 rail0 payments transactions 0xabc123… --operation capture --status failed
+rail0 payments transactions 0xabc123… --status submitting,submitted   # on its way to the chain
 ```
 
 `--sort` takes `created_at`, `updated_at`, `block_number` or `confirmed_at`;
 `--operation` and `--status` use the transaction vocabularies (`close_dispute`,
-`failed` and the rest), which `--status` on `payments list` does not.
+`failed` and the rest), which `--status` on `payments list` does not. Like there,
+`--status` takes several values (repeated or comma-separated) and matches any of them;
+each is checked locally first.
 
 #### `payments transaction <rail0Id> <transaction_id>`
 

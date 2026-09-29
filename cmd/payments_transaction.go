@@ -2,6 +2,9 @@ package cmd
 
 import (
 	"context"
+	"fmt"
+	"slices"
+	"strings"
 
 	rail0 "github.com/commercelayer/rail0-go"
 
@@ -18,6 +21,31 @@ var (
 	}
 	transactionStatuses = []string{"pending", "submitting", "submitted", "confirmed", "failed"}
 )
+
+// statusFilterValues checks each value of a multi-value --status filter against the
+// vocabulary it filters on and returns them trimmed, blanks dropped, for the SDK's
+// Statuses (sent as one `status=a,b`, which the gateway matches as ANY of them).
+//
+// Checked here, before any request, because the gateway rejects the whole filter with
+// a 400 for one bad value — and among several values the 400 does not say which. The
+// vocabularies are the gateway's own (see paymentStatuses and transactionStatuses), so
+// a value refused here is one the gateway would refuse too. A payment status on the
+// transaction filter (or the reverse — `failed` on `payments list`) is the mistake this
+// catches most: the two vocabularies overlap just enough to invite it.
+func statusFilterValues(flag string, values, allowed []string) ([]string, error) {
+	out := make([]string, 0, len(values))
+	for _, v := range values {
+		v = strings.TrimSpace(v)
+		if v == "" {
+			continue
+		}
+		if !slices.Contains(allowed, v) {
+			return nil, fmt.Errorf("unknown %s value %q; expected one of: %s", flag, v, strings.Join(allowed, ", "))
+		}
+		out = append(out, v)
+	}
+	return out, nil
+}
 
 // ── payments transaction ──────────────────────────────────────────────────────
 

@@ -1,7 +1,9 @@
 package cmd
 
 import (
+	"slices"
 	"sort"
+	"strings"
 
 	"github.com/rail0/cli/internal/config"
 	"github.com/spf13/cobra"
@@ -35,6 +37,25 @@ func completeKeyNames(_ *cobra.Command, args []string, _ string) ([]string, cobr
 func fixedCompletions(values ...string) func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
 	return func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
 		return values, cobra.ShellCompDirectiveNoFileComp
+	}
+}
+
+// fixedListCompletions is fixedCompletions for a flag that takes SEVERAL values —
+// repeated, or comma-separated in one argument (a StringSlice). After a comma it
+// completes the next value behind what is already typed ("authorized,<TAB>" offers
+// "authorized,captured", …), leaving out the values already listed, so the
+// comma-separated form completes as well as the repeated one.
+func fixedListCompletions(values ...string) func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
+	return func(_ *cobra.Command, _ []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		cut := strings.LastIndex(toComplete, ",") + 1
+		prefix, chosen := toComplete[:cut], strings.Split(toComplete[:cut], ",")
+		out := make([]string, 0, len(values))
+		for _, v := range values {
+			if !slices.Contains(chosen, v) {
+				out = append(out, prefix+v)
+			}
+		}
+		return out, cobra.ShellCompDirectiveNoFileComp
 	}
 }
 

@@ -97,7 +97,7 @@ var (
 	paymentsListSort        string
 	paymentsListChainID     int
 	paymentsListDisputed    bool
-	paymentsListStatus      string
+	paymentsListStatuses    []string
 	paymentsListMode        string
 	paymentsListPayer       string
 	paymentsListPayee       string
@@ -121,7 +121,10 @@ Requires authentication — run 'rail0 auth login -p 0xKey…' first.
 
 Filter with --status, --mode, --payer, --payee, --token, --chain-id, --disputed,
 --operation, --rail0-id, --min-amount / --max-amount, and --created-from /
---created-to (ISO-8601). --operation keeps payments carrying at least one
+--created-to (ISO-8601). --status takes several values, repeated or
+comma-separated, and matches ANY of them: '--status authorized,partially_captured'
+is every payment with escrow still capturable. Each value is checked against the
+payment-status vocabulary before any request. --operation keeps payments carrying at least one
 transaction of that operation — '--operation dispute' finds every payment ever
 disputed, which --disputed (an OPEN dispute) does not.
 
@@ -132,11 +135,16 @@ amount range only means something within one token anyway.`,
 	Example: `  rail0 payments list
   rail0 payments list --sort -created_at
   rail0 payments list --status authorized --mode charge
+  rail0 payments list --status authorized,partially_captured
   rail0 payments list --chain-id 5042002 --disputed
   rail0 payments list --chain-id 5042002 --token 0x3600… --min-amount 1.00 --created-from 2026-01-01T00:00:00Z`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := context.Background()
+		statuses, err := statusFilterValues("--status", paymentsListStatuses, paymentStatuses)
+		if err != nil {
+			return err
+		}
 		// The gateway filters in base units; these flags now take decimals like every
 		// other --amount in the CLI, so they are converted here.
 		minAmount, maxAmount, err := amountFilters(ctx, paymentsListMinAmount, paymentsListMaxAmount,
@@ -146,7 +154,7 @@ amount range only means something within one token anyway.`,
 		}
 		p := rail0.ListPaymentsParams{
 			Sort:        paymentsListSort,
-			Status:      paymentsListStatus,
+			Statuses:    statuses,
 			Mode:        paymentsListMode,
 			Payer:       paymentsListPayer,
 			Payee:       paymentsListPayee,
@@ -218,7 +226,7 @@ func fetchAllPayments(ctx context.Context, client *rail0.Client, p rail0.ListPay
 var (
 	paymentsTransactionsSort      string
 	paymentsTransactionsOperation string
-	paymentsTransactionsStatus    string
+	paymentsTransactionsStatuses  []string
 	paymentsTransactionsPage      int
 	paymentsTransactionsPerPage   int
 )
@@ -238,17 +246,25 @@ failed row carries the decoded revert reason.
 
 A payment can hold several rows for the same operation (a retried broadcast, or
 successive partial captures), which is why the balances a payment reports are
-the last CONFIRMED ones and not the last submitted.`,
+the last CONFIRMED ones and not the last submitted.
+
+--status takes several values, repeated or comma-separated, and matches ANY of
+them: '--status submitting,submitted' is what is on its way to the chain.`,
 	Example: `  rail0 payments transactions 0xabc123…
   rail0 payments transactions 0xabc123… --sort -confirmed_at
-  rail0 payments transactions 0xabc123… --operation capture --status failed`,
+  rail0 payments transactions 0xabc123… --operation capture --status failed
+  rail0 payments transactions 0xabc123… --status submitting,submitted`,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		statuses, err := statusFilterValues("--status", paymentsTransactionsStatuses, transactionStatuses)
+		if err != nil {
+			return err
+		}
 		return ui.RunAPI(func() (any, error) {
 			ctx := context.Background()
 			client := newReadClient()
 			id := args[0]
 			p := rail0.ListTransactionsParams{
-				Sort: paymentsTransactionsSort, Operation: paymentsTransactionsOperation, Status: paymentsTransactionsStatus,
+				Sort: paymentsTransactionsSort, Operation: paymentsTransactionsOperation, Statuses: statuses,
 				Page: paymentsTransactionsPage, PerPage: paymentsTransactionsPerPage,
 			}
 			resp, err := client.Payments.Transactions(ctx, id, p)
@@ -1355,7 +1371,9 @@ func init() {
 
 	// payments list
 	paymentsListCmd.Flags().StringVar(&paymentsListSort, "sort", "", "Sort fields (e.g. -created_at,amount)")
-	paymentsListCmd.Flags().StringVar(&paymentsListStatus, "status", "", "Filter by payment status (e.g. authorized, captured, refunded)")
+	// StringSlice, so --status repeats and also accepts a comma-separated list.
+	paymentsListCmd.Flags().StringSliceVar(&paymentsListStatuses, "status", nil,
+		"Filter by payment status; repeat or comma-separate for any of several (e.g. authorized,partially_captured)")
 	paymentsListCmd.Flags().StringVar(&paymentsListMode, "mode", "", "Filter by mode (authorize or charge)")
 	paymentsListCmd.Flags().StringVar(&paymentsListPayer, "payer", "", "Filter by payer address")
 	paymentsListCmd.Flags().StringVar(&paymentsListPayee, "payee", "", "Filter by payee address")
@@ -1375,7 +1393,7 @@ func init() {
 	paymentsListCmd.Flags().IntVar(&paymentsListPage, "page", 0, "Page number (1-based)")
 	paymentsListCmd.Flags().IntVar(&paymentsListPerPage, "per-page", 0, "Results per page")
 	paymentsListCmd.Flags().BoolVar(&paymentsListAll, "all", false, "Fetch every page (ignores --page)")
-	_ = paymentsListCmd.RegisterFlagCompletionFunc("status", fixedCompletions(paymentStatuses...))
+	_ = paymentsListCmd.RegisterFlagCompletionFunc("status", fixedListCompletions(paymentStatuses...))
 	_ = paymentsListCmd.RegisterFlagCompletionFunc("mode", fixedCompletions("authorize", "charge"))
 	_ = paymentsListCmd.RegisterFlagCompletionFunc("payer", completeAliasNames)
 	_ = paymentsListCmd.RegisterFlagCompletionFunc("payee", completeAliasNames)
@@ -1385,10 +1403,10 @@ func init() {
 	paymentsTransactionsCmd.Flags().StringVar(&paymentsTransactionsSort, "sort", "", "Sort fields: created_at, updated_at, block_number, confirmed_at (prefix - for descending, comma-separated)")
 	paymentsTransactionsCmd.Flags().StringVar(&paymentsTransactionsOperation, "operation", "",
 		"Filter by operation ("+strings.Join(transactionOperations, ", ")+")")
-	paymentsTransactionsCmd.Flags().StringVar(&paymentsTransactionsStatus, "status", "",
-		"Filter by transaction status ("+strings.Join(transactionStatuses, ", ")+")")
+	paymentsTransactionsCmd.Flags().StringSliceVar(&paymentsTransactionsStatuses, "status", nil,
+		"Filter by transaction status ("+strings.Join(transactionStatuses, ", ")+"); repeat or comma-separate for any of several")
 	_ = paymentsTransactionsCmd.RegisterFlagCompletionFunc("operation", fixedCompletions(transactionOperations...))
-	_ = paymentsTransactionsCmd.RegisterFlagCompletionFunc("status", fixedCompletions(transactionStatuses...))
+	_ = paymentsTransactionsCmd.RegisterFlagCompletionFunc("status", fixedListCompletions(transactionStatuses...))
 	paymentsTransactionsCmd.Flags().IntVar(&paymentsTransactionsPage, "page", 0, "Page number (1-based)")
 	paymentsTransactionsCmd.Flags().IntVar(&paymentsTransactionsPerPage, "per-page", 0, "Results per page")
 	paymentsCmd.AddCommand(paymentsTransactionsCmd)

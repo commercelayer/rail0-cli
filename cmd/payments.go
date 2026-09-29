@@ -121,12 +121,14 @@ Requires authentication — run 'rail0 auth login -p 0xKey…' first.
 
 Filter with --status, --mode, --payer, --payee, --token, --chain-id, --disputed,
 --operation, --rail0-id, --min-amount / --max-amount, and --created-from /
---created-to (ISO-8601). --status takes several values, repeated or
-comma-separated, and matches ANY of them: '--status authorized,partially_captured'
-is every payment with escrow still capturable. Each value is checked against the
-payment-status vocabulary before any request. --operation keeps payments carrying at least one
+--created-to (ISO-8601). --operation keeps payments carrying at least one
 transaction of that operation — '--operation dispute' finds every payment ever
 disputed, which --disputed (an OPEN dispute) does not.
+
+--status takes several values, repeated or comma-separated, and matches ANY of
+them: '--status authorized,partially_captured' is every payment with escrow still
+capturable. Each value is checked against the payment-status vocabulary before
+any request.
 
 --min-amount / --max-amount are DECIMALS in token units ('1.00'), like every other
 amount flag. Converting them to the base units the gateway filters on needs the

@@ -17,7 +17,8 @@ var webhooksCmd = &cobra.Command{
 	Example: `  rail0 webhooks list
   rail0 webhooks create --name "order hook" \
     --callback-url https://example.com/hook -t payments.captured -t payments.refunded
-  rail0 webhooks event-callbacks whk_abc123 --status failed   # why isn't it arriving?`,
+  rail0 webhooks event-callbacks whk_abc123 --status failed   # why isn't it arriving?
+  rail0 webhooks redeliver whk_abc123 <callback_id>           # replay a lost event`,
 	Long: `Manage webhook subscriptions for the authenticated account.
 
 A webhook subscribes to one or more payment-lifecycle topics and delivers a
@@ -160,9 +161,11 @@ second half of the repair sequence worth knowing:
   1. 'webhooks event-callbacks <id> --status failed'   what was it failing on
   2. 'webhooks update <id> --callback-url …'           fix it
   3. 'webhooks reset-circuit <id>'                     let it deliver again
+  4. 'webhooks redeliver <id> <callback_id>'           replay what was lost
 
 Step 3 is not optional after a tripped breaker, and doing it before step 2 just
-spends another 10 events reopening it.`,
+spends another 10 events reopening it. Step 4 replays one failed attempt's
+payload per call; skipping step 3 makes the replay drop silently.`,
 	Example: `  rail0 webhooks update whk_abc123 --callback-url https://example.com/new`,
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -359,6 +362,41 @@ func validateEventCallbackPaymentID(id string) error {
 	return fmt.Errorf("--payment-id %q is neither a payment UUID nor a 0x rail0_id (0x + 64 hex)", id)
 }
 
+// ── webhooks redeliver ────────────────────────────────────────────────────────────
+
+var webhooksRedeliverCmd = &cobra.Command{
+	Use:   "redeliver <webhook_id> <callback_id>",
+	Short: "Replay one recorded delivery attempt's exact payload",
+	Long: `Replay a recorded delivery attempt — the way to recover events that were lost
+while a webhook was failing.
+
+Every attempt in 'webhooks event-callbacks' stores the payload it sent, and a
+redelivery sends THAT payload verbatim: the same embedded event id, so a
+receiver that already processed it can deduplicate, under a fresh timestamped
+signature signed with the webhook's current secret. <callback_id> is the id of
+a row from 'webhooks event-callbacks <webhook_id>'.
+
+The webhook must be active for the replay to go out. A disabled webhook, or one
+whose circuit breaker is open, drops the replay silently like any other
+delivery — so run 'webhooks enable <id>' or 'webhooks reset-circuit <id>' first
+(reset-circuit covers both).
+
+Delivery is asynchronous: the gateway answers 202 with status "queued" once the
+replay is accepted, not once it has arrived. Check 'webhooks event-callbacks
+<webhook_id>' for the new attempt to see the outcome. A 404 means the webhook or
+callback is not this account's, or the attempt was recorded before payloads
+were stored — there is nothing to replay.`,
+	Example: `  rail0 webhooks event-callbacks whk_abc123 --status failed   # pick the callback id
+  rail0 webhooks reset-circuit whk_abc123                      # make sure it can deliver
+  rail0 webhooks redeliver whk_abc123 7f1c0c8e-1d2b-4c3a-9e8f-0123456789ab`,
+	Args: cobra.ExactArgs(2),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return ui.RunAPI(func() (any, error) {
+			return newClient().Webhooks.Redeliver(context.Background(), args[0], args[1])
+		})
+	},
+}
+
 // ── webhooks delete ──────────────────────────────────────────────────────────────
 
 var webhooksDeleteCmd = &cobra.Command{
@@ -445,6 +483,8 @@ func init() {
 	webhooksEventCallbacksCmd.Flags().StringVar(&webhooksEventsUntil, "until", "", "Only deliveries at/before this ISO-8601 time")
 	webhooksEventCallbacksCmd.Flags().StringVar(&webhooksEventsSort, "sort", "", "Sort fields (e.g. -created_at)")
 	webhooksCmd.AddCommand(webhooksEventCallbacksCmd)
+
+	webhooksCmd.AddCommand(webhooksRedeliverCmd)
 
 	addYesFlag(webhooksDeleteCmd)
 	webhooksCmd.AddCommand(webhooksDeleteCmd)

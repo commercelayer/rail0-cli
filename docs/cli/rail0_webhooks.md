@@ -38,6 +38,7 @@ and 'circuit_state' says which.
   rail0 webhooks create --name "order hook" \
     --callback-url https://example.com/hook -t payments.captured -t payments.refunded
   rail0 webhooks event-callbacks whk_abc123 --status failed   # why isn't it arriving?
+  rail0 webhooks redeliver whk_abc123 <callback_id>           # replay a lost event
 ```
 
 ### Options
@@ -66,6 +67,7 @@ and 'circuit_state' says which.
 * [rail0 webhooks event-callbacks](rail0_webhooks_event-callbacks.md)	 - List delivery attempts for a webhook
 * [rail0 webhooks get](rail0_webhooks_get.md)	 - Fetch a single webhook
 * [rail0 webhooks list](rail0_webhooks_list.md)	 - List webhooks for the authenticated account
+* [rail0 webhooks redeliver](rail0_webhooks_redeliver.md)	 - Replay one recorded delivery attempt's exact payload
 * [rail0 webhooks reset-circuit](rail0_webhooks_reset-circuit.md)	 - Reset the delivery circuit breaker and re-enable the webhook
 * [rail0 webhooks rotate-secret](rail0_webhooks_rotate-secret.md)	 - Generate a new shared secret (returned once on the response)
 * [rail0 webhooks update](rail0_webhooks_update.md)	 - Update a webhook's name, callback URL, or topics

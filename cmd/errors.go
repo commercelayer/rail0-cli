@@ -9,12 +9,23 @@ import (
 	"time"
 
 	rail0 "github.com/commercelayer/rail0-go"
+	"github.com/spf13/cobra"
 )
 
 // humanizeError turns low-level transport and API errors into clear, actionable
 // CLI messages. Anything it doesn't recognise (e.g. cobra usage errors) is
 // returned unchanged.
+//
+// It knows nothing about the command that failed, so a 404 gets the neutral
+// wording; Execute uses humanizeErrorFor, which does.
 func humanizeError(err error) error {
+	return humanizeErrorFor(nil, err)
+}
+
+// humanizeErrorFor is humanizeError for an error returned by cmd — the command
+// cobra actually ran (nil when unknown). The command only matters for a 404, whose
+// two possible causes differ by resource: see notFoundHint.
+func humanizeErrorFor(cmd *cobra.Command, err error) error {
 	if err == nil {
 		return nil
 	}
@@ -29,6 +40,11 @@ func humanizeError(err error) error {
 	var apiErr *rail0.APIError
 	if errors.As(err, &apiErr) {
 		switch {
+		case apiErr.Status == 400:
+			// validation_failed and its siblings: the gateway's detail names the
+			// offending field, so it goes through apiHint like every other status
+			// rather than the SDK's bare "rail0 <code> (HTTP 400)" line.
+			return fmt.Errorf("invalid request (HTTP 400)%s", detail(apiHint(apiErr)))
 		case apiErr.Status == 401:
 			// The gateway distinguishes missing_authorization from token_expired and
 			// invalid_token; say which one rather than collapsing all three.
@@ -36,11 +52,7 @@ func humanizeError(err error) error {
 		case apiErr.Status == 403:
 			return fmt.Errorf("forbidden (HTTP 403)%s", detail(apiHint(apiErr)))
 		case apiErr.Status == 404:
-			// A 404 on a payment route has two causes the gateway deliberately does
-			// not distinguish (see gateway#157): the id doesn't exist, or it exists
-			// and this session is not its payer/payee. Say both — otherwise signing
-			// with the wrong key reads as a typo in the id.
-			return fmt.Errorf("not found (HTTP 404)%s — the id may be wrong, or you are not the payer/payee of this payment (check the key you passed with -p)", detail(apiHint(apiErr)))
+			return fmt.Errorf("not found (HTTP 404)%s — %s", detail(apiHint(apiErr)), notFoundHint(cmd))
 		case apiErr.Status == 409:
 			return fmt.Errorf("already exists / conflict (HTTP 409)%s", detail(apiHint(apiErr)))
 		case apiErr.Status == 422:
@@ -69,6 +81,37 @@ func humanizeError(err error) error {
 		return fmt.Errorf("the request to %s timed out", base)
 	}
 	return err
+}
+
+// notFoundHint says what a 404 can mean for the resource cmd works on.
+//
+// The gateway's scoped lookups (payments, webhooks, wallets, wallet tokens, event
+// callbacks) answer 404, not 403, for something the session may not see, so
+// "doesn't exist" and "isn't yours" are deliberately indistinguishable
+// (gateway#157, #357) — the hint has to name both. (Another account's id is the
+// exception: the gateway answers 403 not_your_account.) What "yours" means
+// differs by resource, though: a payment is visible to its payer and payee only,
+// so the likely fix is the signing key; a webhook, wallet, wallet token or event
+// callback belongs to the session's account, where payer/payee advice
+// (and -p, which those commands do not take) would send the user after the wrong
+// thing. So the payer/payee wording is kept for commands under `rail0 payments`
+// and every other command — or an unknown one — gets the neutral line.
+func notFoundHint(cmd *cobra.Command) string {
+	if isPaymentCommand(cmd) {
+		return "the id may be wrong, or you are not the payer/payee of this payment (check the key you passed with -p)"
+	}
+	return "the id may be wrong, or it is not visible to this session ('rail0 auth status' shows who you are signed in as)"
+}
+
+// isPaymentCommand reports whether cmd is `rail0 payments` or one of its
+// descendants (dispute, transaction, wait, …).
+func isPaymentCommand(cmd *cobra.Command) bool {
+	for c := cmd; c != nil; c = c.Parent() {
+		if c == paymentsCmd {
+			return true
+		}
+	}
+	return false
 }
 
 func isTimeout(err error) bool {
@@ -184,6 +227,10 @@ var errorHints = map[string]string{
 	// authorization: which party the session is missing
 	"not_the_payee": "only the merchant (payee) can do this — 'rail0 auth login' with the payee's key",
 	"not_the_payer": "only the buyer (payer) can do this — 'rail0 auth login' with the payer's key",
+	// deactivation and account scoping: the session is fine, the thing it acts for is not
+	"account_deactivated": "the merchant account is deactivated — reads, void, release and refund still work; new payments, authorize, charge and capture need an operator to reactivate it",
+	"wallet_deactivated":  "this wallet is deactivated and can only read — sign in with another of the account's wallets ('rail0 auth login') and reactivate it with 'rail0 wallets update <wallet> --active true'",
+	"not_your_account":    "that account id is not the session's — pass your own to --account, or omit it to use the signed-in account ('rail0 auth status' shows which)",
 	// `not_a_participant` was retired by gateway#157: a non-party now gets a plain
 	// 404, deliberately, so a payment endpoint can't be used as an existence
 	// oracle. The advice for that case therefore belongs on the 404 branch below,
@@ -198,8 +245,13 @@ var errorHints = map[string]string{
 	"unsupported_payment_method": "the payee (merchant) doesn't accept this token/chain — check 'rail0 payment-methods --address <payee>'",
 	"idempotency_key_reused":     "that Idempotency-Key was already used for a payment with different terms — reuse it only to retry the same request, or pick a new key",
 	"unknown_token":              "the token isn't configured on this chain — see 'rail0 tokens'",
-	"no_active_contract":         "no active RAIL0 contract on that chain — see 'rail0 chains'",
-	"missing_param":              "a required parameter is missing from the request",
+	"unknown_chain":              "that chain id isn't configured on this gateway — see 'rail0 chains' for the ones it serves",
+	"validation_failed":          "fix the field it names and retry — 'rail0 <command> --help' lists the accepted flags and values",
+	// release is not permissionless: the contract accepts only the two parties as its
+	// sender (gateway#356), and the CLI derives the sender from the signing key.
+	"release_submitter_not_a_party": "only the payer or the payee can release — sign with one of their keys (-p)",
+	"no_active_contract":            "no active RAIL0 contract on that chain — see 'rail0 chains'",
+	"missing_param":                 "a required parameter is missing from the request",
 	// A BARE forbidden is not a party mismatch: the gateway split those into codes of
 	// their own (not_the_payee, not_the_payer, wallet_deactivated, account_deactivated,
 	// not_your_account) because they need different fixes. This entry kept describing

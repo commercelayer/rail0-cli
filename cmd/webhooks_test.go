@@ -203,3 +203,44 @@ func TestEventCallbacksSendsPagingAndResponseCode(t *testing.T) {
 		}
 	}
 }
+
+// redeliver is ONE POST to the callback's redeliver route, and prints the gateway's
+// queued acknowledgement (the 202 means accepted, not delivered).
+func TestWebhooksRedeliverPostsToTheCallbackRoute(t *testing.T) {
+	isolate(t)
+	isolateTokenStore(t)
+	const cb = "7f1c0c8e-1d2b-4c3a-9e8f-0123456789ab"
+	var method, path string
+	var calls int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		method, path = r.Method, r.URL.Path
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusAccepted)
+		_, _ = w.Write([]byte(`{"status":"queued"}`))
+	}))
+	defer srv.Close()
+	t.Setenv("RAIL0_BASE_URL", srv.URL)
+
+	out := captureStdout(t, func() {
+		if err := webhooksRedeliverCmd.RunE(webhooksRedeliverCmd, []string{"whk_1", cb}); err != nil {
+			t.Fatalf("redeliver: %v", err)
+		}
+	})
+	if calls != 1 || method != http.MethodPost || path != "/webhooks/whk_1/event_callbacks/"+cb+"/redeliver" {
+		t.Errorf("request = %d × %s %s, want one POST to the redeliver route", calls, method, path)
+	}
+	if !strings.Contains(out, "queued") {
+		t.Errorf("output %q does not show the queued acknowledgement", out)
+	}
+}
+
+// Both ids are required: a missing callback id is a usage error, not a request.
+func TestWebhooksRedeliverNeedsBothIDs(t *testing.T) {
+	if err := webhooksRedeliverCmd.Args(webhooksRedeliverCmd, []string{"whk_1"}); err == nil {
+		t.Error("redeliver with only the webhook id: expected an argument error")
+	}
+	if err := webhooksRedeliverCmd.Args(webhooksRedeliverCmd, []string{"whk_1", "cb"}); err != nil {
+		t.Errorf("redeliver with both ids: %v", err)
+	}
+}

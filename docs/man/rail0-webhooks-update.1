@@ -28,10 +28,13 @@ second half of the repair sequence worth knowing:
 \&'webhooks update  --callback-url …'           fix it
 .IP "  3." 5
 \&'webhooks reset-circuit \&'                     let it deliver again
+.IP "  4." 5
+\&'webhooks redeliver  \&'           replay what was lost
 
 .PP
 Step 3 is not optional after a tripped breaker, and doing it before step 2 just
-spends another 10 events reopening it.
+spends another 10 events reopening it. Step 4 replays one failed attempt's
+payload per call; skipping step 3 makes the replay drop silently.
 
 
 .SH OPTIONS

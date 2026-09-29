@@ -75,8 +75,9 @@ and 'circuit_state' says which.
   rail0 webhooks create --name "order hook" \\
     --callback-url https://example.com/hook -t payments.captured -t payments.refunded
   rail0 webhooks event-callbacks whk_abc123 --status failed   # why isn't it arriving?
+  rail0 webhooks redeliver whk_abc123 <callback_id>           # replay a lost event
 .EE
 
 
 .SH SEE ALSO
-\fBrail0(1)\fP, \fBrail0-webhooks-create(1)\fP, \fBrail0-webhooks-delete(1)\fP, \fBrail0-webhooks-disable(1)\fP, \fBrail0-webhooks-enable(1)\fP, \fBrail0-webhooks-event-callbacks(1)\fP, \fBrail0-webhooks-get(1)\fP, \fBrail0-webhooks-list(1)\fP, \fBrail0-webhooks-reset-circuit(1)\fP, \fBrail0-webhooks-rotate-secret(1)\fP, \fBrail0-webhooks-update(1)\fP
+\fBrail0(1)\fP, \fBrail0-webhooks-create(1)\fP, \fBrail0-webhooks-delete(1)\fP, \fBrail0-webhooks-disable(1)\fP, \fBrail0-webhooks-enable(1)\fP, \fBrail0-webhooks-event-callbacks(1)\fP, \fBrail0-webhooks-get(1)\fP, \fBrail0-webhooks-list(1)\fP, \fBrail0-webhooks-redeliver(1)\fP, \fBrail0-webhooks-reset-circuit(1)\fP, \fBrail0-webhooks-rotate-secret(1)\fP, \fBrail0-webhooks-update(1)\fP

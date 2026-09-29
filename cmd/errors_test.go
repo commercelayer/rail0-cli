@@ -9,6 +9,7 @@ import (
 	"time"
 
 	rail0 "github.com/commercelayer/rail0-go"
+	"github.com/spf13/cobra"
 )
 
 func TestHumanizeError(t *testing.T) {
@@ -60,6 +61,68 @@ func TestAPIHint(t *testing.T) {
 				t.Errorf("apiHint = %q, want substring %q", got, tc.want)
 			}
 		})
+	}
+}
+
+// The payer/payee wording of a 404 is right only for payments: a webhook, wallet,
+// wallet token or account belongs to the session's account, and those commands do
+// not take -p at all, so the advice sent the user after the wrong thing.
+func TestNotFoundWordingDependsOnTheResource(t *testing.T) {
+	const partyAdvice = "payer/payee of this payment"
+	notFound := &rail0.APIError{Status: 404, Code: "not_found", Detail: "webhook not found"}
+
+	for _, c := range []*cobra.Command{
+		paymentsGetCmd, paymentsCaptureCmd, paymentsDisputeCloseCmd,
+		paymentsTransactionCmd, paymentsWaitCmd,
+	} {
+		got := humanizeErrorFor(c, notFound).Error()
+		if !strings.Contains(got, partyAdvice) || !strings.Contains(got, "-p") {
+			t.Errorf("%s: %q, want the payer/payee advice", c.CommandPath(), got)
+		}
+	}
+	for _, c := range []*cobra.Command{
+		webhooksGetCmd, webhooksRedeliverCmd, webhooksEventCallbacksCmd,
+		walletsDeleteCmd, walletTokensDisableCmd, nil,
+	} {
+		got := humanizeErrorFor(c, notFound).Error()
+		if strings.Contains(got, partyAdvice) || strings.Contains(got, "-p") {
+			t.Errorf("%v: %q, want no payer/payee advice", c, got)
+		}
+		if !strings.Contains(got, "not found (HTTP 404): webhook not found") ||
+			!strings.Contains(got, "not visible to this session") {
+			t.Errorf("%v: %q, want the gateway detail and the neutral line", c, got)
+		}
+	}
+	// humanizeError has no command, so it must take the neutral branch.
+	if got := humanizeError(notFound).Error(); strings.Contains(got, partyAdvice) {
+		t.Errorf("humanizeError: %q, want the neutral wording", got)
+	}
+}
+
+// The codes the gateway added for deactivation, account scoping, release senders and
+// chain lookups each carry a CLI next step, and a 400 validation_failed is shaped
+// through apiHint (gateway detail + hint) instead of the SDK's bare line.
+func TestHintsForAccountWalletReleaseAndChainCodes(t *testing.T) {
+	for code, want := range map[string]string{
+		"account_deactivated":           "void, release and refund still work",
+		"wallet_deactivated":            "rail0 wallets update <wallet> --active true",
+		"not_your_account":              "--account",
+		"release_submitter_not_a_party": "payer or the payee",
+		"unknown_chain":                 "rail0 chains",
+		"validation_failed":             "--help",
+	} {
+		if got := hintFor(code, ""); !strings.Contains(got, want) {
+			t.Errorf("hintFor(%q) = %q, want substring %q", code, got, want)
+		}
+	}
+
+	e := &rail0.APIError{Status: 400, Code: "validation_failed", Detail: "amount is invalid"}
+	got := humanizeError(e).Error()
+	if !strings.HasPrefix(got, "invalid request (HTTP 400): amount is invalid — fix the field") {
+		t.Errorf("400 = %q, want the detail followed by the validation hint", got)
+	}
+	if exitCode(e) != 1 {
+		t.Errorf("exitCode(400) = %d, want 1 (unchanged)", exitCode(e))
 	}
 }
 

@@ -86,7 +86,10 @@ func TestVolumeCompanions(t *testing.T) {
 		t.Errorf("formatVolume of an empty amount = %q, want empty", got)
 	}
 
-	vol := rail0.AnalyticsVolume{Gross: "4050000", Captured: "1000000", Refunded: "", Decimals: &six}
+	vol := rail0.AnalyticsVolume{
+		Gross: "4050000", Settled: "3000000", Escrowed: "1050000",
+		Captured: "1000000", Refunded: "", Decimals: &six,
+	}
 	out, ok := summaryView(&rail0.AnalyticsSummary{Volume: []rail0.AnalyticsVolume{vol}}).(summaryOut)
 	if !ok {
 		t.Fatal("summaryView did not return a summaryOut")
@@ -100,6 +103,9 @@ func TestVolumeCompanions(t *testing.T) {
 	}
 	if v.GrossHuman != "4.05" || v.CapturedHuman != "1" {
 		t.Errorf("companions = (%q, %q)", v.GrossHuman, v.CapturedHuman)
+	}
+	if v.SettledHuman != "3" || v.EscrowedHuman != "1.05" {
+		t.Errorf("settled/escrowed companions = (%q, %q), want (3, 1.05)", v.SettledHuman, v.EscrowedHuman)
 	}
 	if v.RefundedHuman != "" {
 		t.Errorf("refunded_human = %q, want empty for an empty raw value", v.RefundedHuman)

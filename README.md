@@ -471,6 +471,12 @@ something, the command to run next: a `422` on `capture` explains that the amoun
 exceeds the capturable balance and points at `rail0 payments get <id>`, and a wallet
 with no gas is named as such rather than as an opaque RPC failure.
 
+A `404` never says which of its two causes it is — the gateway answers the same for
+an id that does not exist and one this session may not see. For a `payments` command
+the CLI adds that you may not be the payment's payer or payee (check `-p`); for
+webhooks, wallets, wallet tokens and accounts, which belong to the account rather
+than to a party, it says only that the id may be wrong or not visible to this session.
+
 The failures you actually hit are mostly not raised by RAIL0: the token reverts when
 the buyer is short of balance (`insufficient_token_balance`), signed with the wrong
 key (`invalid_token_signature`) or reuses an authorization
@@ -1128,9 +1134,12 @@ The breaker never closes on its own: nothing is delivered while it is open, so n
 rail0 webhooks event-callbacks <webhook_id> --status failed   # 1. what was it failing on?
 rail0 webhooks update <webhook_id> --callback-url https://…   # 2. fix it
 rail0 webhooks reset-circuit <webhook_id>                     # 3. let it deliver again
+rail0 webhooks redeliver <webhook_id> <callback_id>           # 4. replay what was lost
 ```
 
 Step 3 is not optional after a tripped breaker — `update` changes the URL but not the active state, so repointing a broken webhook at a working endpoint leaves it exactly as dead as it was. And doing 3 before 2 just spends another 10 events reopening the breaker.
+
+Step 4 replays one failed attempt per call, taking the callback id from step 1's rows. It sends the recorded payload **verbatim** — the same event id, so a receiver that already processed it can deduplicate — under a fresh signature. The webhook must be active: a disabled webhook or an open circuit drops the replay silently, which is why it comes after step 3 (`enable` is enough when the webhook was only disabled by hand). Delivery is asynchronous — the command returns `{"status": "queued"}` — so check `rail0 webhooks event-callbacks <webhook_id>` for the new attempt.
 
 #### The shared secret
 
@@ -1149,6 +1158,7 @@ rail0 webhooks disable <webhook_id>
 rail0 webhooks rotate-secret <webhook_id>
 rail0 webhooks reset-circuit <webhook_id>
 rail0 webhooks event-callbacks <webhook_id> --status failed
+rail0 webhooks redeliver <webhook_id> <callback_id>
 rail0 webhooks delete <webhook_id>
 ```
 
@@ -1163,6 +1173,7 @@ rail0 webhooks delete <webhook_id>
 | `rotate-secret` | Issue a new shared secret (returned once) |
 | `reset-circuit` | Close the breaker **and** clear the manual disable — the only way back from a trip |
 | `event-callbacks` | Delivery attempts — the log to read when a callback did not arrive (`--status delivered\|failed`, `--response-code`, `--topic`, `--payment-id` as the payment's UUID or its 0x rail0_id — passed to the gateway as is, so any payment of the account matches whichever of its wallets it belongs to, `--since`, `--until`, `--sort`, `--page` / `--per-page`) |
+| `redeliver` | Replay one recorded attempt's exact payload (same event id, fresh signature); async, returns `queued` — needs an active webhook, so `enable` / `reset-circuit` first |
 | `delete` | Destroy the webhook and its secret, permanently (unlike `wallets delete`, this one is real) |
 
 ---
@@ -1228,8 +1239,8 @@ rail0 analytics breakdown --by token             # token | chain | mode | status
 rail0 analytics summary --payee @shop-eu         # just one of the account's wallets
 ```
 
-Volume figures carry a `*_human` companion (`gross_human`, `captured_human`,
-`refunded_human`, `volume_human`) beside the raw base units, using the `decimals` each
+Volume figures carry a `*_human` companion (`gross_human`, `settled_human`,
+`escrowed_human`, `captured_human`, `refunded_human`, `volume_human`) beside the raw base units, using the `decimals` each
 row already carries — so no token lookup is involved, and a row whose token has left
 the catalog simply has no companion rather than a figure at a guessed scale.
 
@@ -1291,7 +1302,7 @@ rail0 payments get 0xabc123…
 | `partially_captured` | Partial capture; remaining escrow still capturable |
 | `voided` | Authorization cancelled (only before any capture); funds returned to payer |
 | `released` | Full authorization released back to payer (total release, nothing captured) |
-| `refunded` | Payment fully settled by refund (both escrow and refundable drained) |
+| `refunded` | Fully settled (both balances zero), by refund or by a final release |
 | `partially_refunded` | Legacy — no longer produced; a partial refund now leaves the status unchanged |
 | `expired` | Authorization window closed with nothing captured — the escrow is still on-chain and `release` (or `void`) recovers it |
 
@@ -1440,7 +1451,9 @@ rail0 payments void <rail0Id> -p @merchant-key
 
 #### `payments release <rail0Id>`
 
-Prepare the `release()` transaction — returns remaining escrowed funds to payer after `authorizationExpiry`. Permissionless: both payer and payee can call it. The caller is whoever the signing key belongs to (derived from the key), so pass the payer's key to release as the payer.
+Prepare the `release()` transaction — returns remaining escrowed funds to payer after `authorizationExpiry`. Only the payer or the payee may release — the contract accepts no other sender, and the gateway refuses anyone else with 422 `release_submitter_not_a_party`. The caller is whoever the signing key belongs to (derived from the key), so pass the payer's key to release as the payer.
+
+The status becomes `released` only on a total release (nothing captured). After a capture it stays unchanged while a refundable residual remains — unless the captured part was already refunded, in which case the release leaves both balances at zero and the payment closes as `refunded`.
 
 ```sh
 # Payee releases

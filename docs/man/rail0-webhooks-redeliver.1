@@ -1,0 +1,72 @@
+.nh
+.TH "RAIL0" "1" "Aug 2026" "rail0 CLI" ""
+
+.SH NAME
+rail0-webhooks-redeliver - Replay one recorded delivery attempt's exact payload
+
+
+.SH SYNOPSIS
+\fBrail0 webhooks redeliver   [flags]\fP
+
+
+.SH DESCRIPTION
+Replay a recorded delivery attempt — the way to recover events that were lost
+while a webhook was failing.
+
+.PP
+Every attempt in 'webhooks event-callbacks' stores the payload it sent, and a
+redelivery sends THAT payload verbatim: the same embedded event id, so a
+receiver that already processed it can deduplicate, under a fresh timestamped
+signature signed with the webhook's current secret.  is the id of
+a row from 'webhooks event-callbacks \&'.
+
+.PP
+The webhook must be active for the replay to go out. A disabled webhook, or one
+whose circuit breaker is open, drops the replay silently like any other
+delivery — so run 'webhooks enable \&' or 'webhooks reset-circuit \&' first
+(reset-circuit covers both).
+
+.PP
+Delivery is asynchronous: the gateway answers 202 with status "queued" once the
+replay is accepted, not once it has arrived. Check 'webhooks event-callbacks
+\&' for the new attempt to see the outcome. A 404 means the webhook or
+callback is not this account's, or the attempt was recorded before payloads
+were stored — there is nothing to replay.
+
+
+.SH OPTIONS
+\fB-h\fP, \fB--help\fP[=false]
+	help for redeliver
+
+
+.SH OPTIONS INHERITED FROM PARENT COMMANDS
+\fB--base-url\fP=""
+	RAIL0 gateway base URL (env: RAIL0_BASE_URL)
+
+.PP
+\fB--debug\fP[=false]
+	Print HTTP request/response details to stderr
+
+.PP
+\fB--json\fP[=false]
+	Force plain (uncolored) JSON output (useful in scripts)
+
+.PP
+\fB--pretty\fP[=false]
+	Use the key-value/table view instead of JSON (terminal only)
+
+.PP
+\fB-q\fP, \fB--quiet\fP[=false]
+	Print only the result's id/hash, one per line (useful in scripts)
+
+
+.SH EXAMPLE
+.EX
+  rail0 webhooks event-callbacks whk_abc123 --status failed   # pick the callback id
+  rail0 webhooks reset-circuit whk_abc123                      # make sure it can deliver
+  rail0 webhooks redeliver whk_abc123 7f1c0c8e-1d2b-4c3a-9e8f-0123456789ab
+.EE
+
+
+.SH SEE ALSO
+\fBrail0-webhooks(1)\fP

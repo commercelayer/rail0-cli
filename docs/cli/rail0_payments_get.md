@@ -29,7 +29,7 @@ Status values:
                         is still on-chain, recoverable with 'release' (or 'void')
   voided              — authorization cancelled (only before any capture), funds returned to payer
   released            — full authorization released back to payer (total release, nothing captured)
-  refunded            — payment fully settled by refund (escrow and refundable both drained)
+  refunded            — fully settled (both balances zero), by refund or by a final release
   partially_refunded  — legacy; no longer produced (a partial refund leaves the status unchanged)
 
 A failed on-chain attempt does not change the status: it shows on the

@@ -68,9 +68,8 @@ require (
 	golang.org/x/text v0.38.0 // indirect
 )
 
-// Still the sibling checkout, and still temporary -- but the path it replaces is now the
-// one the module actually declares, so the day rail0-go is tagged this becomes a two-line
-// change: drop this directive and require the version. It could not resolve before: the
-// module said `github.com/rail0/go-sdk` while its repo is github.com/commercelayer/rail0-go,
-// and the proxy fetches by repo.
+// Still the sibling checkout, because rail0-go is still a private repo the module proxy
+// cannot fetch. It IS tagged now: v1.2.0 is the first release carrying everything this CLI
+// uses (AnalyticsFilters.Payee, Webhooks.Redeliver included), so once the repo is public
+// this becomes a two-line change: drop this directive and require v1.2.0 or later.
 replace github.com/commercelayer/rail0-go => ../rail0-go

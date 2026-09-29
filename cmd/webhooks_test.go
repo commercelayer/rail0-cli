@@ -3,6 +3,7 @@ package cmd
 import (
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 
@@ -242,5 +243,24 @@ func TestWebhooksRedeliverNeedsBothIDs(t *testing.T) {
 	}
 	if err := webhooksRedeliverCmd.Args(webhooksRedeliverCmd, []string{"whk_1", "cb"}); err != nil {
 		t.Errorf("redeliver with both ids: %v", err)
+	}
+}
+
+// Every --topic completes the topic vocabulary, the warning topic included
+// (rail0-gateway#366) — completion only: the gateway is what validates a topic.
+func TestTopicFlagsCompleteTheVocabulary(t *testing.T) {
+	for _, c := range []*cobra.Command{webhooksCreateCmd, webhooksUpdateCmd, webhooksListCmd, webhooksEventCallbacksCmd} {
+		complete, ok := c.GetFlagCompletionFunc("topic")
+		if !ok {
+			t.Errorf("%s --topic has no completion", c.CommandPath())
+			continue
+		}
+		got, _ := complete(c, nil, "")
+		if !slices.Contains(got, "payments.authorization_expiring") || !slices.Contains(got, "payments.captured") {
+			t.Errorf("%s --topic completions = %v, want the full vocabulary", c.CommandPath(), got)
+		}
+	}
+	if len(webhookTopics) != 13 {
+		t.Errorf("webhookTopics has %d entries, want the SDK's 13", len(webhookTopics))
 	}
 }

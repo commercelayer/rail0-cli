@@ -1121,6 +1121,28 @@ rail0 tokens --symbol USDC
 
 Manage webhook subscriptions for the authenticated account. A webhook subscribes to one or more payment-lifecycle topics and delivers a signed callback to your endpoint — one subscription means **one** shared secret and **one** circuit breaker however many topics it carries, and each delivery names the event that fired in `X-Rail0-Topic`. Two subscriptions for the same callback URL must not overlap, since the same event arriving twice under two different secrets is indistinguishable from a duplicate at the receiving end. All webhook commands require authentication.
 
+#### Topics
+
+`-t/--topic` completes these in the shell; the gateway is what validates them.
+
+| Topic | Fires when |
+| --- | --- |
+| `payments.created` | a payment is created |
+| `payments.signed` | the payer's signature is stored |
+| `payments.authorized` | the authorization is confirmed on-chain — funds in escrow |
+| `payments.charged` | a one-shot charge is confirmed |
+| `payments.captured` | a capture (full or partial) is confirmed |
+| `payments.voided` | the authorization is voided |
+| `payments.released` | escrow is released back to the payer |
+| `payments.refunded` | a refund is confirmed |
+| `payments.authorization_expiring` | **a warning, not a transition**: an authorization with capturable funds (`authorized`, `partially_captured`) is about to lapse — its `authorization_expiry` falls inside the gateway's `AUTHORIZATION_EXPIRING_NOTICE` window (24h by default). Sent **once** per payment, while there is still time to capture; the status does not change and the payload's `transaction` is null. Seconds left = `payment.authorization_expiry` − `emitted_at` |
+| `payments.expired` | a never-captured authorization's window lapsed (a window that already closed gets this, never `authorization_expiring`) |
+| `payments.failed` | an on-chain attempt failed |
+| `payments.disputed` | a dispute is opened |
+| `payments.dispute_closed` | a dispute is closed |
+
+Every payment payload carries `capturable_amount` and `authorization_expiry`.
+
 #### Two ways to be off — and only one `enable`
 
 A webhook delivers only while it is **active**, and there are two independent switches:
@@ -1160,6 +1182,8 @@ rail0 webhooks list --topic payments.captured --active true
 rail0 webhooks get <webhook_id>
 rail0 webhooks create --name "order lifecycle" --callback-url https://example.com/hook \
   -t payments.authorized -t payments.captured -t payments.voided -t payments.refunded
+rail0 webhooks create --name "capture reminder" --callback-url https://example.com/hook \
+  -t payments.authorization_expiring
 rail0 webhooks update <webhook_id> --callback-url https://example.com/new
 rail0 webhooks enable <webhook_id>
 rail0 webhooks disable <webhook_id>

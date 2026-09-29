@@ -1101,6 +1101,13 @@ rail0 chains --network-type testnet
 rail0 chains -s ETH -n mainnet    # combined
 ```
 
+Each chain carries `settlement` — how long an operation has taken to settle **on this
+gateway**, broadcast to confirmation, over a trailing window (`p50_seconds`,
+`p90_seconds`, `sample_size`, `window_days`) — and a one-line `settlement_human` beside
+it: `p50 11s · p90 19s (20 samples, 7d)`, or `n/a (3 samples)` while the chain has too
+few confirmed transactions for the percentiles. A measurement, not a guarantee; the p90
+is what sizes the default [`--timeout`](#payments-wait-rail0id) of a wait.
+
 ---
 
 ### Tokens

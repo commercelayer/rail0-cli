@@ -1181,6 +1181,8 @@ rail0 health
 
 ### Disputes
 
+> **Operations go through the gateway.** The gateway mirrors only the operations it prepared. A dispute, close-dispute, capture, void, refund or release sent to the RAIL0 contract directly — not with these commands — happens on-chain, but `rail0 payments get` keeps showing the previous status and balances and no webhook is sent; a merchant is not told about a dispute its buyer opened that way. The gateway records it for its operators as a sync error (`external_operation`).
+
 #### `disputes`
 
 List **every** dispute on the payments your wallet is party to (payer or payee), each

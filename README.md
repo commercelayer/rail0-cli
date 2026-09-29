@@ -471,6 +471,12 @@ something, the command to run next: a `422` on `capture` explains that the amoun
 exceeds the capturable balance and points at `rail0 payments get <id>`, and a wallet
 with no gas is named as such rather than as an opaque RPC failure.
 
+A `404` never says which of its two causes it is — the gateway answers the same for
+an id that does not exist and one this session may not see. For a `payments` command
+the CLI adds that you may not be the payment's payer or payee (check `-p`); for
+webhooks, wallets, wallet tokens and accounts, which belong to the account rather
+than to a party, it says only that the id may be wrong or not visible to this session.
+
 The failures you actually hit are mostly not raised by RAIL0: the token reverts when
 the buyer is short of balance (`insufficient_token_balance`), signed with the wrong
 key (`invalid_token_signature`) or reuses an authorization

@@ -1228,8 +1228,8 @@ rail0 analytics breakdown --by token             # token | chain | mode | status
 rail0 analytics summary --payee @shop-eu         # just one of the account's wallets
 ```
 
-Volume figures carry a `*_human` companion (`gross_human`, `captured_human`,
-`refunded_human`, `volume_human`) beside the raw base units, using the `decimals` each
+Volume figures carry a `*_human` companion (`gross_human`, `settled_human`,
+`escrowed_human`, `captured_human`, `refunded_human`, `volume_human`) beside the raw base units, using the `decimals` each
 row already carries — so no token lookup is involved, and a row whose token has left
 the catalog simply has no companion rather than a figure at a guessed scale.
 

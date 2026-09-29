@@ -43,7 +43,9 @@ var analyticsCmd = &cobra.Command{
 All three take the same filters (--mode, --status, --token, --chain-id, --from,
 --to, --payee). By default the figures cover the whole account — every wallet it
 owns; --payee restricts them to ONE of the account's wallets (a 0x address or an
-@alias). A wallet the account does not own is refused with 403. Requires an account: a wallet-only session gets 403 account_required, since
+@alias). A wallet the account does not own is refused with 403.
+
+Requires an account: a wallet-only session gets 403 account_required, since
 these are the MERCHANT's figures, not an address's.`,
 	Example: `  rail0 analytics summary
   rail0 analytics summary --from 2026-01-01T00:00:00Z
@@ -176,6 +178,8 @@ order count.`,
 type volumeView struct {
 	rail0.AnalyticsVolume
 	GrossHuman    string `json:"gross_human,omitempty"`
+	SettledHuman  string `json:"settled_human,omitempty"`
+	EscrowedHuman string `json:"escrowed_human,omitempty"`
 	CapturedHuman string `json:"captured_human,omitempty"`
 	RefundedHuman string `json:"refunded_human,omitempty"`
 }
@@ -203,6 +207,8 @@ func summaryView(s *rail0.AnalyticsSummary) any {
 		vols = append(vols, volumeView{
 			AnalyticsVolume: v,
 			GrossHuman:      formatVolume(v.Gross, v.Decimals),
+			SettledHuman:    formatVolume(v.Settled, v.Decimals),
+			EscrowedHuman:   formatVolume(v.Escrowed, v.Decimals),
 			CapturedHuman:   formatVolume(v.Captured, v.Decimals),
 			RefundedHuman:   formatVolume(v.Refunded, v.Decimals),
 		})

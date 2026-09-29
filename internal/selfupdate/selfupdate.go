@@ -368,6 +368,11 @@ func notWritable(dir string, err error) error {
 // does. Only Homebrew for now: its casks live under …/Caskroom/ and formulas under
 // …/Cellar/, on macOS and Linux alike.
 //
+// DORMANT: rail0 is not distributed through Homebrew today (the tap and the GoReleaser
+// cask were removed until the repository is public), so no official install lands under
+// those paths. The guard stays because it costs nothing, protects a self-built brew
+// install, and is exactly what a restored tap will need.
+//
 // Such a binary must not be replaced in place. The package manager records the version
 // it installed; swapping the file behind its back leaves `brew list` and `brew upgrade`
 // believing the old version is there, and the next `brew upgrade` would silently put it

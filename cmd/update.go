@@ -32,9 +32,6 @@ download verifies. The r0 alias follows, since it is a link to the same file.
 If rail0 lives in a directory you cannot write to (e.g. /usr/local/bin, where
 'make install' puts it), run it with sudo.
 
-Installed with Homebrew, rail0 never replaces itself: it tells you to run
-'brew upgrade rail0', so Homebrew keeps track of the installed version.
-
 Interactive sessions also check for a new release once a day and offer to install
 it. The check never runs in CI, with --json or --quiet, when stdin or stderr is not
 a terminal, or with RAIL0_NO_UPDATE_CHECK=1.`,

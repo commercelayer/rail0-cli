@@ -685,7 +685,7 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 				return nil, err
 			}
 			if replayedPastPending(prep) {
-				return resumeReplayed(ctx, client, rail0Id, "authorize", prep)
+				return resumeReplayed(ctx, client, rail0Id, sc.payment.ChainID, "authorize", prep)
 			}
 			if err := sc.verify(prep.UnsignedTransaction); err != nil {
 				return nil, err
@@ -694,7 +694,7 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 			if err != nil {
 				return nil, fmt.Errorf("sign: %w", err)
 			}
-			return submitThenWait(ctx, client, rail0Id, "authorize", func() (any, error) {
+			return submitThenWait(ctx, client, rail0Id, sc.payment.ChainID, "authorize", func() (any, error) {
 				return client.Payments.Authorize(ctx, rail0Id,
 					rail0.SubmitTransactionRequest{SignedTransaction: signedTx})
 			})
@@ -752,7 +752,7 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 				return nil, err
 			}
 			if replayedPastPending(prep) {
-				return resumeReplayed(ctx, client, rail0Id, "charge", prep)
+				return resumeReplayed(ctx, client, rail0Id, sc.payment.ChainID, "charge", prep)
 			}
 			if err := sc.verify(prep.UnsignedTransaction); err != nil {
 				return nil, err
@@ -761,7 +761,7 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 			if err != nil {
 				return nil, fmt.Errorf("sign: %w", err)
 			}
-			return submitThenWait(ctx, client, rail0Id, "charge", func() (any, error) {
+			return submitThenWait(ctx, client, rail0Id, sc.payment.ChainID, "charge", func() (any, error) {
 				return client.Payments.Charge(ctx, rail0Id,
 					rail0.SubmitTransactionRequest{SignedTransaction: signedTx})
 			})
@@ -844,7 +844,7 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 				return nil, err
 			}
 			if replayedPastPending(prep) {
-				return resumeReplayed(ctx, client, rail0Id, "capture", prep)
+				return resumeReplayed(ctx, client, rail0Id, sc.payment.ChainID, "capture", prep)
 			}
 			// The calldata's amount is checked against what the user typed, scaled
 			// locally — fail-closed like refund's authorization value (see
@@ -859,7 +859,7 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 			if err != nil {
 				return nil, fmt.Errorf("sign: %w", err)
 			}
-			return submitThenWait(ctx, client, rail0Id, "capture", func() (any, error) {
+			return submitThenWait(ctx, client, rail0Id, sc.payment.ChainID, "capture", func() (any, error) {
 				return client.Payments.Capture(ctx, rail0Id,
 					rail0.SubmitTransactionRequest{SignedTransaction: signedTx})
 			})
@@ -915,7 +915,7 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 				return nil, err
 			}
 			if replayedPastPending(prep) {
-				return resumeReplayed(ctx, client, rail0Id, "void", prep)
+				return resumeReplayed(ctx, client, rail0Id, sc.payment.ChainID, "void", prep)
 			}
 			if err := sc.verify(prep.UnsignedTransaction); err != nil {
 				return nil, err
@@ -924,7 +924,7 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 			if err != nil {
 				return nil, fmt.Errorf("sign: %w", err)
 			}
-			return submitThenWait(ctx, client, rail0Id, "void", func() (any, error) {
+			return submitThenWait(ctx, client, rail0Id, sc.payment.ChainID, "void", func() (any, error) {
 				return client.Payments.Void(ctx, rail0Id,
 					rail0.SubmitTransactionRequest{SignedTransaction: signedTx})
 			})
@@ -999,7 +999,7 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 				return nil, err
 			}
 			if replayedPastPending(prep) {
-				return resumeReplayed(ctx, client, rail0Id, "release", prep)
+				return resumeReplayed(ctx, client, rail0Id, sc.payment.ChainID, "release", prep)
 			}
 			if err := sc.verify(prep.UnsignedTransaction); err != nil {
 				return nil, err
@@ -1008,7 +1008,7 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 			if err != nil {
 				return nil, fmt.Errorf("sign: %w", err)
 			}
-			return submitThenWait(ctx, client, rail0Id, "release", func() (any, error) {
+			return submitThenWait(ctx, client, rail0Id, sc.payment.ChainID, "release", func() (any, error) {
 				return client.Payments.Release(ctx, rail0Id,
 					rail0.SubmitTransactionRequest{SignedTransaction: signedTx})
 			})
@@ -1093,7 +1093,7 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 				return nil, err
 			}
 			if replayedPastPending(phase1) {
-				return resumeReplayed(ctx, client, rail0Id, "refund", phase1)
+				return resumeReplayed(ctx, client, rail0Id, sc.payment.ChainID, "refund", phase1)
 			}
 			// `refundAmount` is what the user typed, scaled locally. It is the right-hand
 			// side of BOTH refund checks: the authorization's value and the amount the
@@ -1113,7 +1113,7 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 				if err != nil {
 					return nil, fmt.Errorf("sign tx: %w", err)
 				}
-				return submitThenWait(ctx, client, rail0Id, "refund", func() (any, error) {
+				return submitThenWait(ctx, client, rail0Id, sc.payment.ChainID, "refund", func() (any, error) {
 					return client.Payments.Refund(ctx, rail0Id,
 						rail0.SubmitTransactionRequest{SignedTransaction: signedTx})
 				})
@@ -1154,7 +1154,7 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 			if err != nil {
 				return nil, fmt.Errorf("sign tx: %w", err)
 			}
-			return submitThenWait(ctx, client, rail0Id, "refund", func() (any, error) {
+			return submitThenWait(ctx, client, rail0Id, sc.payment.ChainID, "refund", func() (any, error) {
 				return client.Payments.Refund(ctx, rail0Id,
 					rail0.SubmitTransactionRequest{SignedTransaction: signedTx})
 			})
@@ -1218,7 +1218,7 @@ Pass --private-key (-p): the CLI signs locally with the payer key and broadcasts
 				return nil, err
 			}
 			if replayedPastPending(prep) {
-				return resumeReplayed(ctx, client, rail0Id, "dispute", prep)
+				return resumeReplayed(ctx, client, rail0Id, sc.payment.ChainID, "dispute", prep)
 			}
 			if err := sc.verify(prep.UnsignedTransaction); err != nil {
 				return nil, err
@@ -1227,7 +1227,7 @@ Pass --private-key (-p): the CLI signs locally with the payer key and broadcasts
 			if err != nil {
 				return nil, fmt.Errorf("sign: %w", err)
 			}
-			return submitThenWait(ctx, client, rail0Id, "dispute", func() (any, error) {
+			return submitThenWait(ctx, client, rail0Id, sc.payment.ChainID, "dispute", func() (any, error) {
 				return client.Payments.Dispute(ctx, rail0Id,
 					rail0.SubmitTransactionRequest{SignedTransaction: signedTx})
 			})
@@ -1285,7 +1285,7 @@ Pass --private-key (-p): the CLI signs locally with the payer key and broadcasts
 				return nil, err
 			}
 			if replayedPastPending(prep) {
-				return resumeReplayed(ctx, client, rail0Id, "close_dispute", prep)
+				return resumeReplayed(ctx, client, rail0Id, sc.payment.ChainID, "close_dispute", prep)
 			}
 			if err := sc.verify(prep.UnsignedTransaction); err != nil {
 				return nil, err
@@ -1294,7 +1294,7 @@ Pass --private-key (-p): the CLI signs locally with the payer key and broadcasts
 			if err != nil {
 				return nil, fmt.Errorf("sign: %w", err)
 			}
-			return submitThenWait(ctx, client, rail0Id, "close_dispute", func() (any, error) {
+			return submitThenWait(ctx, client, rail0Id, sc.payment.ChainID, "close_dispute", func() (any, error) {
 				return client.Payments.CloseDispute(ctx, rail0Id,
 					rail0.SubmitTransactionRequest{SignedTransaction: signedTx})
 			})

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	rail0 "github.com/commercelayer/rail0-go"
+	"github.com/spf13/cobra"
 )
 
 // The exact scenario from #66: a second partial capture. The gateway lists
@@ -618,5 +619,135 @@ func TestPaymentsWaitReadsEveryEmbeddedTransactionAndReturnsAFreshPayment(t *tes
 	}
 	if !strings.Contains(out, `"captured"`) {
 		t.Errorf("output = %s; want the fresh read (captured), not the settled one", out)
+	}
+}
+
+// The settlement-derived default: 10× the chain's measured p90, never under 5m nor
+// over the fixed 15m it replaces, and exactly that 15m when there is no measurement.
+func TestSettlementWaitTimeout(t *testing.T) {
+	secs := func(n int) *int { return &n }
+	cases := []struct {
+		name string
+		p90  *int
+		want time.Duration
+	}{
+		{"unmeasured chain keeps the fixed default", nil, defaultWaitTimeout},
+		{"a non-positive figure is no measurement", secs(0), defaultWaitTimeout},
+		{"a tiny p90 is floored at 5m", secs(3), 5 * time.Minute},
+		{"exactly at the floor", secs(30), 5 * time.Minute},
+		{"in between it is 10× p90", secs(45), 7*time.Minute + 30*time.Second},
+		{"exactly at the ceiling", secs(90), 15 * time.Minute},
+		{"a huge p90 is capped at the old default", secs(660), defaultWaitTimeout},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := settlementWaitTimeout(tc.p90); got != tc.want {
+				t.Errorf("settlementWaitTimeout = %s, want %s", got, tc.want)
+			}
+		})
+	}
+}
+
+// seedChainCatalog makes chainCatalog answer `chains` without a gateway. The Once is
+// spent for good (it is process-wide), but the list is restored afterwards so a later
+// test sees what it would have.
+func seedChainCatalog(t *testing.T, chains ...rail0.Blockchain) {
+	t.Helper()
+	chainCatalogOnce.Do(func() {})
+	previous := chainCatalogList
+	chainCatalogList = chains
+	t.Cleanup(func() { chainCatalogList = previous })
+}
+
+// The default is read from the payment's chain in the cached catalog; --timeout,
+// when passed, wins whatever the chain says — including a value equal to the default,
+// which is why "passed" is tracked rather than inferred from the value.
+func TestWaitTimeoutFor(t *testing.T) {
+	p90 := 12
+	seedChainCatalog(t,
+		rail0.Blockchain{ChainID: 5042002, Settlement: rail0.BlockchainSettlement{P90Seconds: &p90, SampleSize: 40}},
+		rail0.Blockchain{ChainID: 421614, Settlement: rail0.BlockchainSettlement{SampleSize: 3}},
+	)
+	t.Cleanup(func() { waitTimeout, waitTimeoutExplicit = defaultWaitTimeout, false })
+	waitTimeout, waitTimeoutExplicit = defaultWaitTimeout, false
+
+	if got := waitTimeoutFor(5042002); got != 5*time.Minute {
+		t.Errorf("measured chain: %s, want 5m (10× 12s, floored)", got)
+	}
+	if got := waitTimeoutFor(421614); got != defaultWaitTimeout {
+		t.Errorf("chain below the minimum sample: %s, want the fixed default", got)
+	}
+	if got := waitTimeoutFor(1); got != defaultWaitTimeout {
+		t.Errorf("chain outside the catalog: %s, want the fixed default", got)
+	}
+	if got := waitTimeoutFor(0); got != defaultWaitTimeout {
+		t.Errorf("unknown chain: %s, want the fixed default", got)
+	}
+
+	// Through the flag, as a user sets it.
+	fs := paymentsWaitCmd.Flags()
+	if err := fs.Set("timeout", "15m"); err != nil {
+		t.Fatalf("set --timeout: %v", err)
+	}
+	if got := waitTimeoutFor(5042002); got != 15*time.Minute {
+		t.Errorf("explicit --timeout 15m: %s — an explicit value must win over the chain", got)
+	}
+	if err := fs.Set("timeout", "90s"); err != nil {
+		t.Fatalf("set --timeout: %v", err)
+	}
+	if got := waitTimeoutFor(421614); got != 90*time.Second {
+		t.Errorf("explicit --timeout 90s: %s", got)
+	}
+}
+
+// The help still names the fixed default, and --timeout still takes a duration.
+func TestTimeoutFlagDefault(t *testing.T) {
+	for _, c := range []*cobra.Command{paymentsWaitCmd, paymentsCaptureCmd, paymentsRedriveCmd} {
+		f := c.Flags().Lookup("timeout")
+		if f == nil {
+			t.Fatalf("%s has no --timeout", c.CommandPath())
+		}
+		if f.DefValue != "15m0s" || f.Value.Type() != "duration" {
+			t.Errorf("%s --timeout: default %q type %q, want 15m0s duration", c.CommandPath(), f.DefValue, f.Value.Type())
+		}
+	}
+	if err := (timeoutFlag{}).Set("soon"); err == nil {
+		t.Error("--timeout soon should be rejected as a duration")
+	}
+}
+
+// `payments wait` sizes its default from the chain the FIRST read names, and that read
+// doubles as the first poll: a payment already settled costs the same two reads (the
+// poll and the fresh one) it always did.
+func TestPaymentsWaitSizesTheDeadlineFromTheFirstRead(t *testing.T) {
+	isolate(t)
+	isolateTokenStore(t)
+	fastPolls(t)
+	p90 := 20
+	seedChainCatalog(t, rail0.Blockchain{ChainID: 5042002, Settlement: rail0.BlockchainSettlement{P90Seconds: &p90, SampleSize: 25}})
+	waitUntil, waitTimeout, waitTimeoutExplicit = "", defaultWaitTimeout, false
+	t.Cleanup(func() { waitUntil, waitTimeout, waitTimeoutExplicit = "", defaultWaitTimeout, false })
+
+	var mu sync.Mutex
+	gets := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		gets++
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"id": "pay-1", "chain_id": 5042002, "status": "captured"})
+	}))
+	t.Cleanup(srv.Close)
+	t.Setenv("RAIL0_BASE_URL", srv.URL)
+
+	var err error
+	captureStdout(t, func() { err = paymentsWaitCmd.RunE(paymentsWaitCmd, []string{"0xabc"}) })
+	if err != nil {
+		t.Fatalf("payments wait: %v", err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if gets != 2 {
+		t.Errorf("GET /payments/:id called %d times; want 2 (the first read is the first poll)", gets)
 	}
 }

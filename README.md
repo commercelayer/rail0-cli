@@ -791,7 +791,7 @@ Every on-chain action command (`authorize`, `charge`, `capture`, `void`, `releas
 |------|-------|-------------|
 | `--private-key` | `-p` | Caller's secp256k1 private key: 0x-prefixed hex, or `@name` for a key saved in the OS keychain (`rail0 keys add`) |
 | `--wait` | `-w` | Block until the operation confirms on-chain (or fails) instead of returning at the `202` |
-| `--timeout` | — | Max time to wait with `--wait` (default `15m`). The gateway is notified only once the chain calls the block settled, so settlement is minutes, not seconds: ~2 min on Base/OP Sepolia and ~11 min on Arbitrum Sepolia (its `safe` block sits ~2640 blocks back, on L1 batch cadence), ~0 on Arc and Amoy. The old `2m` default could not be reached on Arbitrum at all — and a `--wait` that gives up exits non-zero, which a script reads as a failed capture. Lower it on a fast chain if you want a stuck operation reported sooner |
+| `--timeout` | — | Max time to wait with `--wait`. Unset, it follows the payment's chain: **10× the chain's measured p90 settlement** (`settlement.p90_seconds` on `rail0 chains`), kept between `5m` and `15m` — never longer than the old fixed default, never short enough to report one slow-but-healthy operation as a failure. It stays `15m` when the chain has too few confirmed transactions to be measured, and on `payments redrive`, which holds no payment to read the chain from. Settlement is end to end — the chain's `safe`/`finalized` lag plus the gateway's pipeline — so it is minutes on some chains (~11 min on Arbitrum Sepolia) and seconds on others. A `--wait` that gives up exits non-zero, which a script reads as a failed capture, so raise it rather than lower it when in doubt; an explicit value always wins |
 | `--idempotency-key` | — | Make a re-run safe: the same key returns the first transaction instead of opening a second — see [Safe re-runs](#safe-re-runs---idempotency-key) |
 | `--yes` | `-y` | Skip the confirmation prompt (every action except `authorize`); required to run non-interactively |
 
@@ -1501,7 +1501,12 @@ rail0 payments dispute close <rail0Id> -p @buyer-key --wait
 
 Block until a payment settles — no transaction still in flight — or, with `--until
 <status>`, until it reaches that status; it stops early with an error once the status
-can no longer be reached. `--timeout` defaults to `15m`. Runs on the stored session.
+can no longer be reached. Runs on the stored session.
+
+Without `--timeout` the deadline is sized from the payment's chain: 10× its measured p90
+settlement (see `rail0 chains`), kept between `5m` and `15m`, and `15m` when the chain
+is not measured yet. The first poll is what names the chain, so this costs no extra
+read of the payment (at most one `GET /blockchains` per process).
 
 ```sh
 rail0 payments wait <rail0Id> --until captured

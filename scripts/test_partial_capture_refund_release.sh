@@ -13,11 +13,15 @@
 # produces — a partial refund leaves the status unchanged.
 #
 # Requires the gateway running with a short authorization TTL, so step 7 does not
-# wait out the real one:
-#   POLICY_AUTHORIZATION_TTL=30 bundle exec puma -C config/puma.rb
+# wait out the real one (the default is 7 days). From the rail0-gateway checkout:
+#   AUTHORIZATION_TTL=180 bin/dev
+# The gateway reads AUTHORIZATION_TTL (config/policy.rb). Not much shorter than 180:
+# both captures must confirm before authorization_expiry, and on Arc Testnet authorize
+# plus two captures take well over 30s. Step 7 reads the expiry off the payment, so
+# the script itself needs no TTL setting.
 #
 # Usage:
-#   POLICY_AUTHORIZATION_TTL=30 ./scripts/test_partial_capture_refund_release.sh
+#   ./scripts/test_partial_capture_refund_release.sh
 #
 # Overrides: RAIL0_API_URL CHAIN_ID TOKEN AMOUNT CAPTURE1 CAPTURE2 REFUND1 REFUND2
 #            ACCOUNT_ID PAYEE BUYER_ADDRESS BUYER_PRIVATE_KEY ACCOUNT_PRIVATE_KEY

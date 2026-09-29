@@ -9,12 +9,23 @@ import (
 	"time"
 
 	rail0 "github.com/commercelayer/rail0-go"
+	"github.com/spf13/cobra"
 )
 
 // humanizeError turns low-level transport and API errors into clear, actionable
 // CLI messages. Anything it doesn't recognise (e.g. cobra usage errors) is
 // returned unchanged.
+//
+// It knows nothing about the command that failed, so a 404 gets the neutral
+// wording; Execute uses humanizeErrorFor, which does.
 func humanizeError(err error) error {
+	return humanizeErrorFor(nil, err)
+}
+
+// humanizeErrorFor is humanizeError for an error returned by cmd — the command
+// cobra actually ran (nil when unknown). The command only matters for a 404, whose
+// two possible causes differ by resource: see notFoundHint.
+func humanizeErrorFor(cmd *cobra.Command, err error) error {
 	if err == nil {
 		return nil
 	}
@@ -36,11 +47,7 @@ func humanizeError(err error) error {
 		case apiErr.Status == 403:
 			return fmt.Errorf("forbidden (HTTP 403)%s", detail(apiHint(apiErr)))
 		case apiErr.Status == 404:
-			// A 404 on a payment route has two causes the gateway deliberately does
-			// not distinguish (see gateway#157): the id doesn't exist, or it exists
-			// and this session is not its payer/payee. Say both — otherwise signing
-			// with the wrong key reads as a typo in the id.
-			return fmt.Errorf("not found (HTTP 404)%s — the id may be wrong, or you are not the payer/payee of this payment (check the key you passed with -p)", detail(apiHint(apiErr)))
+			return fmt.Errorf("not found (HTTP 404)%s — %s", detail(apiHint(apiErr)), notFoundHint(cmd))
 		case apiErr.Status == 409:
 			return fmt.Errorf("already exists / conflict (HTTP 409)%s", detail(apiHint(apiErr)))
 		case apiErr.Status == 422:
@@ -69,6 +76,35 @@ func humanizeError(err error) error {
 		return fmt.Errorf("the request to %s timed out", base)
 	}
 	return err
+}
+
+// notFoundHint says what a 404 can mean for the resource cmd works on.
+//
+// Every scoped lookup in the gateway answers 404, never 403, for something the
+// session may not see, so "doesn't exist" and "isn't yours" are deliberately
+// indistinguishable (gateway#157) — the hint has to name both. What "yours" means
+// differs by resource, though: a payment is visible to its payer and payee only,
+// so the likely fix is the signing key; a webhook, wallet, wallet token, event
+// callback or account belongs to the session's account, where payer/payee advice
+// (and -p, which those commands do not take) would send the user after the wrong
+// thing. So the payer/payee wording is kept for commands under `rail0 payments`
+// and every other command — or an unknown one — gets the neutral line.
+func notFoundHint(cmd *cobra.Command) string {
+	if isPaymentCommand(cmd) {
+		return "the id may be wrong, or you are not the payer/payee of this payment (check the key you passed with -p)"
+	}
+	return "the id may be wrong, or it is not visible to this session ('rail0 auth status' shows who you are signed in as)"
+}
+
+// isPaymentCommand reports whether cmd is `rail0 payments` or one of its
+// descendants (dispute, transaction, wait, …).
+func isPaymentCommand(cmd *cobra.Command) bool {
+	for c := cmd; c != nil; c = c.Parent() {
+		if c == paymentsCmd {
+			return true
+		}
+	}
+	return false
 }
 
 func isTimeout(err error) bool {

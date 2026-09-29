@@ -9,6 +9,7 @@ import (
 	"time"
 
 	rail0 "github.com/commercelayer/rail0-go"
+	"github.com/spf13/cobra"
 )
 
 func TestHumanizeError(t *testing.T) {
@@ -60,6 +61,41 @@ func TestAPIHint(t *testing.T) {
 				t.Errorf("apiHint = %q, want substring %q", got, tc.want)
 			}
 		})
+	}
+}
+
+// The payer/payee wording of a 404 is right only for payments: a webhook, wallet,
+// wallet token or account belongs to the session's account, and those commands do
+// not take -p at all, so the advice sent the user after the wrong thing.
+func TestNotFoundWordingDependsOnTheResource(t *testing.T) {
+	const partyAdvice = "payer/payee of this payment"
+	notFound := &rail0.APIError{Status: 404, Code: "not_found", Detail: "webhook not found"}
+
+	for _, c := range []*cobra.Command{
+		paymentsGetCmd, paymentsCaptureCmd, paymentsDisputeCloseCmd,
+		paymentsTransactionCmd, paymentsWaitCmd,
+	} {
+		got := humanizeErrorFor(c, notFound).Error()
+		if !strings.Contains(got, partyAdvice) || !strings.Contains(got, "-p") {
+			t.Errorf("%s: %q, want the payer/payee advice", c.CommandPath(), got)
+		}
+	}
+	for _, c := range []*cobra.Command{
+		webhooksGetCmd, webhooksRedeliverCmd, webhooksEventCallbacksCmd,
+		walletsDeleteCmd, walletTokensDisableCmd, nil,
+	} {
+		got := humanizeErrorFor(c, notFound).Error()
+		if strings.Contains(got, partyAdvice) || strings.Contains(got, "-p") {
+			t.Errorf("%v: %q, want no payer/payee advice", c, got)
+		}
+		if !strings.Contains(got, "not found (HTTP 404): webhook not found") ||
+			!strings.Contains(got, "not visible to this session") {
+			t.Errorf("%v: %q, want the gateway detail and the neutral line", c, got)
+		}
+	}
+	// humanizeError has no command, so it must take the neutral branch.
+	if got := humanizeError(notFound).Error(); strings.Contains(got, partyAdvice) {
+		t.Errorf("humanizeError: %q, want the neutral wording", got)
 	}
 }
 

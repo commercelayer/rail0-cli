@@ -57,8 +57,11 @@ Use 'rail0 <command> --help' for detailed usage of any command.`,
 func Execute() {
 	selfupdate.CleanupOld()
 	rejectUnknownSubcommands(rootCmd)
-	if err := rootCmd.Execute(); err != nil {
-		ui.FatalCode(humanizeError(err), exitCode(err))
+	// ExecuteC, not Execute: it also returns the command that ran, which the error
+	// wording needs (a 404 means something different for a payment than for a
+	// webhook — see notFoundHint).
+	if c, err := rootCmd.ExecuteC(); err != nil {
+		ui.FatalCode(humanizeErrorFor(c, err), exitCode(err))
 	}
 }
 

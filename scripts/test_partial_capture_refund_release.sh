@@ -150,7 +150,7 @@ ok "authorization_expiry passed"
 
 # ── 8. Release (payer) ────────────────────────────────────────────────────────
 
-# Permissionless: the caller is whoever the key belongs to, derived from -p —
+# Payer or payee only; the caller is whoever the key belongs to, derived from -p —
 # there is no --caller-address flag to pass (and never was one on this command).
 step "8. Release (payer)"
 run payments release "$RAIL0_ID" -p "$BUYER_PRIVATE_KEY" -y "${WAIT[@]}" > /dev/null

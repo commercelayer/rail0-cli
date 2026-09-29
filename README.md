@@ -1296,7 +1296,7 @@ rail0 payments get 0xabc123…
 | `partially_captured` | Partial capture; remaining escrow still capturable |
 | `voided` | Authorization cancelled (only before any capture); funds returned to payer |
 | `released` | Full authorization released back to payer (total release, nothing captured) |
-| `refunded` | Payment fully settled by refund (both escrow and refundable drained) |
+| `refunded` | Fully settled (both balances zero), by refund or by a final release |
 | `partially_refunded` | Legacy — no longer produced; a partial refund now leaves the status unchanged |
 | `expired` | Authorization window closed with nothing captured — the escrow is still on-chain and `release` (or `void`) recovers it |
 
@@ -1445,7 +1445,9 @@ rail0 payments void <rail0Id> -p @merchant-key
 
 #### `payments release <rail0Id>`
 
-Prepare the `release()` transaction — returns remaining escrowed funds to payer after `authorizationExpiry`. Permissionless: both payer and payee can call it. The caller is whoever the signing key belongs to (derived from the key), so pass the payer's key to release as the payer.
+Prepare the `release()` transaction — returns remaining escrowed funds to payer after `authorizationExpiry`. Only the payer or the payee may release — the contract accepts no other sender, and the gateway refuses anyone else with 422 `release_submitter_not_a_party`. The caller is whoever the signing key belongs to (derived from the key), so pass the payer's key to release as the payer.
+
+The status becomes `released` only on a total release (nothing captured). After a capture it stays unchanged while a refundable residual remains — unless the captured part was already refunded, in which case the release leaves both balances at zero and the payment closes as `refunded`.
 
 ```sh
 # Payee releases

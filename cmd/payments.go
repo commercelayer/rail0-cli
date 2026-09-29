@@ -69,7 +69,7 @@ Status values:
                         is still on-chain, recoverable with 'release' (or 'void')
   voided              — authorization cancelled (only before any capture), funds returned to payer
   released            — full authorization released back to payer (total release, nothing captured)
-  refunded            — payment fully settled by refund (escrow and refundable both drained)
+  refunded            — fully settled (both balances zero), by refund or by a final release
   partially_refunded  — legacy; no longer produced (a partial refund leaves the status unchanged)
 
 A failed on-chain attempt does not change the status: it shows on the
@@ -942,9 +942,11 @@ var paymentsReleaseCmd = &cobra.Command{
 	Long: `Prepare the transaction that calls release() on the RAIL0 contract.
 
 Release is only available after authorizationExpiry has passed on-chain.
-Returns the remaining (uncaptured) escrowed balance to the payer. Permissionless
-— both payer and payee can call it; the caller is whoever the signing key belongs
-to (derived from the key), so pass the payer's key to release as the payer.
+Returns the remaining (uncaptured) escrowed balance to the payer. Only the payer
+or the payee may release — the contract accepts no other sender, and the gateway
+refuses anyone else with 422 release_submitter_not_a_party. The caller is whoever
+the signing key belongs to (derived from the key), so pass the payer's key to
+release as the payer.
 
 The API returns 202 immediately: broadcasting is not settling. Add -w/--wait to
 block until the operation confirms on-chain (or fails) and exit non-zero if it
@@ -952,7 +954,9 @@ didn't land.
 
 Note that the payment STATUS advances to "released" only on a TOTAL release (an
 untouched authorization, nothing captured); if a capture left a refundable
-residual the status stays unchanged and that residual remains refundable. This
+residual the status stays unchanged and that residual remains refundable. A
+release that leaves BOTH balances at zero — the captured part was already
+refunded — closes the payment as "refunded" instead: fully settled. This
 does not weaken --wait: it waits on THIS operation's transaction reaching
 confirmed or failed, not on a status change — so it settles a partial release
 correctly, where waiting for a new status would hang until the deadline.

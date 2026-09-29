@@ -30,7 +30,7 @@ rail0 payments redrive <rail0Id> <transaction_id> [flags]
 
 ```
   -h, --help               help for redrive
-      --timeout duration   Max time to wait when --wait is set — the default covers the slowest chain's finality (default 15m0s)
+      --timeout duration   Max time to wait when --wait is set; unset, 10× the chain's measured p90 settlement, kept within 5m–15m (default 15m0s)
   -w, --wait               Block until the operation confirms on-chain (or fails)
 ```
 

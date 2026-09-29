@@ -13,6 +13,11 @@ Filter with --status, --mode, --payer, --payee, --token, --chain-id, --disputed,
 transaction of that operation — '--operation dispute' finds every payment ever
 disputed, which --disputed (an OPEN dispute) does not.
 
+--status takes several values, repeated or comma-separated, and matches ANY of
+them: '--status authorized,partially_captured' is every payment with escrow still
+capturable. Each value is checked against the payment-status vocabulary before
+any request.
+
 --min-amount / --max-amount are DECIMALS in token units ('1.00'), like every other
 amount flag. Converting them to the base units the gateway filters on needs the
 token's decimals, so both --chain-id and --token are required with them — and an
@@ -28,6 +33,7 @@ rail0 payments list [flags]
   rail0 payments list
   rail0 payments list --sort -created_at
   rail0 payments list --status authorized --mode charge
+  rail0 payments list --status authorized,partially_captured
   rail0 payments list --chain-id 5042002 --disputed
   rail0 payments list --chain-id 5042002 --token 0x3600… --min-amount 1.00 --created-from 2026-01-01T00:00:00Z
 ```
@@ -51,7 +57,7 @@ rail0 payments list [flags]
       --per-page int          Results per page
       --rail0-id string       Filter by the logical on-chain payment id (0x…)
       --sort string           Sort fields (e.g. -created_at,amount)
-      --status string         Filter by payment status (e.g. authorized, captured, refunded)
+      --status strings        Filter by payment status; repeat or comma-separate for any of several (e.g. authorized,partially_captured)
       --token string          Filter by token address
 ```
 

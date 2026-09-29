@@ -17,6 +17,9 @@ A payment can hold several rows for the same operation (a retried broadcast, or
 successive partial captures), which is why the balances a payment reports are
 the last CONFIRMED ones and not the last submitted.
 
+--status takes several values, repeated or comma-separated, and matches ANY of
+them: '--status submitting,submitted' is what is on its way to the chain.
+
 ```
 rail0 payments transactions <rail0Id> [flags]
 ```
@@ -27,6 +30,7 @@ rail0 payments transactions <rail0Id> [flags]
   rail0 payments transactions 0xabc123…
   rail0 payments transactions 0xabc123… --sort -confirmed_at
   rail0 payments transactions 0xabc123… --operation capture --status failed
+  rail0 payments transactions 0xabc123… --status submitting,submitted
 ```
 
 ### Options
@@ -37,7 +41,7 @@ rail0 payments transactions <rail0Id> [flags]
       --page int           Page number (1-based)
       --per-page int       Results per page
       --sort string        Sort fields: created_at, updated_at, block_number, confirmed_at (prefix - for descending, comma-separated)
-      --status string      Filter by transaction status (pending, submitting, submitted, confirmed, failed)
+      --status strings     Filter by transaction status (pending, submitting, submitted, confirmed, failed); repeat or comma-separate for any of several
 ```
 
 ### Options inherited from parent commands

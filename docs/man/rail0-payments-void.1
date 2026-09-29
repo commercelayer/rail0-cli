@@ -43,7 +43,7 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.
 
 .PP
 \fB--timeout\fP=15m0s
-	Max time to wait when --wait is set — the default covers the slowest chain's finality
+	Max time to wait when --wait is set; unset, 10× the chain's measured p90 settlement, kept within 5m–15m
 
 .PP
 \fB-w\fP, \fB--wait\fP[=false]

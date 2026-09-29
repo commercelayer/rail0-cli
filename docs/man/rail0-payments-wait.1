@@ -22,6 +22,11 @@ becomes 'captured', a captured one never becomes 'authorized' again. An
 \&'expired' payment is over for a capture but not for its escrow: waiting for
 \&'released' or 'voided' keeps going.
 
+.PP
+Without --timeout the deadline follows the payment's chain: 10× its measured p90
+settlement time ('rail0 chains'), never under 5m nor over 15m — and 15m when the
+chain has too few confirmed transactions to be measured. --timeout always wins.
+
 
 .SH OPTIONS
 \fB-h\fP, \fB--help\fP[=false]
@@ -29,7 +34,7 @@ becomes 'captured', a captured one never becomes 'authorized' again. An
 
 .PP
 \fB--timeout\fP=15m0s
-	Max time to wait — the default covers the slowest chain's finality
+	Max time to wait; unset, 10× the chain's measured p90 settlement, kept within 5m–15m
 
 .PP
 \fB--until\fP=""
@@ -61,6 +66,7 @@ becomes 'captured', a captured one never becomes 'authorized' again. An
 .EX
   rail0 payments wait 0xrail0Id…
   rail0 payments wait 0xrail0Id… --until captured
+  rail0 payments wait 0xrail0Id… --timeout 30m
 .EE
 
 

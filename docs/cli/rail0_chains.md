@@ -10,6 +10,12 @@ Filter with --symbol (the chain's native symbol, e.g. ETH / USDC / CELO) and/or
 --network-type (testnet | mainnet). Both match case-insensitively; combine them
 to narrow further.
 
+Each chain carries 'settlement': how long an operation has taken to settle on
+this gateway, broadcast to confirmation, as p50/p90 over a trailing window. The
+percentiles are null until the chain has enough confirmed transactions to be
+measured. 'settlement_human' says it in one line ("p50 11s · p90 19s …", or
+"n/a (3 samples)"). The p90 is also what sizes the default --wait deadline.
+
 ```
 rail0 chains [flags]
 ```

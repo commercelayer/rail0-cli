@@ -1128,9 +1128,12 @@ The breaker never closes on its own: nothing is delivered while it is open, so n
 rail0 webhooks event-callbacks <webhook_id> --status failed   # 1. what was it failing on?
 rail0 webhooks update <webhook_id> --callback-url https://…   # 2. fix it
 rail0 webhooks reset-circuit <webhook_id>                     # 3. let it deliver again
+rail0 webhooks redeliver <webhook_id> <callback_id>           # 4. replay what was lost
 ```
 
 Step 3 is not optional after a tripped breaker — `update` changes the URL but not the active state, so repointing a broken webhook at a working endpoint leaves it exactly as dead as it was. And doing 3 before 2 just spends another 10 events reopening the breaker.
+
+Step 4 replays one failed attempt per call, taking the callback id from step 1's rows. It sends the recorded payload **verbatim** — the same event id, so a receiver that already processed it can deduplicate — under a fresh signature. The webhook must be active: a disabled webhook or an open circuit drops the replay silently, which is why it comes after step 3 (`enable` is enough when the webhook was only disabled by hand). Delivery is asynchronous — the command returns `{"status": "queued"}` — so check `rail0 webhooks event-callbacks <webhook_id>` for the new attempt.
 
 #### The shared secret
 
@@ -1149,6 +1152,7 @@ rail0 webhooks disable <webhook_id>
 rail0 webhooks rotate-secret <webhook_id>
 rail0 webhooks reset-circuit <webhook_id>
 rail0 webhooks event-callbacks <webhook_id> --status failed
+rail0 webhooks redeliver <webhook_id> <callback_id>
 rail0 webhooks delete <webhook_id>
 ```
 
@@ -1163,6 +1167,7 @@ rail0 webhooks delete <webhook_id>
 | `rotate-secret` | Issue a new shared secret (returned once) |
 | `reset-circuit` | Close the breaker **and** clear the manual disable — the only way back from a trip |
 | `event-callbacks` | Delivery attempts — the log to read when a callback did not arrive (`--status delivered\|failed`, `--response-code`, `--topic`, `--payment-id` as the payment's UUID or its 0x rail0_id — passed to the gateway as is, so any payment of the account matches whichever of its wallets it belongs to, `--since`, `--until`, `--sort`, `--page` / `--per-page`) |
+| `redeliver` | Replay one recorded attempt's exact payload (same event id, fresh signature); async, returns `queued` — needs an active webhook, so `enable` / `reset-circuit` first |
 | `delete` | Destroy the webhook and its secret, permanently (unlike `wallets delete`, this one is real) |
 
 ---

@@ -396,6 +396,10 @@ config file. Precedence is: **flag  >  env var  >  config file  >  built-in defa
 | `--quiet` / `-q` | —                | Print only the result's id/hash, one per line — no JSON parser needed |
 | — | `RAIL0_HTTP_TIMEOUT` | Per-request HTTP timeout in seconds (default 30). Distinct from the wait commands' `--timeout`, which is the polling deadline |
 
+`--json`, `--pretty` and `--quiet` select one output mode each. Combined, they do not
+error: one wins silently in the order **`--quiet`  >  `--pretty`  >  `--json`** — so
+`rail0 aliases --json --pretty` shows the pretty view, and `-q` beats either.
+
 #### If the config file goes bad
 
 A file the CLI cannot parse is **ignored, with a warning naming it** — commands keep working on flags, env vars and defaults, so nothing is blocked. Reads refuse rather than act on settings they could not read.

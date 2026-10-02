@@ -239,6 +239,11 @@ func httpTimeout() time.Duration {
 // outputFlagMode reports which output mode was selected BY FLAG, or "" when none
 // was. Kept separate from the resolution below so `config` can name the flag as
 // the origin, instead of reporting a stored default that is being overridden.
+//
+// The three flags are not mutually exclusive: combined, one wins silently in the
+// fixed order quiet > pretty > json (the switch order below). quiet beats the others
+// because a script capturing an id must never receive a JSON document; pretty beats
+// json because it is the more specific request. The README documents this order.
 func outputFlagMode() string {
 	switch {
 	case quietOut:

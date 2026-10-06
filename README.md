@@ -43,7 +43,7 @@ rotate is reported rather than silently honoured. Keys are scoped to the payment
 
 ## Requirements
 
-- Go ≥ 1.25 (matches the `go` directive in `go.mod`)
+- Go ≥ 1.26 (matches the `go` directive in `go.mod`)
 - The [rail0-go](https://github.com/commercelayer/rail0-go) SDK cloned as a sibling directory (used via a `replace` directive in `go.mod`)
 - Access to a RAIL0 gateway instance (for the commands that call it — building/`rail0 --help` need no gateway)
 

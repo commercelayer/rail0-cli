@@ -97,7 +97,7 @@ address) of the session account.`,
 
 var walletsGetCmd = &cobra.Command{
 	Use:     "get <wallet>",
-	Short:   "Fetch a single wallet (by id or 0x address)",
+	Short:   "Fetch a single wallet (by id, 0x address or @alias)",
 	Example: `  rail0 wallets get 0xABCD…`,
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -105,8 +105,12 @@ var walletsGetCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		wallet, err := resolveAlias(args[0])
+		if err != nil {
+			return err
+		}
 		return ui.RunAPI(func() (any, error) {
-			return newReadClient().Wallets.Get(context.Background(), account, args[0])
+			return newReadClient().Wallets.Get(context.Background(), account, wallet)
 		})
 	},
 }
@@ -222,7 +226,7 @@ var updateWalletActive string
 
 var walletsUpdateCmd = &cobra.Command{
 	Use:   "update <wallet>",
-	Short: "Update label or active status on a wallet (by id or 0x address)",
+	Short: "Update label or active status on a wallet (by id, 0x address or @alias)",
 	Long: `Change a wallet's label, or turn it on and off with --active.
 
 --active false is the merchant's REVOCATION switch, and it does more than hide a
@@ -243,7 +247,10 @@ delete, not a removal — so the two are interchangeable.`,
 		if err != nil {
 			return err
 		}
-		wallet := args[0]
+		wallet, err := resolveAlias(args[0])
+		if err != nil {
+			return err
+		}
 		req := rail0.UpdateWalletRequest{Label: updateWalletLabel}
 		if updateWalletActive != "" {
 			switch updateWalletActive {
@@ -276,7 +283,7 @@ delete, not a removal — so the two are interchangeable.`,
 
 var walletsDeleteCmd = &cobra.Command{
 	Use:   "delete <wallet>",
-	Short: "Deactivate a wallet — soft delete, reversible (by id or 0x address)",
+	Short: "Deactivate a wallet — soft delete, reversible (by id, 0x address or @alias)",
 	Long: `Deactivate a wallet. Despite the verb, this is a SOFT delete and it is
 reversible: the gateway sets active=false and keeps the row, so 'wallets update
 <wallet> --active true' brings it back. Nothing is removed, nothing on-chain is
@@ -302,11 +309,15 @@ to poll. (rail0-gateway#237)`,
 		if err != nil {
 			return err
 		}
-		if err := confirmDestructive(deactivationPrompt(args[0])); err != nil {
+		wallet, err := resolveAlias(args[0])
+		if err != nil {
+			return err
+		}
+		if err := confirmDestructive(deactivationPrompt(wallet)); err != nil {
 			return err
 		}
 		return ui.RunAPI(func() (any, error) {
-			return nil, newClient().Wallets.Delete(context.Background(), account, args[0])
+			return nil, newClient().Wallets.Delete(context.Background(), account, wallet)
 		})
 	},
 }
@@ -336,7 +347,7 @@ var balancesSymbol string
 
 var walletsBalancesCmd = &cobra.Command{
 	Use:   "balances <wallet>",
-	Short: "Read a wallet's live on-chain balances (by id or 0x address)",
+	Short: "Read a wallet's live on-chain balances (by id, 0x address or @alias)",
 	Long: `Read a wallet's live on-chain balances across the configured chains.
 
 Each chain reports the native gas-token balance and the active token balances,
@@ -349,9 +360,13 @@ RPC never hides the others). Use --chain-id / --symbol to narrow the result.`,
 		if err != nil {
 			return err
 		}
+		wallet, err := resolveAlias(args[0])
+		if err != nil {
+			return err
+		}
 		p := rail0.WalletBalancesParams{ChainID: balancesChainID, TokenSymbol: balancesSymbol}
 		return ui.RunAPI(func() (any, error) {
-			return newReadClient().Wallets.Balances(context.Background(), account, args[0], p)
+			return newReadClient().Wallets.Balances(context.Background(), account, wallet, p)
 		})
 	},
 }

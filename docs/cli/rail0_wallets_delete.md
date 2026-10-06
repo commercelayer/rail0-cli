@@ -1,6 +1,6 @@
 ## rail0 wallets delete
 
-Deactivate a wallet — soft delete, reversible (by id or 0x address)
+Deactivate a wallet — soft delete, reversible (by id, 0x address or @alias)
 
 ### Synopsis
 

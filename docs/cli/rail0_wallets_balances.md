@@ -1,6 +1,6 @@
 ## rail0 wallets balances
 
-Read a wallet's live on-chain balances (by id or 0x address)
+Read a wallet's live on-chain balances (by id, 0x address or @alias)
 
 ### Synopsis
 

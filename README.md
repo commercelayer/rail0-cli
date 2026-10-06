@@ -973,9 +973,14 @@ rail0 wallets --default true --sort -created_at
 
 #### `wallets get <wallet>`
 
+Every `wallets` verb that takes a `<wallet>` (`get`, `update`, `delete`, `balances`,
+`tokens add/enable/disable`) accepts the wallet's UUID, its `0x` address, or an
+[address-book](#address-book-aliases) `@alias`.
+
 ```sh
 rail0 wallets get 0xABCD…
 rail0 wallets get <wallet_uuid>
+rail0 wallets get @merchant
 ```
 
 #### `wallets create`
@@ -1049,6 +1054,7 @@ Read a wallet's live on-chain balances across the configured chains. Each chain 
 
 ```sh
 rail0 wallets balances 0xABCD… --chain-id 84532 --symbol USDC
+rail0 wallets balances @merchant --chain-id 5042002
 ```
 
 | Flag | Short | Description |

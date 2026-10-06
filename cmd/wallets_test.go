@@ -1,9 +1,11 @@
 package cmd
 
 import (
+	"net/http"
 	"strings"
 	"testing"
 
+	"github.com/rail0/cli/internal/config"
 	"github.com/spf13/cobra"
 )
 
@@ -144,5 +146,68 @@ func TestWalletCreatedHintNamesTheNextStep(t *testing.T) {
 		if !strings.Contains(hint, want) {
 			t.Errorf("hint %q lacks %q", hint, want)
 		}
+	}
+}
+
+// Every verb that takes a <wallet> positional accepts an @alias, through the same
+// resolver as the address flags. They used to pass "@payee" to the gateway verbatim,
+// which answered 404 — so 'wallets balances @payee' failed while the 0x address worked.
+func TestWalletPositionalResolvesAlias(t *testing.T) {
+	g := newRecordingGateway(t)
+	const shop = "0x00000000000000000000000000000000000000aa"
+	g.respond = func(r *http.Request) any {
+		if r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/wallets") {
+			return []any{map[string]any{
+				"id": "wal-1", "address": shop,
+				"tokens": []any{map[string]any{"token_id": "tok-1", "active": false}},
+			}}
+		}
+		return map[string]any{}
+	}
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+	cfg.Aliases = map[string]string{"shop": shop}
+	if err := cfg.Save(); err != nil {
+		t.Fatalf("save config: %v", err)
+	}
+	assumeYes = true
+	t.Cleanup(func() { assumeYes, walletTokenToken, updateWalletLabel = false, "", "" })
+
+	walletPath := "/accounts/acc-1/wallets/" + shop
+	run(t, walletsGetCmd, "@shop")
+	g.last(t, http.MethodGet, walletPath)
+
+	run(t, walletsBalancesCmd, "@shop")
+	g.last(t, http.MethodGet, walletPath+"/balances")
+
+	updateWalletLabel = "Shop"
+	run(t, walletsUpdateCmd, "@shop")
+	g.last(t, http.MethodPatch, walletPath)
+
+	run(t, walletsDeleteCmd, "@shop")
+	g.last(t, http.MethodDelete, walletPath)
+
+	walletTokenChainID, walletTokenToken = 5042002, "0x3600000000000000000000000000000000000000"
+	t.Cleanup(func() { walletTokenChainID = 0 })
+	run(t, walletTokensAddCmd, "@shop")
+	g.last(t, http.MethodPost, walletPath+"/tokens")
+
+	// enable/disable match the holding by the wallet's address, so an unresolved
+	// alias failed locally as "wallet @shop not found" instead.
+	walletTokenChainID = 0
+	run(t, walletTokensEnableCmd, "@shop", "tok-1")
+	g.last(t, http.MethodPatch, walletPath+"/tokens/tok-1/enable")
+	run(t, walletTokensDisableCmd, "@shop", "tok-1")
+	g.last(t, http.MethodPatch, walletPath+"/tokens/tok-1/disable")
+
+	// An unknown alias fails locally, before any request is made.
+	before := len(g.reqs)
+	if err := walletsBalancesCmd.RunE(walletsBalancesCmd, []string{"@nope"}); err == nil || !strings.Contains(err.Error(), "unknown alias") {
+		t.Errorf("unknown alias error = %v, want an 'unknown alias' error", err)
+	}
+	if len(g.reqs) != before {
+		t.Error("an unknown <wallet> alias still reached the gateway")
 	}
 }

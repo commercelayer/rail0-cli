@@ -44,7 +44,7 @@ var (
 var walletTokensAddCmd = &cobra.Command{
 	Use:   "add <wallet>",
 	Short: "Accept a token on a wallet (re-enables a disabled holding)",
-	Long: `Accept a token, on one chain, on a wallet (by id or 0x address).
+	Long: `Accept a token, on one chain, on a wallet (by id, 0x address or @alias).
 
 An upsert: a holding that was disabled is re-enabled rather than duplicated.
 --token is a symbol (USDC) resolved on --chain-id, or the token's 0x address.
@@ -81,8 +81,12 @@ An upsert: a holding that was disabled is re-enabled rather than duplicated.
 		if cmd.Flags().Changed("default") {
 			req.Default = &walletTokenDefault
 		}
+		wallet, err := resolveAlias(args[0])
+		if err != nil {
+			return err
+		}
 		return ui.RunAPI(func() (any, error) {
-			return newClient().Wallets.AddToken(ctx, account, args[0], req)
+			return newClient().Wallets.AddToken(ctx, account, wallet, req)
 		})
 	},
 }
@@ -144,6 +148,9 @@ func walletTokenChain() (int, error) {
 func runWalletTokenAction(wallet, tokenArg string, call func(c *rail0.Client, account, wallet, tokenID string) (any, error)) error {
 	account, err := currentAccountID()
 	if err != nil {
+		return err
+	}
+	if wallet, err = resolveAlias(wallet); err != nil {
 		return err
 	}
 	chainID := walletTokenChainID // explicit only: the lookup narrows by it, no default needed

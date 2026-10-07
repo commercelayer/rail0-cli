@@ -4,7 +4,7 @@ Accept a token on a wallet (re-enables a disabled holding)
 
 ### Synopsis
 
-Accept a token, on one chain, on a wallet (by id or 0x address).
+Accept a token, on one chain, on a wallet (by id, 0x address or @alias).
 
 An upsert: a holding that was disabled is re-enabled rather than duplicated.
 --token is a symbol (USDC) resolved on --chain-id, or the token's 0x address.

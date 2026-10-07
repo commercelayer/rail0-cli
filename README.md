@@ -973,9 +973,14 @@ rail0 wallets --default true --sort -created_at
 
 #### `wallets get <wallet>`
 
+Every `wallets` verb that takes a `<wallet>` (`get`, `update`, `delete`, `balances`,
+`tokens add/enable/disable`) accepts the wallet's UUID, its `0x` address, or an
+[address-book](#address-book-aliases) `@alias`.
+
 ```sh
 rail0 wallets get 0xABCD…
 rail0 wallets get <wallet_uuid>
+rail0 wallets get @merchant
 ```
 
 #### `wallets create`
@@ -1049,6 +1054,7 @@ Read a wallet's live on-chain balances across the configured chains. Each chain 
 
 ```sh
 rail0 wallets balances 0xABCD… --chain-id 84532 --symbol USDC
+rail0 wallets balances @merchant --chain-id 5042002
 ```
 
 | Flag | Short | Description |
@@ -1371,6 +1377,19 @@ rail0 payments get 0xabc123…
 | `refunded` | Fully settled (both balances zero), by refund or by a final release |
 | `partially_refunded` | Legacy — no longer produced; a partial refund now leaves the status unchanged |
 | `expired` | Authorization window closed with nothing captured — the escrow is still on-chain and `release` (or `void`) recovers it |
+
+---
+
+#### `payments update <rail0Id>`
+
+Change a payment's description — the one field editable after create. Either party (payer or payee) can do it, in any status, closed ones included. The description lives only on the gateway (it is in nothing signed on-chain), so no signing key is needed, no money moves and no webhook is sent. Max 255 characters. Requires login.
+
+```sh
+rail0 payments update 0xabc123… -d "order #42"   # set it
+rail0 payments update 0xabc123… --clear          # remove it
+```
+
+Pass exactly one of `--description`/`-d` or `--clear`.
 
 There is no `failed` payment **status**: `failed` belongs to a **transaction**. A
 payment whose transaction reverts keeps the status it already held — the gateway

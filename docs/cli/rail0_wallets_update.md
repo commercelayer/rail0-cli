@@ -1,6 +1,6 @@
 ## rail0 wallets update
 
-Update label or active status on a wallet (by id or 0x address)
+Update label or active status on a wallet (by id, 0x address or @alias)
 
 ### Synopsis
 

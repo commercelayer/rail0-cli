@@ -1,6 +1,6 @@
 ## rail0 wallets get
 
-Fetch a single wallet (by id or 0x address)
+Fetch a single wallet (by id, 0x address or @alias)
 
 ```
 rail0 wallets get <wallet> [flags]

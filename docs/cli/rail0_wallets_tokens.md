@@ -12,8 +12,10 @@ disabled, so re-enabling one keeps its history.
 
 A wallet with active holdings always has exactly ONE default, the method a buyer
 is offered first. The first holding you add takes it; to move it, run
-'wallets tokens add' on the new one with --default. The gateway refuses to
-disable the default (422 default_payment_method) — move it first.
+'wallets tokens add' on the new one with --default. While other holdings are
+active the gateway refuses to disable the default (422 default_payment_method) —
+move it first. The LAST active holding can be disabled even as the default: the
+wallet then accepts nothing, and the next holding enabled becomes the default.
 
 ### Examples
 

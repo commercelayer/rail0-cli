@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"encoding/json"
+	"github.com/spf13/pflag"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -180,5 +181,73 @@ func TestPaymentsListHumanizesASinglePage(t *testing.T) {
 	})
 	if !strings.Contains(out, `"amount_human": "4.05"`) {
 		t.Errorf("a single page must carry amount_human, got:\n%s", out)
+	}
+}
+
+// runPaymentsUpdate runs `payments update` against a stub gateway with fresh flags
+// (the cobra flag set is package-global, so a previous test's --clear would leak) and
+// returns the request body the gateway received.
+func runPaymentsUpdate(t *testing.T, flags map[string]string) (string, error) {
+	t.Helper()
+	isolate(t)
+	isolateTokenStore(t)
+	var method, path, body string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		method, path, body = r.Method, r.URL.Path, string(b)
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"id": "p-1", "status": "captured"})
+	}))
+	defer srv.Close()
+	t.Setenv("RAIL0_BASE_URL", srv.URL)
+
+	cmd := paymentsUpdateCmd
+	cmd.Flags().VisitAll(func(f *pflag.Flag) { _ = f.Value.Set(f.DefValue); f.Changed = false })
+	t.Cleanup(func() {
+		cmd.Flags().VisitAll(func(f *pflag.Flag) { _ = f.Value.Set(f.DefValue); f.Changed = false })
+	})
+	for k, v := range flags {
+		if err := cmd.Flags().Set(k, v); err != nil {
+			t.Fatalf("set --%s: %v", k, err)
+		}
+	}
+	var err error
+	captureStdout(t, func() { err = cmd.RunE(cmd, []string{"p-1"}) })
+	if err == nil && (method != http.MethodPatch || path != "/payments/p-1") {
+		t.Errorf("want PATCH /payments/p-1, got %s %s", method, path)
+	}
+	return body, err
+}
+
+func TestPaymentsUpdateSendsTheDescription(t *testing.T) {
+	body, err := runPaymentsUpdate(t, map[string]string{"description": "order #42"})
+	if err != nil {
+		t.Fatalf("payments update: %v", err)
+	}
+	if strings.TrimSpace(body) != `{"description":"order #42"}` {
+		t.Errorf("body = %s", body)
+	}
+}
+
+// --clear is the explicit way to remove it: the gateway reads null as "clear".
+func TestPaymentsUpdateClearSendsNull(t *testing.T) {
+	body, err := runPaymentsUpdate(t, map[string]string{"clear": "true"})
+	if err != nil {
+		t.Fatalf("payments update --clear: %v", err)
+	}
+	if strings.TrimSpace(body) != `{"description":null}` {
+		t.Errorf("body = %s", body)
+	}
+}
+
+// Neither flag must not reach the gateway: an omitted --description sending null
+// would silently wipe the description.
+func TestPaymentsUpdateRequiresOneOfTheFlags(t *testing.T) {
+	body, err := runPaymentsUpdate(t, nil)
+	if err == nil {
+		t.Fatal("want an error without --description or --clear")
+	}
+	if body != "" {
+		t.Errorf("nothing should have been sent, got %s", body)
 	}
 }

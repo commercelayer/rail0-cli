@@ -1378,6 +1378,19 @@ rail0 payments get 0xabc123…
 | `partially_refunded` | Legacy — no longer produced; a partial refund now leaves the status unchanged |
 | `expired` | Authorization window closed with nothing captured — the escrow is still on-chain and `release` (or `void`) recovers it |
 
+---
+
+#### `payments update <rail0Id>`
+
+Change a payment's description — the one field editable after create. Either party (payer or payee) can do it, in any status, closed ones included. The description lives only on the gateway (it is in nothing signed on-chain), so no signing key is needed, no money moves and no webhook is sent. Max 255 characters. Requires login.
+
+```sh
+rail0 payments update 0xabc123… -d "order #42"   # set it
+rail0 payments update 0xabc123… --clear          # remove it
+```
+
+Pass exactly one of `--description`/`-d` or `--clear`.
+
 There is no `failed` payment **status**: `failed` belongs to a **transaction**. A
 payment whose transaction reverts keeps the status it already held — the gateway
 records the revert on the payment as `last_error_code` / `last_error_message` and

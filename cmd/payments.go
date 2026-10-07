@@ -91,6 +91,50 @@ transaction ('payments transactions') and in last_error_code / last_error_messag
 	},
 }
 
+// ── payments update ──────────────────────────────────────────────────────────
+
+var paymentsUpdateDescription string
+var paymentsUpdateClear bool
+
+var paymentsUpdateCmd = &cobra.Command{
+	Use:   "update <rail0Id>",
+	Short: "Change a payment's description",
+	Long: `Change the description of a payment — the one field that can be edited after
+create. Either party (payer or payee) may do it, in any status, closed ones
+included.
+
+The description lives only on the gateway: it is in nothing signed or hashed
+on-chain, so this moves no money, needs no signing key and sends no webhook.
+At most 255 characters.
+
+Pass the new text with --description, or --clear to remove it (exactly one).
+
+Requires login — run 'rail0 auth login -p 0xKey…' first.`,
+	Example: `  rail0 payments update 0xabc123… -d "order #42"
+  rail0 payments update 0xabc123… --clear`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		// Exactly one of the two: an omitted --description must not silently clear the
+		// field, so clearing is its own explicit flag.
+		set := cmd.Flags().Changed("description")
+		if set == paymentsUpdateClear {
+			return fmt.Errorf("pass exactly one of --description or --clear")
+		}
+		req := rail0.UpdatePaymentRequest{} // nil Description → JSON null → cleared
+		if set {
+			req.Description = &paymentsUpdateDescription
+		}
+		return ui.RunAPI(func() (any, error) {
+			ctx := context.Background()
+			p, err := newClient().Payments.Update(ctx, args[0], req)
+			if err != nil {
+				return nil, err
+			}
+			return humanize(ctx, p), nil
+		})
+	},
+}
+
 // ── payments list ────────────────────────────────────────────────────────────
 
 var (
@@ -1370,6 +1414,13 @@ func init() {
 
 	// payments get
 	paymentsCmd.AddCommand(paymentsGetCmd)
+
+	// payments update
+	paymentsUpdateCmd.Flags().StringVarP(&paymentsUpdateDescription, "description", "d", "",
+		"New description (max 255 characters)")
+	paymentsUpdateCmd.Flags().BoolVar(&paymentsUpdateClear, "clear", false, "Remove the description")
+	paymentsUpdateCmd.MarkFlagsMutuallyExclusive("description", "clear")
+	paymentsCmd.AddCommand(paymentsUpdateCmd)
 
 	// payments list
 	paymentsListCmd.Flags().StringVar(&paymentsListSort, "sort", "", "Sort fields (e.g. -created_at,amount)")

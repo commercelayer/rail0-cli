@@ -1,10 +1,15 @@
 package cmd
 
 import (
+	"encoding/json"
+	"io"
+	"os"
 	"slices"
 	"sort"
+	"strings"
 	"testing"
 
+	rail0 "github.com/commercelayer/rail0-go"
 	"github.com/rail0/cli/internal/config"
 )
 
@@ -16,9 +21,12 @@ func TestConfigPrecedenceAndOrigin(t *testing.T) {
 
 	k := configKeys["base-url"]
 
-	// Nothing set → built-in default.
-	if v, origin := effectiveSetting(k); v != config.DefaultBaseURL || origin != "default" {
-		t.Fatalf("default: got %q (%s)", v, origin)
+	// Nothing set → the key has no value; the commands use the CLI's fallback.
+	if _, _, ok := configuredSetting(k); ok {
+		t.Fatal("unset key reported as set")
+	}
+	if v, origin := effectiveSetting(k); v != config.DefaultBaseURL || origin != originUnset {
+		t.Fatalf("unset: got %q (%s)", v, origin)
 	}
 
 	// Persisted in the config file → origin is the file.
@@ -142,4 +150,138 @@ func TestConfiguredDefaultIsEmptyWhenNothingWasSet(t *testing.T) {
 	if got := configuredDefault("chain-id"); got != "5042002" {
 		t.Errorf("configuredDefault(chain-id) = %q after config set", got)
 	}
+}
+
+// clearConfigEnv points the config at an empty temp dir and unsets every key's env
+// var, so a test sees only what it writes.
+func clearConfigEnv(t *testing.T) {
+	t.Helper()
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	t.Setenv("HOME", dir)
+	for _, k := range configKeys {
+		t.Setenv(k.env, "")
+	}
+}
+
+// A config key either is set, and then has a value, or it is not set at all. The
+// listing used to show every key with `default` and `modified` columns, including
+// an empty default for chain-id and token — keys that looked present without a value.
+func TestConfigListShowsOnlyTheKeysThatAreSet(t *testing.T) {
+	clearConfigEnv(t)
+	cfg, _ := config.Load()
+	cfg.Settings = map[string]string{"chain-id": "5042002"}
+	if err := cfg.Save(); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("RAIL0_TOKEN_SYMBOL", "USDC")
+
+	out := captureStdout(t, func() {
+		if err := configCmd.RunE(configCmd, nil); err != nil {
+			t.Fatal(err)
+		}
+	})
+	var rows []map[string]any
+	if err := json.Unmarshal([]byte(out), &rows); err != nil {
+		t.Fatalf("listing is not JSON: %v\n%s", err, out)
+	}
+	got := map[string]map[string]any{}
+	for _, r := range rows {
+		got[r["key"].(string)] = r
+	}
+	if len(got) != 2 || got["chain-id"] == nil || got["token"] == nil {
+		t.Fatalf("want exactly chain-id and token, got %v", rows)
+	}
+	if got["chain-id"]["origin"] != "config file" || got["token"]["origin"] != "env (RAIL0_TOKEN_SYMBOL)" {
+		t.Errorf("origins: %v", rows)
+	}
+	for _, r := range rows {
+		for _, field := range []string{"default", "modified"} {
+			if _, has := r[field]; has {
+				t.Errorf("row %v still carries %q", r["key"], field)
+			}
+		}
+	}
+}
+
+func TestConfigGetOnAnUnsetKeyIsAnError(t *testing.T) {
+	clearConfigEnv(t)
+
+	err := configGetCmd.RunE(configGetCmd, []string{"token"})
+	if err == nil || !strings.Contains(err.Error(), "token is not set") ||
+		!strings.Contains(err.Error(), "the matching flag must be passed") {
+		t.Errorf("token: got %v", err)
+	}
+	err = configGetCmd.RunE(configGetCmd, []string{"base-url"})
+	if err == nil || !strings.Contains(err.Error(), "the CLI uses "+config.DefaultBaseURL) {
+		t.Errorf("base-url: got %v", err)
+	}
+}
+
+// What the CLI does for an unset key lives in the help, generated from configKeys.
+func TestConfigHelpSaysWhatHappensWhenAKeyIsNotSet(t *testing.T) {
+	for _, want := range []string{
+		"base-url",
+		"not set: the CLI uses " + config.DefaultBaseURL,
+		"chain-id",
+		"not set: the matching flag must be passed",
+		"http-timeout",
+		"not set: the CLI uses 30",
+	} {
+		if !strings.Contains(configCmd.Long, want) {
+			t.Errorf("config help lacks %q", want)
+		}
+	}
+}
+
+// A chain or token taken from the stored settings is announced, with where it came
+// from: a configured chain-id used to be applied silently, and a refusal then named
+// a chain the user had never typed.
+func TestCreateAnnouncesTheChainAndTokenItTookFromTheSettings(t *testing.T) {
+	clearConfigEnv(t)
+	seedChainCatalog(t, rail0.Blockchain{ChainID: 5042002, Name: "Arc Testnet"})
+	cfg, _ := config.Load()
+	cfg.Settings = map[string]string{"chain-id": "5042002"}
+	if err := cfg.Save(); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("RAIL0_TOKEN_SYMBOL", "USDC")
+
+	f := createPaymentFlags{}
+	f.applyConfiguredDefaults()
+	if f.chainID != 5042002 || f.token != "USDC" {
+		t.Fatalf("defaults not applied: chain %d token %q", f.chainID, f.token)
+	}
+	note := captureStderr(t, f.noteConfiguredDefaults)
+	for _, want := range []string{"token USDC (env (RAIL0_TOKEN_SYMBOL))", "Arc Testnet (5042002) (config file)"} {
+		if !strings.Contains(note, want) {
+			t.Errorf("note %q lacks %q", note, want)
+		}
+	}
+
+	// Flags the user passed are not "from config", so nothing is announced.
+	g := createPaymentFlags{chainID: 84532, token: "USDC"}
+	g.applyConfiguredDefaults()
+	if out := captureStderr(t, g.noteConfiguredDefaults); out != "" {
+		t.Errorf("announced flags the user typed: %q", out)
+	}
+}
+
+// captureStderr returns what fn writes to stderr.
+func captureStderr(t *testing.T, fn func()) string {
+	t.Helper()
+	old := os.Stderr
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stderr = w
+	defer func() { os.Stderr = old }()
+	fn()
+	_ = w.Close()
+	b, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
 }

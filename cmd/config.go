@@ -16,14 +16,21 @@ import (
 )
 
 // configKey describes a settable CLI default: its canonical name, the env var
-// that overrides the stored value, a description, the built-in default, and an
-// optional validator for `config set`.
+// that overrides the stored value, a description, what the CLI does when the key
+// is not set, and an optional validator for `config set`.
+//
+// `whenUnset` is NOT a value of the key. A key is either set (somewhere: config
+// file, env var, flag) and then has a value, or it is not set at all. What the CLI
+// falls back to in that case is the CLI's behaviour, documented in the help and
+// used by the resolution, never listed as if the key held it — `rail0 config` used
+// to show every key with a `default` column, including an empty one for chain-id
+// and token, which read as keys that exist without a value.
 type configKey struct {
-	name     string
-	env      string
-	desc     string
-	def      func() string
-	validate func(string) error
+	name      string
+	env       string
+	desc      string
+	whenUnset func() string
+	validate  func(string) error
 }
 
 // configKeys is the whitelist of settable keys. Only non-sensitive endpoint /
@@ -41,18 +48,18 @@ type configKey struct {
 // instead of from the command line.
 var configKeys = map[string]configKey{
 	"base-url": {
-		name:     "base-url",
-		env:      "RAIL0_BASE_URL",
-		desc:     "RAIL0 gateway base URL",
-		def:      func() string { return config.DefaultBaseURL },
-		validate: validateBaseURL,
+		name:      "base-url",
+		env:       "RAIL0_BASE_URL",
+		desc:      "RAIL0 gateway base URL",
+		whenUnset: func() string { return config.DefaultBaseURL },
+		validate:  validateBaseURL,
 	},
 	"chain-id": {
-		name:     "chain-id",
-		env:      "RAIL0_CHAIN_ID",
-		desc:     "Default EVM chain ID for --chain-id/-c",
-		def:      func() string { return "" },
-		validate: validatePositiveInt("chain-id"),
+		name:      "chain-id",
+		env:       "RAIL0_CHAIN_ID",
+		desc:      "Default EVM chain ID for --chain-id/-c",
+		whenUnset: func() string { return "" },
+		validate:  validatePositiveInt("chain-id"),
 	},
 	"token": {
 		name: "token",
@@ -60,42 +67,50 @@ var configKeys = map[string]configKey{
 		// would make a stale exported session token arrive here as a payment token
 		// symbol — a confusing failure in the one place a leftover RAIL0_TOKEN is
 		// still likely to exist in someone's shell.
-		env:      "RAIL0_TOKEN_SYMBOL",
-		desc:     "Default token symbol for --token/-t (e.g. USDC)",
-		def:      func() string { return "" },
-		validate: validateTokenSymbol,
+		env:       "RAIL0_TOKEN_SYMBOL",
+		desc:      "Default token symbol for --token/-t (e.g. USDC)",
+		whenUnset: func() string { return "" },
+		validate:  validateTokenSymbol,
 	},
 	"output": {
-		name:     "output",
-		env:      "RAIL0_OUTPUT",
-		desc:     "Default output mode: auto, json, pretty or quiet",
-		def:      func() string { return "auto" },
-		validate: validateOutputMode,
+		name:      "output",
+		env:       "RAIL0_OUTPUT",
+		desc:      "Default output mode: auto, json, pretty or quiet",
+		whenUnset: func() string { return "auto" },
+		validate:  validateOutputMode,
 	},
 	"http-timeout": {
-		name:     "http-timeout",
-		env:      "RAIL0_HTTP_TIMEOUT",
-		desc:     "Per-request HTTP timeout in seconds",
-		def:      func() string { return "30" },
-		validate: validatePositiveInt("http-timeout"),
+		name:      "http-timeout",
+		env:       "RAIL0_HTTP_TIMEOUT",
+		desc:      "Per-request HTTP timeout in seconds",
+		whenUnset: func() string { return "30" },
+		validate:  validatePositiveInt("http-timeout"),
 	},
 }
 
-// configuredDefault returns a key's effective value, or "" when it resolves to
-// the built-in default. Consumers use it to fill a flag the user did not pass, so
-// "" has to mean "nothing configured" — returning the built-in default would make
-// `output`'s "auto" or `http-timeout`'s "30" look like a user choice and override
-// the caller's own fallback.
+// configuredDefault returns a key's value when it is set, or "" when it is not.
+// Consumers use it to fill a flag the user did not pass, so "" has to mean "nothing
+// configured" — returning the unset fallback would make `output`'s "auto" or
+// `http-timeout`'s "30" look like a user choice and override the caller's own.
 func configuredDefault(name string) string {
 	k, err := lookupKey(name)
 	if err != nil {
 		return ""
 	}
-	value, origin := effectiveSetting(k)
-	if origin == "default" {
+	value, _, ok := configuredSetting(k)
+	if !ok {
 		return ""
 	}
 	return value
+}
+
+// unsetBehaviour says, in words, what the CLI does when the key is not set: the
+// fallback value it uses, or that the matching flag must be passed.
+func unsetBehaviour(k configKey) string {
+	if v := k.whenUnset(); v != "" {
+		return "the CLI uses " + v
+	}
+	return "the matching flag must be passed"
 }
 
 // validatePositiveInt builds a validator for a key whose value counts something
@@ -187,27 +202,42 @@ func lookupKey(name string) (configKey, error) {
 	return configKey{}, fmt.Errorf("unknown config key %q (valid: %s)", name, strings.Join(valid, ", "))
 }
 
+// originUnset is the origin effectiveSetting reports when the key is set nowhere and
+// the value is the CLI's own fallback.
+const originUnset = "not set"
+
 // effectiveSetting resolves a key exactly as the commands do —
-// flag > env > config file > built-in default — and reports the origin.
+// flag > env > config file > the CLI's fallback when unset — and reports the origin.
+// It is what the commands USE; what is SET is configuredSetting.
 func effectiveSetting(k configKey) (value, origin string) {
+	if v, o, ok := configuredSetting(k); ok {
+		return v, o
+	}
+	return k.whenUnset(), originUnset
+}
+
+// configuredSetting resolves a key from the places it can be SET — flag > env >
+// config file — and reports whether it is set at all. No fallback: an unset key has
+// no value, which is what `rail0 config` lists and `config get` answers.
+func configuredSetting(k configKey) (value, origin string, ok bool) {
 	// Only the two keys with a GLOBAL flag can be overridden per command this way.
 	// chain-id and token are overridden by per-command flags, which are not bound
 	// while `config`/`env` render — so their origin here describes the stored
 	// default, which is what those listings are about.
 	if k.name == "base-url" && baseURL != "" {
-		return baseURL, "flag (--base-url)"
+		return baseURL, "flag (--base-url)", true
 	}
 	if k.name == "output" {
 		if mode := outputFlagMode(); mode != "" {
-			return mode, "flag (--" + mode + ")"
+			return mode, "flag (--" + mode + ")", true
 		}
 	}
 	if v := os.Getenv(k.env); v != "" {
-		return v, "env (" + k.env + ")"
+		return v, "env (" + k.env + ")", true
 	}
 	// A LOAD FAILURE IS REPORTED, NOT SWALLOWED. `err == nil` alone meant a
 	// malformed config.yaml silently vanished from the resolution: `rail0 config`
-	// showed `origin: default` while the file on disk held a different base-url,
+	// showed the key as unset while the file on disk held a different base-url,
 	// and every command quietly talked to the wrong gateway. The warning goes to
 	// stderr (this returns a value, and callers render it as data) and is printed
 	// once per process, since several keys resolve through here. (#108)
@@ -215,9 +245,9 @@ func effectiveSetting(k configKey) (value, origin string) {
 	if err != nil {
 		warnConfigUnreadable(err)
 	} else if v := cfg.Settings[k.name]; v != "" {
-		return v, "config file"
+		return v, "config file", true
 	}
-	return k.def(), "default"
+	return "", "", false
 }
 
 // warnConfigUnreadable prints the load failure once per process. Deduplicated
@@ -257,8 +287,10 @@ var configCmd = &cobra.Command{
 	Short: "Manage persisted CLI defaults (base-url, chain-id, token, output, http-timeout)",
 	Long: `Manage persisted CLI defaults stored in the config file.
 
-Run bare to list every setting with its effective value and where it comes from.
-Resolution precedence is: flag  >  env var  >  config file  >  built-in default.
+Run bare to list the settings that are SET, with each value and where it comes from
+(flag, env var or config file). A key that is set nowhere is not listed: it has no
+value, and the CLI does what the key reference below says for an unset key.
+Resolution precedence is: flag  >  env var  >  config file.
 
 A stored default fills in the matching flag when you omit it, so the chain and the
 token can be set once instead of on every command. 'rail0 env <name>' sets both in
@@ -275,25 +307,16 @@ you the retyping without making the parties or the signer implicit.`,
   rail0 config unset chain-id`,
 	Args: cobra.NoArgs,
 	RunE: func(_ *cobra.Command, _ []string) error {
-		names := make([]string, 0, len(configKeys))
-		for n := range configKeys {
-			names = append(names, n)
-		}
-		sort.Strings(names)
+		names := sortedConfigKeyNames()
 		rows := make([]map[string]any, 0, len(names))
 		for _, n := range names {
-			k := configKeys[n]
-			value, origin := effectiveSetting(k)
-			// `modified` flags settings the user changed away from the built-in
-			// default (via flag/env/config file); `default` shows what that
-			// built-in value is, so an override is easy to spot at a glance.
-			rows = append(rows, map[string]any{
-				"key":      n,
-				"value":    value,
-				"origin":   origin,
-				"default":  k.def(),
-				"modified": origin != "default",
-			})
+			// Only keys that are set: a row is a key AND its value. What the CLI does
+			// for an unset key is in the help (`rail0 config --help`), not a column.
+			value, origin, ok := configuredSetting(configKeys[n])
+			if !ok {
+				continue
+			}
+			rows = append(rows, map[string]any{"key": n, "value": value, "origin": origin})
 		}
 		return ui.RunAPI(func() (any, error) { return rows, nil })
 	},
@@ -334,7 +357,7 @@ var configSetCmd = &cobra.Command{
 
 var configGetCmd = &cobra.Command{
 	Use:     "get <key>",
-	Short:   "Show a setting's effective value and origin",
+	Short:   "Show a setting's value and origin; an unset key is an error",
 	Example: `  rail0 config get base-url`,
 	Args:    cobra.ExactArgs(1),
 	RunE: func(_ *cobra.Command, args []string) error {
@@ -342,7 +365,10 @@ var configGetCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		value, origin := effectiveSetting(k)
+		value, origin, ok := configuredSetting(k)
+		if !ok {
+			return fmt.Errorf("%s is not set — when it is unset, %s", k.name, unsetBehaviour(k))
+		}
 		return ui.RunAPI(func() (any, error) {
 			return map[string]any{"key": k.name, "value": value, "origin": origin}, nil
 		})
@@ -391,6 +417,30 @@ var configPathCmd = &cobra.Command{
 	},
 }
 
+// sortedConfigKeyNames returns the settable keys in a stable order.
+func sortedConfigKeyNames() []string {
+	names := make([]string, 0, len(configKeys))
+	for n := range configKeys {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	return names
+}
+
+// configKeyReference is the help's table of settable keys: what each one sets, its
+// env var, and what the CLI does when it is not set. Built from configKeys so the
+// help cannot drift from the code.
+func configKeyReference() string {
+	var b strings.Builder
+	b.WriteString("\n\nSettable keys (env var) — and what the CLI does when the key is not set:\n")
+	for _, n := range sortedConfigKeyNames() {
+		k := configKeys[n]
+		fmt.Fprintf(&b, "  %-13s %s (%s) — not set: %s\n", n, k.desc, k.env, unsetBehaviour(k))
+	}
+	return strings.TrimRight(b.String(), "\n")
+}
+
 func init() {
+	configCmd.Long += configKeyReference()
 	configCmd.AddCommand(configSetCmd, configGetCmd, configUnsetCmd, configPathCmd)
 }

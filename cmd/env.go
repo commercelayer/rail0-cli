@@ -140,9 +140,10 @@ func staleAfterSwitch(cfg *config.Config, e environment) []string {
 	return stale
 }
 
-// envParamRows returns one row per environment-managed key with its effective
+// envParamRows returns one row per environment-managed key that is SET, with its
 // value and origin — the detail view shared by the bare `env` listing and
-// `env current --details`. Keys are emitted in sorted order for stable output.
+// `env current --details`. A key set nowhere has no value and no row, as in
+// `rail0 config`. Keys are emitted in sorted order for stable output.
 func envParamRows() []map[string]any {
 	keys := envManagedKeys()
 	rows := make([]map[string]any, 0, len(keys))
@@ -151,7 +152,10 @@ func envParamRows() []map[string]any {
 		if err != nil {
 			continue
 		}
-		value, origin := effectiveSetting(k)
+		value, origin, ok := configuredSetting(k)
+		if !ok {
+			continue
+		}
 		rows = append(rows, map[string]any{"key": key, "value": value, "origin": origin})
 	}
 	return rows
@@ -358,7 +362,7 @@ func refuseOverriddenSwitch(e environment) error {
 		return err
 	}
 	value, origin := effectiveSetting(k)
-	if origin == "config file" || origin == "default" {
+	if origin == "config file" || origin == originUnset {
 		return nil
 	}
 	if token.NormalizeBaseURL(value) == token.NormalizeBaseURL(e.settings[envIdentityKey]) {

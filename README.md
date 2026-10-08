@@ -513,29 +513,35 @@ to log out) and the command warns that the token was NOT revoked.
 ### Persisted defaults (`config`)
 
 Persist non-sensitive defaults in the config file so you don't repeat them on
-every command. Run bare to see each setting's effective value and where it comes
-from. (Secrets like private keys are never stored here.)
+every command. Run bare to list the settings that are **set**, with each value and
+where it comes from (flag, env var or config file); a key set nowhere is not listed,
+because it has no value. (Secrets like private keys are never stored here.)
 
 ```sh
-rail0 config                                  # list settings + origin (flag/env/file/default)
+rail0 config                                  # list the settings that are set + origin (flag/env/file)
 rail0 config set base-url http://localhost:9292
 rail0 config set chain-id 5042002              # fills --chain-id/-c when omitted
 rail0 config set token USDC                    # fills --token/-t when omitted
-rail0 config get chain-id                      # effective value + origin
+rail0 config get chain-id                      # value + origin; an unset key is an error
 rail0 config unset chain-id
 rail0 config path                              # config file location
 ```
 
-| Key | Fills | Env var | Built-in default |
+| Key | Fills | Env var | When not set |
 | --- | --- | --- | --- |
 | `base-url` | `--base-url` | `RAIL0_BASE_URL` | `https://api.rail0.xyz` |
-| `chain-id` | `--chain-id` / `-c` | `RAIL0_CHAIN_ID` | — |
-| `token` | `--token` / `-t` | `RAIL0_TOKEN_SYMBOL` | — |
+| `chain-id` | `--chain-id` / `-c` | `RAIL0_CHAIN_ID` | the matching flag must be passed |
+| `token` | `--token` / `-t` | `RAIL0_TOKEN_SYMBOL` | the matching flag must be passed |
 | `output` | `--json` / `--pretty` / `--quiet` | `RAIL0_OUTPUT` | `auto` |
 | `http-timeout` | — (per-request timeout, seconds) | `RAIL0_HTTP_TIMEOUT` | `30` |
 
 A stored value is the lowest-priority source, so the matching flag or env var still
-overrides it for a single command.
+overrides it for a single command. The last column is what the CLI does when the key
+is set nowhere — the CLI's behaviour, not a value of the key, which is why the listing
+does not show it. When `payments create` fills the chain or the token from a stored
+setting, it says so on stderr ("Using Arc Testnet (5042002) (config file) — pass -c/-t
+to override…"), so a refusal never names a chain you did not type without telling you
+where it came from.
 
 **Addresses and signing keys are not settable here**, and that is deliberate. Each
 already has a mechanism for not retyping the value — the [address book](#address-book-aliases)

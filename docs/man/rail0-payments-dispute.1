@@ -18,6 +18,12 @@ Disputes are payer-driven and signal-only: they move no money. Only the payer
 may dispute, while the refund window is open and the merchant holds the funds.
 
 .PP
+A reason is required: --reason takes a code from the gateway's dispute-reason
+dictionary (e.g. not_received, duplicate, other) or exactly its bytes32. It is
+checked locally before anything is sent; on a terminal, leaving it out offers
+the list. 'rail0 disputes reasons' lists the codes and what they mean.
+
+.PP
 Signal-only does not mean instant: it is still an on-chain transaction, so the
 API returns 202 and the dispute is not visible until it confirms. Add -w/--wait
 to block until it does (or fails).
@@ -40,7 +46,7 @@ Pass --private-key (-p): the CLI signs locally with the payer key and broadcasts
 
 .PP
 \fB--reason\fP=""
-	bytes32 reason code (0x…); defaults to zero
+	Required. Why the dispute is opened: a code from 'rail0 disputes reasons' (open list) or its bytes32
 
 .PP
 \fB--timeout\fP=15m0s
@@ -78,7 +84,7 @@ Pass --private-key (-p): the CLI signs locally with the payer key and broadcasts
 
 .SH EXAMPLE
 .EX
-  rail0 payments dispute 0xrail0Id… -p @buyer-key --reason 0x… --wait
+  rail0 payments dispute 0xrail0Id… -p @buyer-key --reason not_received --wait
 .EE
 
 

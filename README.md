@@ -1293,6 +1293,32 @@ rail0 disputes --sort -opened_at
 Distinct from `payments disputes <rail0Id>`, which is the open/close history of **one**
 payment.
 
+Every dispute reads its reasons back next to the raw on-chain bytes32 (`reason`,
+`close_reason`): `reason_code` / `reason_description` and `close_reason_code` /
+`close_reason_description`. A bytes32 outside the dictionary — a direct contract call, or
+a dispute opened before the dictionary existed — has a null code and the description
+`Unrecognised reason`.
+
+#### `disputes reasons`
+
+The dispute-reason dictionary: the codes `--reason` accepts on `payments dispute` and
+`payments dispute close`, with what each means. Local — no login, no request.
+
+| List | Codes |
+| --- | --- |
+| `open` | `not_received`, `not_as_described`, `damaged_or_defective`, `duplicate`, `incorrect_amount`, `cancelled`, `refund_not_received`, `unauthorized`, `other` |
+| `close` | `resolved_with_merchant`, `withdrawn`, `item_received`, `other` |
+| `system` | `full_refund` — recorded by the protocol when a full refund closes the dispute; never chosen |
+
+On-chain each reason is the bytes32 `keccak256("rail0.dispute.<code>")`; `--json` (or
+piped output) adds it to every row.
+
+```sh
+rail0 disputes reasons
+rail0 disputes reasons --kind close
+rail0 disputes reasons --json
+```
+
 ---
 
 ### Analytics
@@ -1503,7 +1529,7 @@ rail0 payments history 0xabc123…
 > (`authorize`/`charge`/`capture`/`void`/`release`/`refund`/`dispute`/`dispute close`)
 > prompt for anything you didn't pass: omit `<rail0Id>` to pick from a list of your
 > payments the operation can act on; omit `-a`/`--amount` (capture/refund) or
-> `--reason` (dispute) to be asked for it. The signing key (`-p`) is prompted
+> `--reason` (dispute, dispute close) to pick it from the list. The signing key (`-p`) is prompted
 > **hidden** if you pass neither `-p` nor `RAIL0_PRIVATE_KEY`, so it never reaches
 > the shell history or the process arguments. In a non-interactive shell a missing
 > required value is a clear error instead.
@@ -1581,13 +1607,19 @@ rail0 payments refund <rail0Id> -a 1.00 -p @merchant-key
 #### `payments dispute <rail0Id>` / `payments dispute close <rail0Id>`
 
 Open or withdraw a dispute. **Payer only**, so these sign with the buyer's key; signal-only
-(no money moves), but still on-chain transactions, so `--wait` applies. `--reason` takes an
-optional bytes32 code. A merchant cannot dismiss a dispute — a full `refund` closes it.
-`payments disputes <rail0Id>` lists one payment's open/close history.
+(no money moves), but still on-chain transactions, so `--wait` applies. A merchant cannot
+dismiss a dispute — a full `refund` closes it. `payments disputes <rail0Id>` lists one
+payment's open/close history.
+
+`--reason` is **required**: a code from the dispute-reason dictionary — the **open** list
+for `dispute`, the **close** list for `dispute close` (see [`disputes reasons`](#disputes-reasons))
+— or exactly that code's bytes32. It is checked locally, so a typo fails with the valid
+codes before anything is signed; the gateway refuses anything else with 422
+`unknown_dispute_reason`.
 
 ```sh
-rail0 payments dispute <rail0Id> -p @buyer-key --wait
-rail0 payments dispute close <rail0Id> -p @buyer-key --wait
+rail0 payments dispute <rail0Id> -p @buyer-key --reason not_received --wait
+rail0 payments dispute close <rail0Id> -p @buyer-key --reason withdrawn --wait
 ```
 
 ---

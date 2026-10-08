@@ -10,6 +10,11 @@ sign and submit it like any other operation (the gateway broadcasts it).
 Disputes are payer-driven and signal-only: they move no money. Only the payer
 may dispute, while the refund window is open and the merchant holds the funds.
 
+A reason is required: --reason takes a code from the gateway's dispute-reason
+dictionary (e.g. not_received, duplicate, other) or exactly its bytes32. It is
+checked locally before anything is sent; on a terminal, leaving it out offers
+the list. 'rail0 disputes reasons' lists the codes and what they mean.
+
 Signal-only does not mean instant: it is still an on-chain transaction, so the
 API returns 202 and the dispute is not visible until it confirms. Add -w/--wait
 to block until it does (or fails).
@@ -23,7 +28,7 @@ rail0 payments dispute <rail0Id> [flags]
 ### Examples
 
 ```
-  rail0 payments dispute 0xrail0Id… -p @buyer-key --reason 0x… --wait
+  rail0 payments dispute 0xrail0Id… -p @buyer-key --reason not_received --wait
 ```
 
 ### Options
@@ -32,7 +37,7 @@ rail0 payments dispute <rail0Id> [flags]
   -h, --help                     help for dispute
       --idempotency-key string   Make a re-run safe: the same key returns the first transaction instead of opening a second
   -p, --private-key string       Caller's secp256k1 private key (0x-prefixed hex); signs and broadcasts in one step
-      --reason string            bytes32 reason code (0x…); defaults to zero
+      --reason string            Required. Why the dispute is opened: a code from 'rail0 disputes reasons' (open list) or its bytes32
       --timeout duration         Max time to wait when --wait is set; unset, 10× the chain's measured p90 settlement, kept within 5m–15m (default 15m0s)
   -w, --wait                     Block until the operation confirms on-chain (or fails)
   -y, --yes                      Skip the confirmation prompt (required to run non-interactively)

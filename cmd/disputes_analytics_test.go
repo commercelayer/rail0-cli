@@ -206,3 +206,103 @@ func TestAnalyticsPayeeIsResolvedAndSentOnEveryVerb(t *testing.T) {
 		t.Error("an unknown --payee alias still reached the gateway")
 	}
 }
+
+// --reason is checked against the SDK's dictionaries (rail0-gateway#381) with the
+// gateway's own rule — a code, or exactly its bytes32 in any hex case — and sends the
+// CODE. The two lists are not interchangeable.
+func TestDisputeReasonResolve(t *testing.T) {
+	notReceived := rail0.DisputeOpenReasons[0]
+	cases := []struct {
+		name    string
+		list    disputeReasonList
+		in      string
+		want    rail0.DisputeReason
+		wantErr string
+	}{
+		{"open code", openDisputeReasons, "not_received", rail0.DisputeOpenReasonNotReceived, ""},
+		{"bytes32 without 0x", openDisputeReasons, notReceived.Bytes32[2:], "", "unknown open reason"},
+		{"bytes32 in upper hex sends the code", openDisputeReasons, "0x" + strings.ToUpper(notReceived.Bytes32[2:]), rail0.DisputeOpenReasonNotReceived, ""},
+		{"open bytes32", openDisputeReasons, notReceived.Bytes32, rail0.DisputeOpenReasonNotReceived, ""},
+		{"close code on the open list", openDisputeReasons, "withdrawn", "", "use one of: not_received"},
+		{"close code", closeDisputeReasons, "withdrawn", rail0.DisputeCloseReasonWithdrawn, ""},
+		{"open code on the close list", closeDisputeReasons, "duplicate", "", "unknown close reason"},
+		{"system reason", closeDisputeReasons, "full_refund", "", "recorded by the protocol"},
+		{"old-style bytes32", closeDisputeReasons, "0x01", "", "rail0 disputes reasons"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got, err := c.list.resolve(c.in)
+			if c.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), c.wantErr) {
+					t.Errorf("err = %v, want it to contain %q", err, c.wantErr)
+				}
+				return
+			}
+			if err != nil || got != c.want {
+				t.Errorf("got (%q, %v), want %q", got, err, c.want)
+			}
+		})
+	}
+}
+
+// Without a terminal there is no one to pick for: a missing reason fails with the
+// list rather than reaching the gateway's 400.
+func TestDisputeReasonIsRequiredWithoutATerminal(t *testing.T) {
+	_, err := closeDisputeReasons.orPick("")
+	if err == nil || !strings.Contains(err.Error(), "--reason is required") || !strings.Contains(err.Error(), "withdrawn") {
+		t.Errorf("err = %v, want the required error listing the close codes", err)
+	}
+}
+
+// A bad --reason is refused before the signing key, the picker or any request.
+func TestDisputeCommandsRejectAnUnknownReasonLocally(t *testing.T) {
+	t.Cleanup(func() { disputeReason, closeDisputeReason = "", "" })
+	disputeReason, closeDisputeReason = "not_a_reason", "not_received"
+	if err := paymentsDisputeCmd.RunE(paymentsDisputeCmd, []string{"0xabc"}); err == nil || !strings.Contains(err.Error(), "unknown open reason") {
+		t.Errorf("dispute: err = %v", err)
+	}
+	if err := paymentsDisputeCloseCmd.RunE(paymentsDisputeCloseCmd, []string{"0xabc"}); err == nil || !strings.Contains(err.Error(), "unknown close reason") {
+		t.Errorf("dispute close: err = %v", err)
+	}
+	for _, c := range []*cobra.Command{paymentsDisputeCmd, paymentsDisputeCloseCmd} {
+		if c.Flags().Lookup("reason") == nil {
+			t.Errorf("%s has no --reason", c.CommandPath())
+		}
+	}
+}
+
+func TestDisputesReasonsRows(t *testing.T) {
+	if cmd, _, err := rootCmd.Find([]string{"disputes", "reasons"}); err != nil || cmd.Name() != "reasons" {
+		t.Fatalf("rail0 disputes reasons is not registered (%v)", err)
+	}
+
+	all, err := disputeReasonRows("", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := len(rail0.DisputeOpenReasons) + len(rail0.DisputeCloseReasons) + len(rail0.DisputeSystemCloseReasons)
+	if len(all) != want {
+		t.Fatalf("rows = %d, want %d", len(all), want)
+	}
+	if all[0].Kind != "open" || all[len(all)-1].Code != "full_refund" || all[0].Bytes32 != "" {
+		t.Errorf("first %+v, last %+v", all[0], all[len(all)-1])
+	}
+
+	closeRows, err := disputeReasonRows("close", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(closeRows) != len(rail0.DisputeCloseReasons) || closeRows[0].Bytes32 != rail0.DisputeCloseReasons[0].Bytes32 {
+		t.Errorf("close rows: %+v", closeRows)
+	}
+
+	if _, err := disputeReasonRows("opened", false); err == nil {
+		t.Error("an unknown --kind must fail")
+	}
+}
+
+func TestUnknownDisputeReasonHasAHint(t *testing.T) {
+	if h := hintFor("unknown_dispute_reason", ""); !strings.Contains(h, "rail0 disputes reasons") {
+		t.Errorf("hint = %q", h)
+	}
+}

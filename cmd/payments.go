@@ -1241,14 +1241,25 @@ sign and submit it like any other operation (the gateway broadcasts it).
 Disputes are payer-driven and signal-only: they move no money. Only the payer
 may dispute, while the refund window is open and the merchant holds the funds.
 
+A reason is required: --reason takes a code from the gateway's dispute-reason
+dictionary (e.g. not_received, duplicate, other) or exactly its bytes32. It is
+checked locally before anything is sent; on a terminal, leaving it out offers
+the list. 'rail0 disputes reasons' lists the codes and what they mean.
+
 Signal-only does not mean instant: it is still an on-chain transaction, so the
 API returns 202 and the dispute is not visible until it confirms. Add -w/--wait
 to block until it does (or fails).
 
 Pass --private-key (-p): the CLI signs locally with the payer key and broadcasts.`,
-	Example: `  rail0 payments dispute 0xrail0Id… -p @buyer-key --reason 0x… --wait`,
+	Example: `  rail0 payments dispute 0xrail0Id… -p @buyer-key --reason not_received --wait`,
 	Args:    cobra.MaximumNArgs(1),
 	RunE: func(_ *cobra.Command, args []string) error {
+		// A bad --reason is a typo: fail before any prompt, key or request.
+		if disputeReason != "" {
+			if _, err := openDisputeReasons.resolve(disputeReason); err != nil {
+				return err
+			}
+		}
 		signingKey, err := signingKeyOrPrompt(disputePrivateKey)
 		if err != nil {
 			return err
@@ -1260,15 +1271,13 @@ Pass --private-key (-p): the CLI signs locally with the payer key and broadcasts
 			return err
 		}
 		rail0Id := idInput
-		if disputeReason == "" {
-			disputeReason, err = promptValue("Reason", "optional bytes32 reason (0x…); blank for none", true)
-			if err != nil {
-				return err
-			}
+		reason, err := openDisputeReasons.orPick(disputeReason)
+		if err != nil {
+			return err
 		}
 		// An on-chain, gas-burning action the counterparty sees — not undoable
 		// except by explicitly closing the dispute. (#104)
-		if err := confirmDestructive(fmt.Sprintf("Open a dispute on payment %s? This is an on-chain action the merchant will see.", shortID(rail0Id))); err != nil {
+		if err := confirmDestructive(fmt.Sprintf("Open a dispute on payment %s (reason: %s)? This is an on-chain action the merchant will see.", shortID(rail0Id), reason)); err != nil {
 			return err
 		}
 		return ui.RunAPIWithMessage(actionLabel("Opening dispute…"), func() (any, error) {
@@ -1276,7 +1285,7 @@ Pass --private-key (-p): the CLI signs locally with the payer key and broadcasts
 			if err != nil {
 				return nil, err
 			}
-			prep, err := client.Payments.DisputePrepareWithKey(ctx, rail0Id, idempotencyKey, disputeReason)
+			prep, err := client.Payments.DisputePrepareWithKey(ctx, rail0Id, idempotencyKey, reason)
 			if err != nil {
 				return nil, err
 			}
@@ -1309,14 +1318,25 @@ merchant's only way to close a dispute is a full 'refund', which closes it
 automatically. A withdrawn dispute can be reopened while the refund window is
 open.
 
+A reason is required, from the CLOSE list (resolved_with_merchant, withdrawn,
+item_received, other) or exactly its bytes32 — not the open list. full_refund is
+recorded by the protocol when a refund closes the dispute and can't be chosen.
+'rail0 disputes reasons --kind close' lists them; on a terminal, leaving
+--reason out offers the list.
+
 Like 'dispute', this is an on-chain transaction: the API returns 202 and the
 close is not visible until it confirms. Add -w/--wait to block until it does
 (or fails).
 
 Pass --private-key (-p): the CLI signs locally with the payer key and broadcasts.`,
-	Example: `  rail0 payments dispute close 0xrail0Id… -p @buyer-key --wait`,
+	Example: `  rail0 payments dispute close 0xrail0Id… -p @buyer-key --reason withdrawn --wait`,
 	Args:    cobra.MaximumNArgs(1),
 	RunE: func(_ *cobra.Command, args []string) error {
+		if closeDisputeReason != "" {
+			if _, err := closeDisputeReasons.resolve(closeDisputeReason); err != nil {
+				return err
+			}
+		}
 		signingKey, err := signingKeyOrPrompt(closeDisputePrivateKey)
 		if err != nil {
 			return err
@@ -1328,14 +1348,12 @@ Pass --private-key (-p): the CLI signs locally with the payer key and broadcasts
 			return err
 		}
 		rail0Id := idInput
-		if closeDisputeReason == "" {
-			closeDisputeReason, err = promptValue("Reason", "optional bytes32 reason (0x…); blank for none", true)
-			if err != nil {
-				return err
-			}
+		reason, err := closeDisputeReasons.orPick(closeDisputeReason)
+		if err != nil {
+			return err
 		}
 		// Closing is on-chain too, and reopening requires a fresh dispute. (#104)
-		if err := confirmDestructive(fmt.Sprintf("Close the dispute on payment %s?", shortID(rail0Id))); err != nil {
+		if err := confirmDestructive(fmt.Sprintf("Close the dispute on payment %s (reason: %s)?", shortID(rail0Id), reason)); err != nil {
 			return err
 		}
 		return ui.RunAPIWithMessage(actionLabel("Closing dispute…"), func() (any, error) {
@@ -1343,7 +1361,7 @@ Pass --private-key (-p): the CLI signs locally with the payer key and broadcasts
 			if err != nil {
 				return nil, err
 			}
-			prep, err := client.Payments.CloseDisputePrepareWithKey(ctx, rail0Id, idempotencyKey, closeDisputeReason)
+			prep, err := client.Payments.CloseDisputePrepareWithKey(ctx, rail0Id, idempotencyKey, reason)
 			if err != nil {
 				return nil, err
 			}
@@ -1508,11 +1526,15 @@ func init() {
 	addSigningFlags(paymentsDisputeCmd, &disputePrivateKey)
 	addWaitFlags(paymentsDisputeCmd)
 	addYesFlag(paymentsDisputeCmd)
-	paymentsDisputeCmd.Flags().StringVar(&disputeReason, "reason", "", "bytes32 reason code (0x…); defaults to zero")
+	paymentsDisputeCmd.Flags().StringVar(&disputeReason, "reason", "",
+		"Required. Why the dispute is opened: a code from 'rail0 disputes reasons' (open list) or its bytes32")
+	_ = paymentsDisputeCmd.RegisterFlagCompletionFunc("reason", fixedCompletions(openDisputeReasons.codes()...))
 	addSigningFlags(paymentsDisputeCloseCmd, &closeDisputePrivateKey)
 	addWaitFlags(paymentsDisputeCloseCmd)
 	addYesFlag(paymentsDisputeCloseCmd)
-	paymentsDisputeCloseCmd.Flags().StringVar(&closeDisputeReason, "reason", "", "bytes32 reason code (0x…); defaults to zero")
+	paymentsDisputeCloseCmd.Flags().StringVar(&closeDisputeReason, "reason", "",
+		"Required. Why the dispute is closed: a code from 'rail0 disputes reasons' (close list) or its bytes32")
+	_ = paymentsDisputeCloseCmd.RegisterFlagCompletionFunc("reason", fixedCompletions(closeDisputeReasons.codes()...))
 	paymentsDisputeCmd.AddCommand(paymentsDisputeCloseCmd)
 	paymentsCmd.AddCommand(paymentsDisputeCmd)
 	paymentsDisputesCmd.Flags().StringVar(&disputesStatus, "status", "", "Filter by dispute status: open or closed")

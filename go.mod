@@ -69,8 +69,8 @@ require (
 )
 
 // Still the sibling checkout, because rail0-go is still a private repo the module proxy
-// cannot fetch. It IS tagged now: v1.3.0 is the first release carrying everything this CLI
-// uses (Blockchain.Settlement, Payment.Decimals, the Statuses filters and
-// TopicPaymentsAuthorizationExpiring included), so once the repo is public this becomes a
-// two-line change: drop this directive and require v1.3.0 or later.
+// cannot fetch. The CLI now needs the dispute-reason dictionary (DisputeReason and the
+// required reason on the dispute prepares, rail0-go#59), which no tag carries yet: the
+// first release after v1.4.0 will be the minimum, so once the repo is public this becomes
+// a two-line change: drop this directive and require that release or later.
 replace github.com/commercelayer/rail0-go => ../rail0-go

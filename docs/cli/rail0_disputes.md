@@ -49,4 +49,5 @@ rail0 disputes [flags]
 ### SEE ALSO
 
 * [rail0](rail0.md)	 - CLI for the RAIL0 stablecoin payment protocol
+* [rail0 disputes reasons](rail0_disputes_reasons.md)	 - List the dispute reasons: the codes --reason accepts
 

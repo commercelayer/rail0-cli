@@ -36,6 +36,11 @@ func SetQuiet(on bool) { quietMode = on }
 // fields --quiet never prints can skip the requests that only feed them.
 func IsQuiet() bool { return quietMode }
 
+// IsMachineOutput reports whether the result will be emitted as plain JSON — --json
+// is set or stdout is not a terminal — the same test RunAPI applies. A caller can add
+// fields only a script needs without cluttering the terminal views.
+func IsMachineOutput() bool { return jsonMode || !isTerminal(os.Stdout) }
+
 func isTerminal(f *os.File) bool { return term.IsTerminal(f.Fd()) }
 
 // RunAPI executes fn and prints its result. On a TTY it shows a bubbletea
@@ -62,7 +67,7 @@ func RunAPIWithMessage(msg string, fn func() (any, error)) error {
 		}
 		return printQuiet(data)
 	}
-	if jsonMode || !isTerminal(os.Stdout) {
+	if IsMachineOutput() {
 		data, err := fn()
 		if err != nil {
 			return err

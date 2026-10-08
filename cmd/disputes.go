@@ -2,7 +2,12 @@ package cmd
 
 import (
 	"context"
+	"fmt"
+	"os"
+	"strings"
 
+	"github.com/charmbracelet/huh"
+	"github.com/charmbracelet/x/term"
 	rail0 "github.com/commercelayer/rail0-go"
 	"github.com/rail0/cli/internal/ui"
 	"github.com/spf13/cobra"
@@ -65,4 +70,154 @@ func init() {
 	// typo here costs a round-trip to find out.
 	_ = disputesCmd.RegisterFlagCompletionFunc("status",
 		fixedCompletions("open", "closed"))
+
+	disputesReasonsCmd.Flags().StringVar(&disputeReasonsKind, "kind", "", "Only one list: open, close or system")
+	_ = disputesReasonsCmd.RegisterFlagCompletionFunc("kind",
+		fixedCompletions("open", "close", "system"))
+	disputesCmd.AddCommand(disputesReasonsCmd)
+}
+
+// ── dispute reasons ─────────────────────────────────────────────────────────
+
+// disputeReasonList is one side of the gateway's dispute-reason dictionary
+// (rail0-gateway#381): the codes a dispute can be opened with, or closed with. The
+// two are separate lists — `other` sits in both with different descriptions — so
+// every check names which one it applies. The entries come from the SDK, which
+// generates them from the gateway's OpenAPI; nothing is listed here by hand.
+type disputeReasonList struct {
+	kind   string // "open" / "close", as the errors and the picker name it
+	list   []rail0.DisputeReasonInfo
+	lookup func(string) (rail0.DisputeReasonInfo, bool)
+}
+
+var (
+	openDisputeReasons  = disputeReasonList{"open", rail0.DisputeOpenReasons, rail0.LookupDisputeOpenReason}
+	closeDisputeReasons = disputeReasonList{"close", rail0.DisputeCloseReasons, rail0.LookupDisputeCloseReason}
+)
+
+func (l disputeReasonList) codes() []string {
+	out := make([]string, len(l.list))
+	for i, e := range l.list {
+		out[i] = string(e.Code)
+	}
+	return out
+}
+
+// resolve checks a --reason value locally with the rule the gateway applies (a code,
+// or exactly its bytes32 in any hex case) and returns the CODE to send, so a typo
+// fails here with the valid list rather than as a 422 after the session round-trip.
+// full_refund gets its own message on the close side: it IS a close reason, just one
+// only the protocol records, and "unknown" would send the user looking for a typo.
+func (l disputeReasonList) resolve(input string) (rail0.DisputeReason, error) {
+	if info, ok := l.lookup(input); ok {
+		return info.Code, nil
+	}
+	if l.kind == "close" {
+		v := strings.TrimSpace(input)
+		for _, e := range rail0.DisputeSystemCloseReasons {
+			if string(e.Code) == v || strings.EqualFold(e.Bytes32, v) {
+				return "", fmt.Errorf("%s is recorded by the protocol itself (a full refund closes the dispute) and can't be chosen — use one of: %s",
+					e.Code, strings.Join(l.codes(), ", "))
+			}
+		}
+	}
+	return "", fmt.Errorf("unknown %s reason %q — use one of: %s (see 'rail0 disputes reasons')",
+		l.kind, input, strings.Join(l.codes(), ", "))
+}
+
+// orPick returns the reason for flag: resolved when given; otherwise picked from
+// the list on a TTY; otherwise an error, since the gateway requires one (400) and a
+// script has no one to ask.
+func (l disputeReasonList) orPick(flag string) (rail0.DisputeReason, error) {
+	if flag != "" {
+		return l.resolve(flag)
+	}
+	if !term.IsTerminal(os.Stdin.Fd()) {
+		return "", fmt.Errorf("--reason is required — one of: %s (see 'rail0 disputes reasons')", strings.Join(l.codes(), ", "))
+	}
+	opts := make([]huh.Option[string], len(l.list))
+	for i, e := range l.list {
+		opts[i] = huh.NewOption(fmt.Sprintf("%s — %s", e.Code, e.Description), string(e.Code))
+	}
+	var chosen string
+	if err := huh.NewSelect[string]().
+		Title(fmt.Sprintf("Reason to %s the dispute", l.kind)).
+		Options(opts...).
+		Value(&chosen).
+		Run(); err != nil {
+		abortOrReturn(err)
+		return "", err
+	}
+	return rail0.DisputeReason(chosen), nil
+}
+
+var disputeReasonsKind string
+
+// disputeReasonRow is one line of `rail0 disputes reasons`. Bytes32 is only filled
+// for machine output: on a terminal the 66-character hash drowns the two columns a
+// person reads, while a script matching on-chain values needs it.
+type disputeReasonRow struct {
+	Kind        string `json:"kind"`
+	Code        string `json:"code"`
+	Description string `json:"description"`
+	Bytes32     string `json:"bytes32,omitempty"`
+}
+
+var disputesReasonsCmd = &cobra.Command{
+	Use:   "reasons",
+	Short: "List the dispute reasons: the codes --reason accepts",
+	Long: `List the dispute-reason dictionary: the codes 'rail0 payments dispute' and
+'rail0 payments dispute close' accept for --reason, with their descriptions.
+
+There are two lists. A dispute is OPENED with an 'open' reason and CLOSED with a
+'close' reason; 'other' is in both. The 'system' reason (full_refund) is never
+chosen: the protocol records it when a full refund closes an open dispute, and it
+is listed so a dispute's close_reason_code can be read.
+
+On-chain each reason is the bytes32 keccak256("rail0.dispute.<code>"); --json (or
+piped output) adds it to every row. The list is the one this CLI was built with —
+the gateway's is authoritative.`,
+	Example: `  rail0 disputes reasons
+  rail0 disputes reasons --kind close
+  rail0 disputes reasons --json`,
+	Args: cobra.NoArgs,
+	RunE: func(_ *cobra.Command, _ []string) error {
+		rows, err := disputeReasonRows(disputeReasonsKind, ui.IsMachineOutput())
+		if err != nil {
+			return err
+		}
+		return ui.RunAPI(func() (any, error) { return rows, nil })
+	},
+}
+
+// disputeReasonRows flattens the dictionaries (or the one kind asks for) into rows,
+// open first, then close, then system — the order a user meets them in.
+func disputeReasonRows(kind string, withBytes32 bool) ([]disputeReasonRow, error) {
+	lists := []struct {
+		kind string
+		list []rail0.DisputeReasonInfo
+	}{
+		{"open", rail0.DisputeOpenReasons},
+		{"close", rail0.DisputeCloseReasons},
+		{"system", rail0.DisputeSystemCloseReasons},
+	}
+	var rows []disputeReasonRow
+	matched := false
+	for _, l := range lists {
+		if kind != "" && kind != l.kind {
+			continue
+		}
+		matched = true
+		for _, e := range l.list {
+			row := disputeReasonRow{Kind: l.kind, Code: string(e.Code), Description: e.Description}
+			if withBytes32 {
+				row.Bytes32 = e.Bytes32
+			}
+			rows = append(rows, row)
+		}
+	}
+	if !matched {
+		return nil, fmt.Errorf("--kind must be open, close or system, got %q", kind)
+	}
+	return rows, nil
 }

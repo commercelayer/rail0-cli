@@ -146,14 +146,15 @@ rail0 payments refund "$P3" -a 1.00 -p @payee --wait
 ## 6. Dispute (la apre solo il buyer)
 
 ```bash
-rail0 payments dispute "$P1" -p @payer --wait
+rail0 disputes reasons
+rail0 payments dispute "$P1" -p @payer --reason not_received --wait
 rail0 disputes --status open
 ```
 
 > **Admin:** pagina Disputes. Il merchant non può chiudere la dispute: la chiude il buyer, oppure un refund completo.
 
 ```bash
-rail0 payments dispute close "$P1" -p @payer --wait
+rail0 payments dispute close "$P1" -p @payer --reason withdrawn --wait
 ```
 
 ---

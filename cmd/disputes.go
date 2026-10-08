@@ -103,45 +103,56 @@ func (l disputeReasonList) codes() []string {
 	return out
 }
 
+// zeroBytes32 is the all-zero word: the gateway reads it as "no reason", exactly as
+// it does an omitted reason, so the CLI accepts it as an explicit way to say none.
+var zeroBytes32 = "0x" + strings.Repeat("0", 64)
+
 // resolve checks a --reason value locally with the rule the gateway applies (a code,
 // or exactly its bytes32 in any hex case) and returns the CODE to send, so a typo
 // fails here with the valid list rather than as a 422 after the session round-trip.
-// full_refund gets its own message on the close side: it IS a close reason, just one
-// only the protocol records, and "unknown" would send the user looking for a typo.
+// A blank value or the zero bytes32 means no reason and resolves to "" (the SDK then
+// leaves the field out). full_refund gets its own message on the close side: it IS
+// a close reason, just one only the protocol records, and "unknown" would send the
+// user looking for a typo.
 func (l disputeReasonList) resolve(input string) (rail0.DisputeReason, error) {
-	if info, ok := l.lookup(input); ok {
+	v := strings.TrimSpace(input)
+	if v == "" || strings.EqualFold(v, zeroBytes32) {
+		return "", nil
+	}
+	if info, ok := l.lookup(v); ok {
 		return info.Code, nil
 	}
 	if l.kind == "close" {
-		v := strings.TrimSpace(input)
 		for _, e := range rail0.DisputeSystemCloseReasons {
 			if string(e.Code) == v || strings.EqualFold(e.Bytes32, v) {
-				return "", fmt.Errorf("%s is recorded by the protocol itself (a full refund closes the dispute) and can't be chosen — use one of: %s",
+				return "", fmt.Errorf("%s is recorded by the protocol itself (a full refund closes the dispute) and can't be chosen — use one of: %s, or leave --reason out for no reason",
 					e.Code, strings.Join(l.codes(), ", "))
 			}
 		}
 	}
-	return "", fmt.Errorf("unknown %s reason %q — use one of: %s (see 'rail0 disputes reasons')",
+	return "", fmt.Errorf("unknown %s reason %q — use one of: %s, or leave --reason out for no reason (see 'rail0 disputes reasons')",
 		l.kind, input, strings.Join(l.codes(), ", "))
 }
 
-// orPick returns the reason for flag: resolved when given; otherwise picked from
-// the list on a TTY; otherwise an error, since the gateway requires one (400) and a
-// script has no one to ask.
+// orPick returns the reason for flag. The reason is optional (rail0-gateway#382):
+// a given flag is resolved; otherwise a terminal offers the list with "No reason"
+// first, so Enter goes on without one; a script with no flag simply sends none.
+// "" means no reason.
 func (l disputeReasonList) orPick(flag string) (rail0.DisputeReason, error) {
 	if flag != "" {
 		return l.resolve(flag)
 	}
 	if !term.IsTerminal(os.Stdin.Fd()) {
-		return "", fmt.Errorf("--reason is required — one of: %s (see 'rail0 disputes reasons')", strings.Join(l.codes(), ", "))
+		return "", nil
 	}
-	opts := make([]huh.Option[string], len(l.list))
-	for i, e := range l.list {
-		opts[i] = huh.NewOption(fmt.Sprintf("%s — %s", e.Code, e.Description), string(e.Code))
+	opts := make([]huh.Option[string], 0, len(l.list)+1)
+	opts = append(opts, huh.NewOption("No reason", ""))
+	for _, e := range l.list {
+		opts = append(opts, huh.NewOption(fmt.Sprintf("%s — %s", e.Code, e.Description), string(e.Code)))
 	}
 	var chosen string
 	if err := huh.NewSelect[string]().
-		Title(fmt.Sprintf("Reason to %s the dispute", l.kind)).
+		Title(fmt.Sprintf("Reason to %s the dispute (optional)", l.kind)).
 		Options(opts...).
 		Value(&chosen).
 		Run(); err != nil {
@@ -149,6 +160,14 @@ func (l disputeReasonList) orPick(flag string) (rail0.DisputeReason, error) {
 		return "", err
 	}
 	return rail0.DisputeReason(chosen), nil
+}
+
+// reasonLabel is how a confirmation prompt names the chosen reason.
+func reasonLabel(r rail0.DisputeReason) string {
+	if r == "" {
+		return "no reason"
+	}
+	return string(r)
 }
 
 var disputeReasonsKind string

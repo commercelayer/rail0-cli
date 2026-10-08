@@ -1241,10 +1241,12 @@ sign and submit it like any other operation (the gateway broadcasts it).
 Disputes are payer-driven and signal-only: they move no money. Only the payer
 may dispute, while the refund window is open and the merchant holds the funds.
 
-A reason is required: --reason takes a code from the gateway's dispute-reason
+A reason is optional: --reason takes a code from the gateway's dispute-reason
 dictionary (e.g. not_received, duplicate, other) or exactly its bytes32. It is
-checked locally before anything is sent; on a terminal, leaving it out offers
-the list. 'rail0 disputes reasons' lists the codes and what they mean.
+checked locally before anything is sent. Leave it out to open the dispute with
+no reason (the zero bytes32, read back as "No reason given"); on a terminal,
+leaving it out offers the list with "No reason" first. 'rail0 disputes reasons'
+lists the codes and what they mean.
 
 Signal-only does not mean instant: it is still an on-chain transaction, so the
 API returns 202 and the dispute is not visible until it confirms. Add -w/--wait
@@ -1277,7 +1279,7 @@ Pass --private-key (-p): the CLI signs locally with the payer key and broadcasts
 		}
 		// An on-chain, gas-burning action the counterparty sees — not undoable
 		// except by explicitly closing the dispute. (#104)
-		if err := confirmDestructive(fmt.Sprintf("Open a dispute on payment %s (reason: %s)? This is an on-chain action the merchant will see.", shortID(rail0Id), reason)); err != nil {
+		if err := confirmDestructive(fmt.Sprintf("Open a dispute on payment %s (reason: %s)? This is an on-chain action the merchant will see.", shortID(rail0Id), reasonLabel(reason))); err != nil {
 			return err
 		}
 		return ui.RunAPIWithMessage(actionLabel("Opening dispute…"), func() (any, error) {
@@ -1318,11 +1320,12 @@ merchant's only way to close a dispute is a full 'refund', which closes it
 automatically. A withdrawn dispute can be reopened while the refund window is
 open.
 
-A reason is required, from the CLOSE list (resolved_with_merchant, withdrawn,
-item_received, other) or exactly its bytes32 — not the open list. full_refund is
-recorded by the protocol when a refund closes the dispute and can't be chosen.
-'rail0 disputes reasons --kind close' lists them; on a terminal, leaving
---reason out offers the list.
+A reason is optional; when given it comes from the CLOSE list
+(resolved_with_merchant, withdrawn, item_received, other) or is exactly its
+bytes32 — not the open list. full_refund is recorded by the protocol when a
+refund closes the dispute and can't be chosen. Leave --reason out to close with
+no reason ("No reason given"); on a terminal, leaving it out offers the list with
+"No reason" first. 'rail0 disputes reasons --kind close' lists the codes.
 
 Like 'dispute', this is an on-chain transaction: the API returns 202 and the
 close is not visible until it confirms. Add -w/--wait to block until it does
@@ -1353,7 +1356,7 @@ Pass --private-key (-p): the CLI signs locally with the payer key and broadcasts
 			return err
 		}
 		// Closing is on-chain too, and reopening requires a fresh dispute. (#104)
-		if err := confirmDestructive(fmt.Sprintf("Close the dispute on payment %s (reason: %s)?", shortID(rail0Id), reason)); err != nil {
+		if err := confirmDestructive(fmt.Sprintf("Close the dispute on payment %s (reason: %s)?", shortID(rail0Id), reasonLabel(reason))); err != nil {
 			return err
 		}
 		return ui.RunAPIWithMessage(actionLabel("Closing dispute…"), func() (any, error) {
@@ -1527,13 +1530,13 @@ func init() {
 	addWaitFlags(paymentsDisputeCmd)
 	addYesFlag(paymentsDisputeCmd)
 	paymentsDisputeCmd.Flags().StringVar(&disputeReason, "reason", "",
-		"Required. Why the dispute is opened: a code from 'rail0 disputes reasons' (open list) or its bytes32")
+		"Optional. Why the dispute is opened: a code from 'rail0 disputes reasons' (open list) or its bytes32; omit for no reason")
 	_ = paymentsDisputeCmd.RegisterFlagCompletionFunc("reason", fixedCompletions(openDisputeReasons.codes()...))
 	addSigningFlags(paymentsDisputeCloseCmd, &closeDisputePrivateKey)
 	addWaitFlags(paymentsDisputeCloseCmd)
 	addYesFlag(paymentsDisputeCloseCmd)
 	paymentsDisputeCloseCmd.Flags().StringVar(&closeDisputeReason, "reason", "",
-		"Required. Why the dispute is closed: a code from 'rail0 disputes reasons' (close list) or its bytes32")
+		"Optional. Why the dispute is closed: a code from 'rail0 disputes reasons' (close list) or its bytes32; omit for no reason")
 	_ = paymentsDisputeCloseCmd.RegisterFlagCompletionFunc("reason", fixedCompletions(closeDisputeReasons.codes()...))
 	paymentsDisputeCmd.AddCommand(paymentsDisputeCloseCmd)
 	paymentsCmd.AddCommand(paymentsDisputeCmd)

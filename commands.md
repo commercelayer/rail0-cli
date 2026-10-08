@@ -147,7 +147,7 @@ rail0 payments refund "$P3" -a 1.00 -p @payee --wait
 
 ```bash
 rail0 disputes reasons
-rail0 payments dispute "$P1" -p @payer --reason not_received --wait
+rail0 payments dispute "$P1" -p @payer --reason not_received --wait   # --reason è facoltativo
 rail0 disputes --status open
 ```
 

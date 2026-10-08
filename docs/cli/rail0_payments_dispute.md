@@ -10,10 +10,12 @@ sign and submit it like any other operation (the gateway broadcasts it).
 Disputes are payer-driven and signal-only: they move no money. Only the payer
 may dispute, while the refund window is open and the merchant holds the funds.
 
-A reason is required: --reason takes a code from the gateway's dispute-reason
+A reason is optional: --reason takes a code from the gateway's dispute-reason
 dictionary (e.g. not_received, duplicate, other) or exactly its bytes32. It is
-checked locally before anything is sent; on a terminal, leaving it out offers
-the list. 'rail0 disputes reasons' lists the codes and what they mean.
+checked locally before anything is sent. Leave it out to open the dispute with
+no reason (the zero bytes32, read back as "No reason given"); on a terminal,
+leaving it out offers the list with "No reason" first. 'rail0 disputes reasons'
+lists the codes and what they mean.
 
 Signal-only does not mean instant: it is still an on-chain transaction, so the
 API returns 202 and the dispute is not visible until it confirms. Add -w/--wait
@@ -37,7 +39,7 @@ rail0 payments dispute <rail0Id> [flags]
   -h, --help                     help for dispute
       --idempotency-key string   Make a re-run safe: the same key returns the first transaction instead of opening a second
   -p, --private-key string       Caller's secp256k1 private key (0x-prefixed hex); signs and broadcasts in one step
-      --reason string            Required. Why the dispute is opened: a code from 'rail0 disputes reasons' (open list) or its bytes32
+      --reason string            Optional. Why the dispute is opened: a code from 'rail0 disputes reasons' (open list) or its bytes32; omit for no reason
       --timeout duration         Max time to wait when --wait is set; unset, 10× the chain's measured p90 settlement, kept within 5m–15m (default 15m0s)
   -w, --wait                     Block until the operation confirms on-chain (or fails)
   -y, --yes                      Skip the confirmation prompt (required to run non-interactively)

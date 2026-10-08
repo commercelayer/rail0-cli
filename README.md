@@ -1040,11 +1040,13 @@ rail0 wallets update 0xABCD… --label "New label" --active false
 
 Existing payments are unaffected. They carry their own payee address and settle whatever the flag says now. Reversible with `--active true`.
 
+The account's **only active wallet cannot be switched off** — the gateway refuses it with `422 last_active_wallet`. Login resolves the account from the signing wallet, so an account with no active wallet could neither act nor add a wallet back. Register another (`wallets create`) or reactivate one (`--active true`) first.
+
 #### `wallets delete <wallet>`
 
 **A soft delete, despite the verb.** The gateway sets `active=false` and keeps the row — it is the *same operation* as `wallets update <wallet> --active false`, with the same consequences and the same way back. Nothing is removed, nothing on-chain is touched, no funds move.
 
-Both spellings exist because the API exposes a `DELETE` verb as well as the flag. Use whichever reads better where you are writing it.
+Both spellings exist because the API exposes a `DELETE` verb as well as the flag. Use whichever reads better where you are writing it. The same last-active-wallet guard applies (`422 last_active_wallet`).
 
 ```sh
 rail0 wallets delete 0xABCD…                      # same as…

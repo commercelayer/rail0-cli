@@ -13,6 +13,7 @@ import (
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/x/term"
 	rail0 "github.com/commercelayer/rail0-go"
+	"github.com/rail0/cli/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -130,6 +131,11 @@ type createPaymentFlags struct {
 	chainID     int    // numeric chain id
 	charge      bool   // -C/--charge: create with mode=charge instead of the default authorize
 	description string // optional, human-readable note (e.g. what's being paid for)
+
+	// The values applyConfiguredDefaults filled in from the stored settings, as
+	// "chain-id 5042002 (env (RAIL0_CHAIN_ID))"-style notes, so the command can say
+	// where a chain or token the user never typed came from.
+	fromConfig []string
 }
 
 // addTo registers all create-payment flags on cmd.
@@ -171,16 +177,36 @@ func (f *createPaymentFlags) addTo(cmd *cobra.Command) {
 // request by definition, so mixing stored defaults into it would produce a body the
 // author did not write.
 func (f *createPaymentFlags) applyConfiguredDefaults() {
+	f.fromConfig = nil
 	if f.token == "" {
-		f.token = configuredDefault("token")
+		if v, origin, ok := configuredSetting(configKeys["token"]); ok {
+			f.token = v
+			f.fromConfig = append(f.fromConfig, fmt.Sprintf("token %s (%s)", v, origin))
+		}
 	}
 	if f.chainID == 0 {
 		// Validated at `config set`, so a parse failure here means a hand-edited
 		// file: leaving chainID at 0 lets the normal "required" path report it.
-		if n, err := strconv.Atoi(configuredDefault("chain-id")); err == nil {
-			f.chainID = n
+		if v, origin, ok := configuredSetting(configKeys["chain-id"]); ok {
+			if n, err := strconv.Atoi(v); err == nil {
+				f.chainID = n
+				f.fromConfig = append(f.fromConfig, fmt.Sprintf("%s (%s)", chainLabel(n), origin))
+			}
 		}
 	}
+}
+
+// noteConfiguredDefaults says, on stderr, which values the command took from the
+// stored settings rather than from its flags. Without it a chain set once with
+// `config set chain-id` (or by `rail0 env`) was used silently, and a refusal such as
+// "the merchant does not accept that token on that chain" named a chain the user had
+// never typed. Quiet mode stays quiet, like the sign-in note.
+func (f *createPaymentFlags) noteConfiguredDefaults() {
+	if len(f.fromConfig) == 0 || ui.IsQuiet() {
+		return
+	}
+	fmt.Fprintf(os.Stderr, "Using %s — pass -c/-t to override, 'rail0 config' to see the stored settings\n",
+		strings.Join(f.fromConfig, " and "))
 }
 
 // build constructs and validates a rail0.CreatePaymentRequest. It resolves the

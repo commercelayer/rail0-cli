@@ -356,6 +356,7 @@ sent from an address to itself.`,
 		if err != nil {
 			return err
 		}
+		signCreateFlags.noteConfiguredDefaults()
 		// Preventive check: the payer signs with their own key. Compare the signing
 		// key's address to the resolved payer up front, so signing with the wrong
 		// key (e.g. the payee's) fails immediately with a clear message instead of a

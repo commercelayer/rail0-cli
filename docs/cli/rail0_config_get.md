@@ -1,6 +1,6 @@
 ## rail0 config get
 
-Show a setting's effective value and origin
+Show a setting's value and origin; an unset key is an error
 
 ```
 rail0 config get <key> [flags]

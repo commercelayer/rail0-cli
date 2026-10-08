@@ -20,11 +20,12 @@ automatically. A withdrawn dispute can be reopened while the refund window is
 open.
 
 .PP
-A reason is required, from the CLOSE list (resolved_with_merchant, withdrawn,
-item_received, other) or exactly its bytes32 — not the open list. full_refund is
-recorded by the protocol when a refund closes the dispute and can't be chosen.
-\&'rail0 disputes reasons --kind close' lists them; on a terminal, leaving
---reason out offers the list.
+A reason is optional; when given it comes from the CLOSE list
+(resolved_with_merchant, withdrawn, item_received, other) or is exactly its
+bytes32 — not the open list. full_refund is recorded by the protocol when a
+refund closes the dispute and can't be chosen. Leave --reason out to close with
+no reason ("No reason given"); on a terminal, leaving it out offers the list with
+"No reason" first. 'rail0 disputes reasons --kind close' lists the codes.
 
 .PP
 Like 'dispute', this is an on-chain transaction: the API returns 202 and the
@@ -49,7 +50,7 @@ Pass --private-key (-p): the CLI signs locally with the payer key and broadcasts
 
 .PP
 \fB--reason\fP=""
-	Required. Why the dispute is closed: a code from 'rail0 disputes reasons' (close list) or its bytes32
+	Optional. Why the dispute is closed: a code from 'rail0 disputes reasons' (close list) or its bytes32; omit for no reason
 
 .PP
 \fB--timeout\fP=15m0s

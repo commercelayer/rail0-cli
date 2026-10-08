@@ -228,6 +228,10 @@ func TestDisputeReasonResolve(t *testing.T) {
 		{"open code on the close list", closeDisputeReasons, "duplicate", "", "unknown close reason"},
 		{"system reason", closeDisputeReasons, "full_refund", "", "recorded by the protocol"},
 		{"old-style bytes32", closeDisputeReasons, "0x01", "", "rail0 disputes reasons"},
+		// The reason is optional (rail0-gateway#382): blank or the zero bytes32 is
+		// "no reason" and resolves to "", which the SDK leaves out of the request.
+		{"blank is no reason", openDisputeReasons, "  ", "", ""},
+		{"zero bytes32 is no reason", closeDisputeReasons, "0x" + strings.Repeat("0", 64), "", ""},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -245,12 +249,17 @@ func TestDisputeReasonResolve(t *testing.T) {
 	}
 }
 
-// Without a terminal there is no one to pick for: a missing reason fails with the
-// list rather than reaching the gateway's 400.
-func TestDisputeReasonIsRequiredWithoutATerminal(t *testing.T) {
-	_, err := closeDisputeReasons.orPick("")
-	if err == nil || !strings.Contains(err.Error(), "--reason is required") || !strings.Contains(err.Error(), "withdrawn") {
-		t.Errorf("err = %v, want the required error listing the close codes", err)
+// Without a terminal there is no one to pick for, and the reason is optional
+// (rail0-gateway#382): a missing --reason is simply no reason, not an error.
+func TestDisputeReasonIsOptionalWithoutATerminal(t *testing.T) {
+	for _, l := range []disputeReasonList{openDisputeReasons, closeDisputeReasons} {
+		got, err := l.orPick("")
+		if err != nil || got != "" {
+			t.Errorf("%s: got (%q, %v), want no reason and no error", l.kind, got, err)
+		}
+	}
+	if reasonLabel("") != "no reason" || reasonLabel(rail0.DisputeCloseReasonWithdrawn) != "withdrawn" {
+		t.Error("reasonLabel should name an empty reason 'no reason' and a code by itself")
 	}
 }
 

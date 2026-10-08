@@ -1295,8 +1295,9 @@ payment.
 
 Every dispute reads its reasons back next to the raw on-chain bytes32 (`reason`,
 `close_reason`): `reason_code` / `reason_description` and `close_reason_code` /
-`close_reason_description`. A bytes32 outside the dictionary — a direct contract call, or
-a dispute opened before the dictionary existed — has a null code and the description
+`close_reason_description`. A dispute opened or closed with no reason (the zero bytes32)
+has a null code and the description `No reason given`; a non-zero bytes32 outside the
+dictionary — a direct contract call — has a null code and the description
 `Unrecognised reason`.
 
 #### `disputes reasons`
@@ -1529,7 +1530,8 @@ rail0 payments history 0xabc123…
 > (`authorize`/`charge`/`capture`/`void`/`release`/`refund`/`dispute`/`dispute close`)
 > prompt for anything you didn't pass: omit `<rail0Id>` to pick from a list of your
 > payments the operation can act on; omit `-a`/`--amount` (capture/refund) or
-> `--reason` (dispute, dispute close) to pick it from the list. The signing key (`-p`) is prompted
+> `--reason` (dispute, dispute close) to pick it from the list — its first entry, "No
+> reason", goes on without one. The signing key (`-p`) is prompted
 > **hidden** if you pass neither `-p` nor `RAIL0_PRIVATE_KEY`, so it never reaches
 > the shell history or the process arguments. In a non-interactive shell a missing
 > required value is a clear error instead.
@@ -1611,15 +1613,19 @@ Open or withdraw a dispute. **Payer only**, so these sign with the buyer's key; 
 dismiss a dispute — a full `refund` closes it. `payments disputes <rail0Id>` lists one
 payment's open/close history.
 
-`--reason` is **required**: a code from the dispute-reason dictionary — the **open** list
+`--reason` is **optional**: a code from the dispute-reason dictionary — the **open** list
 for `dispute`, the **close** list for `dispute close` (see [`disputes reasons`](#disputes-reasons))
 — or exactly that code's bytes32. It is checked locally, so a typo fails with the valid
 codes before anything is signed; the gateway refuses anything else with 422
-`unknown_dispute_reason`.
+`unknown_dispute_reason`. Leave it out (or pass the all-zero bytes32) for no reason: the
+dispute records the zero bytes32 and reads back as `No reason given`. On a terminal a
+missing `--reason` opens the picker with **No reason** as the first entry; in a script it
+simply means no reason.
 
 ```sh
 rail0 payments dispute <rail0Id> -p @buyer-key --reason not_received --wait
 rail0 payments dispute close <rail0Id> -p @buyer-key --reason withdrawn --wait
+rail0 payments dispute <rail0Id> -p @buyer-key --wait   # no reason (picker on a terminal)
 ```
 
 ---

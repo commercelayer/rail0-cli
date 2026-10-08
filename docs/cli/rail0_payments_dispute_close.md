@@ -12,11 +12,12 @@ merchant's only way to close a dispute is a full 'refund', which closes it
 automatically. A withdrawn dispute can be reopened while the refund window is
 open.
 
-A reason is required, from the CLOSE list (resolved_with_merchant, withdrawn,
-item_received, other) or exactly its bytes32 — not the open list. full_refund is
-recorded by the protocol when a refund closes the dispute and can't be chosen.
-'rail0 disputes reasons --kind close' lists them; on a terminal, leaving
---reason out offers the list.
+A reason is optional; when given it comes from the CLOSE list
+(resolved_with_merchant, withdrawn, item_received, other) or is exactly its
+bytes32 — not the open list. full_refund is recorded by the protocol when a
+refund closes the dispute and can't be chosen. Leave --reason out to close with
+no reason ("No reason given"); on a terminal, leaving it out offers the list with
+"No reason" first. 'rail0 disputes reasons --kind close' lists the codes.
 
 Like 'dispute', this is an on-chain transaction: the API returns 202 and the
 close is not visible until it confirms. Add -w/--wait to block until it does
@@ -40,7 +41,7 @@ rail0 payments dispute close <rail0Id> [flags]
   -h, --help                     help for close
       --idempotency-key string   Make a re-run safe: the same key returns the first transaction instead of opening a second
   -p, --private-key string       Caller's secp256k1 private key (0x-prefixed hex); signs and broadcasts in one step
-      --reason string            Required. Why the dispute is closed: a code from 'rail0 disputes reasons' (close list) or its bytes32
+      --reason string            Optional. Why the dispute is closed: a code from 'rail0 disputes reasons' (close list) or its bytes32; omit for no reason
       --timeout duration         Max time to wait when --wait is set; unset, 10× the chain's measured p90 settlement, kept within 5m–15m (default 15m0s)
   -w, --wait                     Block until the operation confirms on-chain (or fails)
   -y, --yes                      Skip the confirmation prompt (required to run non-interactively)

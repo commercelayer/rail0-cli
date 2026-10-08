@@ -242,6 +242,11 @@ var errorHints = map[string]string{
 	"account_deactivated": "the merchant account is deactivated — reads, void, release and refund still work; new payments, authorize, charge and capture need an operator to reactivate it",
 	"wallet_deactivated":  "this wallet is deactivated and can only read — sign in with another of the account's wallets ('rail0 auth login') and reactivate it with 'rail0 wallets update <wallet> --active true'",
 	"not_your_account":    "that account id is not the session's — pass your own to --account, or omit it to use the signed-in account ('rail0 auth status' shows which)",
+	// Login resolves the account FROM a wallet, so an account left with no active one
+	// could neither act nor add a wallet back: the gateway refuses to switch off the last.
+	"last_active_wallet": "this is the account's only active wallet — register another ('rail0 wallets create') or reactivate one ('rail0 wallets update <wallet> --active true') first, then switch this one off",
+	// Operator-side twin of last_active_wallet: the gateway keeps at least one active admin.
+	"last_admin": "this would leave the gateway with no active operator — grant the operator role to another active account first, then retry",
 	// `not_a_participant` was retired by gateway#157: a non-party now gets a plain
 	// 404, deliberately, so a payment endpoint can't be used as an existence
 	// oracle. The advice for that case therefore belongs on the 404 branch below,

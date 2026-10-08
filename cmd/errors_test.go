@@ -106,6 +106,8 @@ func TestHintsForAccountWalletReleaseAndChainCodes(t *testing.T) {
 	for code, want := range map[string]string{
 		"account_deactivated":           "void, release and refund still work",
 		"wallet_deactivated":            "rail0 wallets update <wallet> --active true",
+		"last_active_wallet":            "rail0 wallets create",
+		"last_admin":                    "operator",
 		"not_your_account":              "--account",
 		"release_submitter_not_a_party": "payer or the payee",
 		"unknown_chain":                 "rail0 chains",

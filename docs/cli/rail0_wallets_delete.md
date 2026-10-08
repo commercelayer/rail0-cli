@@ -11,7 +11,9 @@ touched, and no funds move.
 
 It is the same operation as 'wallets update <wallet> --active false'. Both
 spellings exist because the API exposes a DELETE verb as well as the flag —
-use whichever reads better where you are writing it.
+use whichever reads better where you are writing it. Either way the account's
+only active wallet is refused (422 last_active_wallet): register or reactivate
+another wallet first.
 
 What deactivation actually does: the address stops being offered by
 'payment-methods', so buyers can no longer discover it and no new payment can

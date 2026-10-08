@@ -15,6 +15,10 @@ push to a revoked wallet's payments would contradict it.
 Existing payments are unaffected: they carry their own payee address and settle
 whatever the flag says now. Reversible with --active true.
 
+The account's ONLY active wallet cannot be switched off (422 last_active_wallet):
+login resolves the account from its wallet, so an account with none could neither
+act nor add one back. Register or reactivate another wallet first.
+
 'wallets delete' is the same operation under the API's DELETE verb — a soft
 delete, not a removal — so the two are interchangeable.
 

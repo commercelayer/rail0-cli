@@ -74,6 +74,10 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: "1.26"
+          # Latest 1.26.x patch, not whatever the runner has cached: the stdlib ships
+          # inside the binary, so a stale patch release ships its CVEs too (1.26.8 on
+          # the runner missed nine net/http and crypto/tls fixes in 1.26.9).
+          check-latest: true
           cache-dependency-path: rail0-cli/go.sum
 
       # Reported as a diff rather than a bare exit code: "gofmt failed" tells you

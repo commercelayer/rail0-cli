@@ -4,16 +4,17 @@ Show or update the signed-in account's profile (shows when run bare)
 
 ### Synopsis
 
-Read and update the profile of the signed-in account: its id, name, email
-and timestamps.
+Read and update the profile of the signed-in account: its id, name, email,
+priority-tip setting and timestamps.
 
 Requires a login ('rail0 auth login') by a wallet that belongs to an account — a
 wallet-only session has no account to show. The account is the session's own
 ('rail0 auth status' prints its id); --account reads or updates another one, which
 the gateway allows only for an admin (anyone else gets 403 not_your_account).
 
-Run bare, or as 'account get', to show it; 'account update' changes the name
-and/or email. The account's active flag is operator-only and is not settable here.
+Run bare, or as 'account get', to show it; 'account update' changes the name,
+email and/or priority tip. The account's active flag is operator-only and is not
+settable here.
 
 ```
 rail0 account [flags]
@@ -25,6 +26,7 @@ rail0 account [flags]
   rail0 account                          # the signed-in account
   rail0 account get --account 019e748b-… # another account (admin only)
   rail0 account update --email ops@example.com
+  rail0 account update --priority-tip=false
 ```
 
 ### Options
@@ -48,5 +50,5 @@ rail0 account [flags]
 
 * [rail0](rail0.md)	 - CLI for the RAIL0 stablecoin payment protocol
 * [rail0 account get](rail0_account_get.md)	 - Show the account's profile (the same as 'rail0 account')
-* [rail0 account update](rail0_account_update.md)	 - Change the account's name and/or email
+* [rail0 account update](rail0_account_update.md)	 - Change the account's name, email and/or priority tip
 

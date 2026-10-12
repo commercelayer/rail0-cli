@@ -10,8 +10,8 @@ rail0-account - Show or update the signed-in account's profile (shows when run b
 
 
 .SH DESCRIPTION
-Read and update the profile of the signed-in account: its id, name, email
-and timestamps.
+Read and update the profile of the signed-in account: its id, name, email,
+priority-tip setting and timestamps.
 
 .PP
 Requires a login ('rail0 auth login') by a wallet that belongs to an account — a
@@ -20,8 +20,9 @@ wallet-only session has no account to show. The account is the session's own
 the gateway allows only for an admin (anyone else gets 403 not_your_account).
 
 .PP
-Run bare, or as 'account get', to show it; 'account update' changes the name
-and/or email. The account's active flag is operator-only and is not settable here.
+Run bare, or as 'account get', to show it; 'account update' changes the name,
+email and/or priority tip. The account's active flag is operator-only and is not
+settable here.
 
 
 .SH OPTIONS
@@ -59,6 +60,7 @@ and/or email. The account's active flag is operator-only and is not settable her
   rail0 account                          # the signed-in account
   rail0 account get --account 019e748b-… # another account (admin only)
   rail0 account update --email ops@example.com
+  rail0 account update --priority-tip=false
 .EE
 
 

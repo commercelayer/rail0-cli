@@ -101,6 +101,85 @@ func TestPaymentsListSendsOperationAndRail0ID(t *testing.T) {
 	}
 }
 
+// The operator's filters ride on `payments list` behind --scope all. They must reach
+// the wire by their gateway names (has-error as a tri-state, the duration as whole
+// seconds), and without --scope all they are refused locally: the gateway would
+// ignore them and hand back the caller's own list, which reads as an answer.
+func TestPaymentsListSendsTheOperatorScopeFilters(t *testing.T) {
+	g := newRecordingGateway(t)
+	resetPaymentsListScopeFlags(t)
+	paymentsListScope = "all"
+	_ = paymentsListCmd.Flags().Set("account", "019e748b-acc")
+	_ = paymentsListCmd.Flags().Set("has-error", "false")
+	_ = paymentsListCmd.Flags().Set("expiring-within", "24h")
+
+	run(t, paymentsListCmd)
+	q := g.last(t, http.MethodGet, "/payments").query
+	if q.Get("scope") != "all" || q.Get("account_id") != "019e748b-acc" ||
+		q.Get("has_error") != "false" || q.Get("expiring_within") != "86400" {
+		t.Errorf("query = %v, want scope=all&account_id=…&has_error=false&expiring_within=86400", q)
+	}
+
+	// Default scope: nothing operator-flavoured on the wire.
+	resetPaymentsListScopeFlags(t)
+	run(t, paymentsListCmd)
+	q = g.last(t, http.MethodGet, "/payments").query
+	for _, absent := range []string{"scope", "account_id", "has_error", "expiring_within"} {
+		if _, present := q[absent]; present {
+			t.Errorf("query carries %s without --scope all: %v", absent, q)
+		}
+	}
+}
+
+func TestPaymentsListRefusesOperatorFiltersWithoutScopeAll(t *testing.T) {
+	g := newRecordingGateway(t)
+	for _, tc := range []struct {
+		name  string
+		scope string
+		flag  string
+		value string
+		want  string
+	}{
+		{"account without scope", "", "account", "019e748b-acc", "--account only applies with --scope all"},
+		{"has-error under mine", "mine", "has-error", "true", "--has-error only applies with --scope all"},
+		{"expiring-within without scope", "", "expiring-within", "1h", "--expiring-within only applies with --scope all"},
+		{"unknown scope", "everyone", "", "", "--scope must be mine or all"},
+		{"zero duration", "all", "expiring-within", "0s", "between 1s and 90 days"},
+		{"blank account", "all", "account", "  ", "--account cannot be empty"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			resetPaymentsListScopeFlags(t)
+			paymentsListScope = tc.scope
+			if tc.flag != "" {
+				_ = paymentsListCmd.Flags().Set(tc.flag, tc.value)
+			}
+			err := paymentsListCmd.RunE(paymentsListCmd, nil)
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("err = %v, want it to mention %q", err, tc.want)
+			}
+		})
+	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if len(g.reqs) != 0 {
+		t.Errorf("a locally refused list must send nothing, got %v", g.reqs)
+	}
+}
+
+// resetPaymentsListScopeFlags clears the scope flags' values AND Changed bits, which
+// paymentsListScopeParams reads (cobra keeps both between tests).
+func resetPaymentsListScopeFlags(t *testing.T) {
+	t.Helper()
+	reset := func() {
+		paymentsListScope, paymentsListAccount, paymentsListHasError, paymentsListExpiringWithin = "", "", false, 0
+		for _, n := range []string{"scope", "account", "has-error", "expiring-within"} {
+			paymentsListCmd.Flags().Lookup(n).Changed = false
+		}
+	}
+	reset()
+	t.Cleanup(reset)
+}
+
 func TestPaymentsTransactionsSendsOperationAndStatus(t *testing.T) {
 	g := newRecordingGateway(t)
 	paymentsTransactionsOperation, paymentsTransactionsStatuses = "capture", []string{"failed"}

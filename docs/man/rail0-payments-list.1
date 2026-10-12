@@ -32,8 +32,21 @@ amount flag. Converting them to the base units the gateway filters on needs the
 token's decimals, so both --chain-id and --token are required with them — and an
 amount range only means something within one token anyway.
 
+.PP
+\&'--scope all' is the operator's list: every payment on the gateway, with the same
+filters, and it needs an admin session (403 otherwise — never silently narrowed to
+your own). Three filters exist only there and are refused without it: --account
+(payments whose payee is one of that account's wallets), --has-error (payments
+carrying a last_error_code, or --has-error=false for the clean ones) and
+--expiring-within (authorized payments whose hold lapses within that duration,
+\&'24h' or '90m', up to 90 days).
+
 
 .SH OPTIONS
+\fB--account\fP=""
+	With --scope all: payments whose payee is one of this account's wallets
+
+.PP
 \fB--all\fP[=false]
 	Fetch every page (ignores --page)
 
@@ -52,6 +65,14 @@ amount range only means something within one token anyway.
 .PP
 \fB--disputed\fP[=false]
 	Filter by whether an open dispute exists
+
+.PP
+\fB--expiring-within\fP=0s
+	With --scope all: authorized payments whose hold lapses within this duration (e.g. 24h; max 90 days)
+
+.PP
+\fB--has-error\fP[=false]
+	With --scope all: payments carrying a last_error_code (--has-error=false: none)
 
 .PP
 \fB-h\fP, \fB--help\fP[=false]
@@ -92,6 +113,10 @@ amount range only means something within one token anyway.
 .PP
 \fB--rail0-id\fP=""
 	Filter by the logical on-chain payment id (0x…)
+
+.PP
+\fB--scope\fP=""
+	mine (default): your wallet's payments; all: every payment on the gateway (admin only)
 
 .PP
 \fB--sort\fP=""
@@ -135,6 +160,9 @@ amount range only means something within one token anyway.
   rail0 payments list --status authorized,partially_captured
   rail0 payments list --chain-id 5042002 --disputed
   rail0 payments list --chain-id 5042002 --token 0x3600… --min-amount 1.00 --created-from 2026-01-01T00:00:00Z
+  rail0 payments list --scope all --has-error                # admin: every payment with an error, any account
+  rail0 payments list --scope all --expiring-within 24h      # admin: holds lapsing within a day
+  rail0 payments list --scope all --account 019e748b-…       # admin: one merchant's incoming payments
 .EE
 
 

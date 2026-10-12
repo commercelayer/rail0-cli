@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	rail0 "github.com/commercelayer/rail0-go"
 	"github.com/rail0/cli/internal/ui"
@@ -155,6 +156,11 @@ var (
 	paymentsListPage        int
 	paymentsListPerPage     int
 	paymentsListAll         bool
+	// The operator's scope (admin only) and the three filters that exist only there.
+	paymentsListScope          string
+	paymentsListAccount        string
+	paymentsListHasError       bool
+	paymentsListExpiringWithin time.Duration
 )
 
 var paymentsListCmd = &cobra.Command{
@@ -177,13 +183,24 @@ any request.
 --min-amount / --max-amount are DECIMALS in token units ('1.00'), like every other
 amount flag. Converting them to the base units the gateway filters on needs the
 token's decimals, so both --chain-id and --token are required with them — and an
-amount range only means something within one token anyway.`,
+amount range only means something within one token anyway.
+
+'--scope all' is the operator's list: every payment on the gateway, with the same
+filters, and it needs an admin session (403 otherwise — never silently narrowed to
+your own). Three filters exist only there and are refused without it: --account
+(payments whose payee is one of that account's wallets), --has-error (payments
+carrying a last_error_code, or --has-error=false for the clean ones) and
+--expiring-within (authorized payments whose hold lapses within that duration,
+'24h' or '90m', up to 90 days).`,
 	Example: `  rail0 payments list
   rail0 payments list --sort -created_at
   rail0 payments list --status authorized --mode charge
   rail0 payments list --status authorized,partially_captured
   rail0 payments list --chain-id 5042002 --disputed
-  rail0 payments list --chain-id 5042002 --token 0x3600… --min-amount 1.00 --created-from 2026-01-01T00:00:00Z`,
+  rail0 payments list --chain-id 5042002 --token 0x3600… --min-amount 1.00 --created-from 2026-01-01T00:00:00Z
+  rail0 payments list --scope all --has-error                # admin: every payment with an error, any account
+  rail0 payments list --scope all --expiring-within 24h      # admin: holds lapsing within a day
+  rail0 payments list --scope all --account 019e748b-…       # admin: one merchant's incoming payments`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := context.Background()
@@ -198,22 +215,30 @@ amount range only means something within one token anyway.`,
 		if err != nil {
 			return err
 		}
+		scope, err := paymentsListScopeParams(cmd)
+		if err != nil {
+			return err
+		}
 		p := rail0.ListPaymentsParams{
-			Sort:        paymentsListSort,
-			Statuses:    statuses,
-			Mode:        paymentsListMode,
-			Payer:       paymentsListPayer,
-			Payee:       paymentsListPayee,
-			Token:       paymentsListToken,
-			ChainID:     paymentsListChainID,
-			MinAmount:   minAmount,
-			MaxAmount:   maxAmount,
-			CreatedFrom: paymentsListCreatedFrom,
-			CreatedTo:   paymentsListCreatedTo,
-			Operation:   paymentsListOperation,
-			Rail0ID:     paymentsListRail0ID,
-			Page:        paymentsListPage,
-			PerPage:     paymentsListPerPage,
+			Scope:          scope.Scope,
+			AccountID:      scope.AccountID,
+			HasError:       scope.HasError,
+			ExpiringWithin: scope.ExpiringWithin,
+			Sort:           paymentsListSort,
+			Statuses:       statuses,
+			Mode:           paymentsListMode,
+			Payer:          paymentsListPayer,
+			Payee:          paymentsListPayee,
+			Token:          paymentsListToken,
+			ChainID:        paymentsListChainID,
+			MinAmount:      minAmount,
+			MaxAmount:      maxAmount,
+			CreatedFrom:    paymentsListCreatedFrom,
+			CreatedTo:      paymentsListCreatedTo,
+			Operation:      paymentsListOperation,
+			Rail0ID:        paymentsListRail0ID,
+			Page:           paymentsListPage,
+			PerPage:        paymentsListPerPage,
 		}
 		// Only send disputed when the flag was explicitly set (tri-state).
 		if cmd.Flags().Changed("disputed") {
@@ -234,6 +259,54 @@ amount range only means something within one token anyway.`,
 			return humanizeAll(ctx, resp.Data), nil // bare array; page/total live in resp.Meta
 		})
 	},
+}
+
+// paymentsListScopeParams validates --scope and the three operator-only filters
+// before any request. The gateway ignores --account / --has-error /
+// --expiring-within under the default scope rather than refusing them, so a user
+// who forgot --scope all would get their OWN list back, unfiltered, and read it as
+// the answer — that silent no-op is what the local check prevents. The duration
+// is sent as whole seconds, which is the gateway's unit (1..90 days).
+func paymentsListScopeParams(cmd *cobra.Command) (rail0.ListPaymentsParams, error) {
+	var p rail0.ListPaymentsParams
+	switch paymentsListScope {
+	case "", "mine":
+	case "all":
+		p.Scope = "all"
+	default:
+		return p, fmt.Errorf("--scope must be mine or all, got %q", paymentsListScope)
+	}
+	var operatorOnly []string
+	if cmd.Flags().Changed("account") {
+		operatorOnly = append(operatorOnly, "--account")
+	}
+	if cmd.Flags().Changed("has-error") {
+		operatorOnly = append(operatorOnly, "--has-error")
+	}
+	if cmd.Flags().Changed("expiring-within") {
+		operatorOnly = append(operatorOnly, "--expiring-within")
+	}
+	if len(operatorOnly) > 0 && p.Scope != "all" {
+		return p, fmt.Errorf("%s only applies with --scope all (the gateway ignores it on your own list)", strings.Join(operatorOnly, ", "))
+	}
+	if cmd.Flags().Changed("account") {
+		p.AccountID = strings.TrimSpace(paymentsListAccount)
+		if p.AccountID == "" {
+			return p, errors.New("--account cannot be empty")
+		}
+	}
+	if cmd.Flags().Changed("has-error") {
+		v := paymentsListHasError
+		p.HasError = &v
+	}
+	if cmd.Flags().Changed("expiring-within") {
+		secs := int(paymentsListExpiringWithin / time.Second)
+		if secs < 1 || secs > 90*86_400 {
+			return p, fmt.Errorf("--expiring-within must be between 1s and 90 days, got %s", paymentsListExpiringWithin)
+		}
+		p.ExpiringWithin = secs
+	}
+	return p, nil
 }
 
 // fetchAllPayments pages through the entire result set (used by `list --all`),
@@ -1468,6 +1541,11 @@ func init() {
 	paymentsListCmd.Flags().IntVar(&paymentsListPage, "page", 0, "Page number (1-based)")
 	paymentsListCmd.Flags().IntVar(&paymentsListPerPage, "per-page", 0, "Results per page")
 	paymentsListCmd.Flags().BoolVar(&paymentsListAll, "all", false, "Fetch every page (ignores --page)")
+	paymentsListCmd.Flags().StringVar(&paymentsListScope, "scope", "", "mine (default): your wallet's payments; all: every payment on the gateway (admin only)")
+	paymentsListCmd.Flags().StringVar(&paymentsListAccount, "account", "", "With --scope all: payments whose payee is one of this account's wallets")
+	paymentsListCmd.Flags().BoolVar(&paymentsListHasError, "has-error", false, "With --scope all: payments carrying a last_error_code (--has-error=false: none)")
+	paymentsListCmd.Flags().DurationVar(&paymentsListExpiringWithin, "expiring-within", 0, "With --scope all: authorized payments whose hold lapses within this duration (e.g. 24h; max 90 days)")
+	_ = paymentsListCmd.RegisterFlagCompletionFunc("scope", fixedCompletions("mine", "all"))
 	_ = paymentsListCmd.RegisterFlagCompletionFunc("status", fixedListCompletions(paymentStatuses...))
 	_ = paymentsListCmd.RegisterFlagCompletionFunc("mode", fixedCompletions("authorize", "charge"))
 	_ = paymentsListCmd.RegisterFlagCompletionFunc("payer", completeAliasNames)

@@ -916,7 +916,7 @@ and nowhere else.
 
 ### Account
 
-`account` shows and edits the **profile** of the signed-in account — its id, name, email and timestamps — as opposed to [`wallets`](#wallets), which manages the addresses under it. It needs a login (`auth login`) by a wallet that belongs to an account; the account is the session's own, the id `auth status` prints. `--account <id>` (on the bare command and both verbs) names another account, which the gateway answers only for an **admin** — anyone else gets `403 not_your_account`. The account's `active` flag is operator-only and is not exposed.
+`account` shows and edits the **profile** of the signed-in account — its id, name, email, `priority_tip` setting and timestamps — as opposed to [`wallets`](#wallets), which manages the addresses under it. It needs a login (`auth login`) by a wallet that belongs to an account; the account is the session's own, the id `auth status` prints. `--account <id>` (on the bare command and both verbs) names another account, which the gateway answers only for an **admin** — anyone else gets `403 not_your_account`. The account's `active` flag is operator-only and is not exposed.
 
 #### `account` / `account get`
 
@@ -934,20 +934,25 @@ rail0 account get --account 019e748b-… # another account (admin only)
 
 #### `account update`
 
-Change the display name and/or contact email. At least one of `--name` / `--email` is required, and neither may be blank — both are refused locally, before any request.
+Change the display name, contact email and/or priority-tip setting. At least one of `--name` / `--email` / `--priority-tip` is required, and a name or email may not be blank — both are refused locally, before any request.
 
 ```sh
 rail0 account update --name "Acme Store"
 rail0 account update --name "Acme Store" --email ops@acme.example
+rail0 account update --priority-tip=false   # minimum tip on the account's own transactions
+rail0 account update --priority-tip         # back to the network's suggested priority fee
 ```
 
 | Flag | Short | Description |
 |------|-------|-------------|
 | `--name` | — | New display name (unique across accounts) |
 | `--email` | — | New contact email (unique across accounts) |
+| `--priority-tip` | — | Tip the network's suggested priority fee on the account's own transactions (the default); `--priority-tip=false` uses the chain's minimum tip |
 | `--account` | — | Account id; defaults to the logged-in session account (another account's needs an admin session) |
 
-Both values are **unique across accounts**: one another account already holds is refused with `409`, and the CLI says it is the name or email. A deactivated account, or a session signed in with a deactivated wallet, cannot change them (`403 account_deactivated` / `wallet_deactivated`) — a revoked key must not be able to redirect the contact email. No confirmation is asked: the change is not destructive, and another `account update` reverses it.
+Name and email are **unique across accounts**: one another account already holds is refused with `409`, and the CLI says it is the name or email. A deactivated account, or a session signed in with a deactivated wallet, cannot change them (`403 account_deactivated` / `wallet_deactivated`) — a revoked key must not be able to redirect the contact email. No confirmation is asked: the change is not destructive, and another `account update` reverses it.
+
+`--priority-tip` is the fee setting of the account's **own** transactions — authorize, capture, void, release, refund. On, the default, they tip the network's suggested priority fee; off, they pay the chain's minimum tip (0 on most chains, 25 gwei on Polygon PoS/Amoy): cheaper, and slower to confirm when the chain is busy. The buyer's dispute and close-dispute never read it. The flag is sent only when given, so `account update --name X` leaves the setting alone.
 
 ---
 
@@ -1223,7 +1228,7 @@ Step 4 replays one failed attempt per call, taking the callback id from step 1's
 
 Returned **once**, on `create` and `rotate-secret`. The gateway stores a hash, not the value, so it cannot be read back — capture it when it appears. `rotate-secret` is the recovery, not a lookup.
 
-Rotation has **no overlap window**: the old secret stops verifying immediately, so any delivery already in flight was signed with the old one and a receiver that has not been updated will reject it — which counts as a failure and feeds the breaker. Update the receiver first where you can.
+Rotation has a **grace window**: for `WEBHOOK_SECRET_GRACE` after `rotate-secret` (one hour by default, a gateway setting) every delivery is signed twice — `X-Rail0-Signature` under the new secret and `X-Rail0-Signature-Previous` under the replaced one — so a receiver still holding the old secret keeps verifying (against the previous header) and nothing in flight at rotation is rejected. Deploy the new secret within the window; past it the old key is gone, and a receiver not updated by then rejects every delivery, which counts as a failure and feeds the breaker. A second rotation inside the window drops the oldest key.
 
 ```sh
 rail0 webhooks list --topic payments.captured --active true
@@ -1466,6 +1471,21 @@ rail0 payments list --status authorized,partially_captured
 rail0 payments list --chain-id 5042002 --disputed
 rail0 payments list --chain-id 5042002 --token 0x3600… --min-amount 1.00
 rail0 payments list --operation refund --created-from 2026-09-01T00:00:00Z
+```
+
+**`--scope all` (admin).** The operator's list: every payment on the gateway, with the
+same filters, on the same command. It needs an admin session — anyone else gets `403`,
+never a silent narrowing to their own payments. Three filters exist only there, and the
+CLI refuses them without it (the gateway would ignore them and hand back your own list,
+which reads as an answer): `--account <id>` keeps payments whose payee is one of that
+account's wallets, `--has-error` those carrying a `last_error_code` (`--has-error=false`
+for the clean ones), and `--expiring-within <duration>` the `authorized` payments whose
+hold lapses within that time (`24h`, `90m`; sent as whole seconds, up to 90 days).
+
+```sh
+rail0 payments list --scope all --has-error                 # every failing payment, any account
+rail0 payments list --scope all --expiring-within 24h       # holds lapsing within a day
+rail0 payments list --scope all --account 019e748b-… --all  # one merchant's incoming payments
 ```
 
 ---

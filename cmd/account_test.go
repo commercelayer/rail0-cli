@@ -62,8 +62,8 @@ func TestAccountCommandTree(t *testing.T) {
 func resetAccountFlags(t *testing.T) {
 	t.Helper()
 	reset := func() {
-		accountID, accountUpdateName, accountUpdateEmail = "", "", ""
-		for _, n := range []string{"name", "email"} {
+		accountID, accountUpdateName, accountUpdateEmail, accountUpdatePriorityTip = "", "", "", true
+		for _, n := range []string{"name", "email", "priority-tip"} {
 			accountUpdateCmd.Flags().Lookup(n).Changed = false
 		}
 	}
@@ -118,6 +118,33 @@ func TestAccountUpdateSendsOnlyTheFlagsGiven(t *testing.T) {
 	}
 }
 
+// --priority-tip=false is the whole point of the flag, and the one value a plain bool
+// with omitempty would lose on the wire: it must be sent as false, alone, and only when
+// the flag was given.
+func TestAccountUpdateSendsPriorityTipFalse(t *testing.T) {
+	g := newRecordingGateway(t)
+	resetAccountFlags(t)
+	g.respond = func(*http.Request) any { return map[string]any{"id": "acc-1", "priority_tip": false} }
+
+	_ = accountUpdateCmd.Flags().Set("priority-tip", "false")
+	run(t, accountUpdateCmd)
+	body := g.last(t, http.MethodPatch, "/accounts/acc-1").body
+	if v, ok := body["priority_tip"]; !ok || v != false {
+		t.Errorf("priority_tip = %v (present %v), want false", v, ok)
+	}
+	if len(body) != 1 {
+		t.Errorf("body = %v, want priority_tip alone", body)
+	}
+
+	// Not given: not sent, even though the flag's default is true.
+	resetAccountFlags(t)
+	_ = accountUpdateCmd.Flags().Set("name", "Acme")
+	run(t, accountUpdateCmd)
+	if _, ok := g.last(t, http.MethodPatch, "/accounts/acc-1").body["priority_tip"]; ok {
+		t.Error("priority_tip was not passed and must not be sent")
+	}
+}
+
 // Nothing to change, or a flag passed blank, is refused before any request — the
 // gateway would answer 400, and a blank value would otherwise be dropped silently by
 // the SDK's omitempty.
@@ -129,7 +156,7 @@ func TestAccountUpdateRefusesLocally(t *testing.T) {
 		flags map[string]string
 		want  string
 	}{
-		{"no flags", nil, "--name and/or --email"},
+		{"no flags", nil, "--name, --email and/or --priority-tip"},
 		{"blank name", map[string]string{"name": "  "}, "--name cannot be empty"},
 		{"blank email beside a name", map[string]string{"name": "Acme", "email": ""}, "--email cannot be empty"},
 	} {

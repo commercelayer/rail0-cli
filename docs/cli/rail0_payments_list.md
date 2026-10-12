@@ -23,6 +23,14 @@ amount flag. Converting them to the base units the gateway filters on needs the
 token's decimals, so both --chain-id and --token are required with them — and an
 amount range only means something within one token anyway.
 
+'--scope all' is the operator's list: every payment on the gateway, with the same
+filters, and it needs an admin session (403 otherwise — never silently narrowed to
+your own). Three filters exist only there and are refused without it: --account
+(payments whose payee is one of that account's wallets), --has-error (payments
+carrying a last_error_code, or --has-error=false for the clean ones) and
+--expiring-within (authorized payments whose hold lapses within that duration,
+'24h' or '90m', up to 90 days).
+
 ```
 rail0 payments list [flags]
 ```
@@ -36,29 +44,36 @@ rail0 payments list [flags]
   rail0 payments list --status authorized,partially_captured
   rail0 payments list --chain-id 5042002 --disputed
   rail0 payments list --chain-id 5042002 --token 0x3600… --min-amount 1.00 --created-from 2026-01-01T00:00:00Z
+  rail0 payments list --scope all --has-error                # admin: every payment with an error, any account
+  rail0 payments list --scope all --expiring-within 24h      # admin: holds lapsing within a day
+  rail0 payments list --scope all --account 019e748b-…       # admin: one merchant's incoming payments
 ```
 
 ### Options
 
 ```
-      --all                   Fetch every page (ignores --page)
-      --chain-id int          Filter by EVM chain ID
-      --created-from string   Only payments created at/after this ISO-8601 time
-      --created-to string     Only payments created at/before this ISO-8601 time
-      --disputed              Filter by whether an open dispute exists
-  -h, --help                  help for list
-      --max-amount string     Maximum amount as a decimal in token units (inclusive); needs --chain-id and --token
-      --min-amount string     Minimum amount as a decimal in token units (inclusive); needs --chain-id and --token
-      --mode string           Filter by mode (authorize or charge)
-      --operation string      Only payments with at least one transaction of this operation (e.g. dispute, refund)
-      --page int              Page number (1-based)
-      --payee string          Filter by payee address
-      --payer string          Filter by payer address
-      --per-page int          Results per page
-      --rail0-id string       Filter by the logical on-chain payment id (0x…)
-      --sort string           Sort fields (e.g. -created_at,amount)
-      --status strings        Filter by payment status; repeat or comma-separate for any of several (e.g. authorized,partially_captured)
-      --token string          Filter by token address
+      --account string             With --scope all: payments whose payee is one of this account's wallets
+      --all                        Fetch every page (ignores --page)
+      --chain-id int               Filter by EVM chain ID
+      --created-from string        Only payments created at/after this ISO-8601 time
+      --created-to string          Only payments created at/before this ISO-8601 time
+      --disputed                   Filter by whether an open dispute exists
+      --expiring-within duration   With --scope all: authorized payments whose hold lapses within this duration (e.g. 24h; max 90 days)
+      --has-error                  With --scope all: payments carrying a last_error_code (--has-error=false: none)
+  -h, --help                       help for list
+      --max-amount string          Maximum amount as a decimal in token units (inclusive); needs --chain-id and --token
+      --min-amount string          Minimum amount as a decimal in token units (inclusive); needs --chain-id and --token
+      --mode string                Filter by mode (authorize or charge)
+      --operation string           Only payments with at least one transaction of this operation (e.g. dispute, refund)
+      --page int                   Page number (1-based)
+      --payee string               Filter by payee address
+      --payer string               Filter by payer address
+      --per-page int               Results per page
+      --rail0-id string            Filter by the logical on-chain payment id (0x…)
+      --scope string               mine (default): your wallet's payments; all: every payment on the gateway (admin only)
+      --sort string                Sort fields (e.g. -created_at,amount)
+      --status strings             Filter by payment status; repeat or comma-separate for any of several (e.g. authorized,partially_captured)
+      --token string               Filter by token address
 ```
 
 ### Options inherited from parent commands

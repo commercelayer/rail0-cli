@@ -31,7 +31,11 @@ is offered first. The first holding you add takes it; to move it, run
 'wallets tokens add' on the new one with --default. While other holdings are
 active the gateway refuses to disable the default (422 default_payment_method) —
 move it first. The LAST active holding can be disabled even as the default: the
-wallet then accepts nothing, and the next holding enabled becomes the default.`,
+wallet then accepts nothing, and the next holding enabled becomes the default.
+
+These commands act only on the wallet you signed in with: another wallet of the
+account is refused (403 not_your_wallet). 'rail0 auth login' with that wallet's
+key to manage its tokens.`,
 	Example: `  rail0 wallets tokens add 0xABCD… --chain-id 84532 --token USDC --default
   rail0 wallets tokens disable 0xABCD… USDC --chain-id 84532
   rail0 wallets tokens enable 0xABCD… USDC --chain-id 84532`,

@@ -2,7 +2,7 @@
 .TH "RAIL0" "1" "Aug 2026" "rail0 CLI" ""
 
 .SH NAME
-rail0-wallets-create - Register a new EVM wallet address on the account (SIWE proof-of-ownership)
+rail0-wallets-create - Register a new wallet on the account (currently unavailable)
 
 
 .SH SYNOPSIS
@@ -11,6 +11,12 @@ rail0-wallets-create - Register a new EVM wallet address on the account (SIWE pr
 
 .SH DESCRIPTION
 Register a wallet on the logged-in account.
+
+.PP
+CURRENTLY UNAVAILABLE: the gateway refuses this for every session (403
+wallet_add_unavailable). A session is bound to the one wallet it signed in with;
+adding another wallet returns with the merchant wallet-management section, which
+keeps the proof described below. The command is kept for that.
 
 .PP
 The gateway requires a SIWE proof-of-ownership of the address being added: this

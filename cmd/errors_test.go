@@ -105,8 +105,10 @@ func TestNotFoundWordingDependsOnTheResource(t *testing.T) {
 func TestHintsForAccountWalletReleaseAndChainCodes(t *testing.T) {
 	for code, want := range map[string]string{
 		"account_deactivated":           "void, release and refund still work",
-		"wallet_deactivated":            "rail0 wallets update <wallet> --active true",
-		"last_active_wallet":            "rail0 wallets create",
+		"wallet_deactivated":            "only an operator can reactivate it",
+		"last_active_wallet":            "ask an operator",
+		"not_your_wallet":               "rail0 auth login",
+		"wallet_add_unavailable":        "not available yet",
 		"last_admin":                    "operator",
 		"not_your_account":              "--account",
 		"release_submitter_not_a_party": "payer or the payee",

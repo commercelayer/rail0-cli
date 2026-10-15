@@ -98,7 +98,7 @@ func TestDeactivationPromptNamesWhatIsLost(t *testing.T) {
 		"0xABCD",          // which wallet
 		"webhooks STOP",   // the consequence nothing else surfaces
 		"still in flight", // and precisely which payments it hits
-		"--active true",   // and that it is reversible
+		"by an operator",  // and who can reverse it (gateway#411: own wallet only)
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Errorf("prompt must mention %q\ngot: %s", want, prompt)

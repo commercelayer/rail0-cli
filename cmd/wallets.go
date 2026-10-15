@@ -39,11 +39,17 @@ your own account. When listing, --account defaults to the session account; if
 given it must be your own account (the gateway rejects another account's id with
 403). To discover ANOTHER merchant's accepted wallets/tokens without a session,
 use 'rail0 payment-methods'. The verbs below act on one wallet (id or 0x
-address) of the session account.`,
+address) of the session account.
+
+A session is bound to the wallet it signed in with. Reads ('wallets',
+'wallets get', 'wallets balances') cover every wallet of the account, but
+'wallets update', 'wallets delete' and 'wallets tokens' act only on the wallet
+you signed in with: another wallet of the account is refused (403
+not_your_wallet). Adding a wallet ('wallets create') is currently unavailable.`,
 	Example: `  rail0 wallets                                   # session account
   rail0 wallets --account 019e748b-… --chain-id 5042002 --symbol USDC
   rail0 wallets get 0xABCD…
-  rail0 wallets create --address 0xABCD…`,
+  rail0 wallets balances 0xABCD…`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		account, err := resolveAccountID(walletsAccount)
@@ -123,8 +129,13 @@ var createWalletKey string
 
 var walletsCreateCmd = &cobra.Command{
 	Use:   "create",
-	Short: "Register a new EVM wallet address on the account (SIWE proof-of-ownership)",
+	Short: "Register a new wallet on the account (currently unavailable)",
 	Long: `Register a wallet on the logged-in account.
+
+CURRENTLY UNAVAILABLE: the gateway refuses this for every session (403
+wallet_add_unavailable). A session is bound to the one wallet it signed in with;
+adding another wallet returns with the merchant wallet-management section, which
+keeps the proof described below. The command is kept for that.
 
 The gateway requires a SIWE proof-of-ownership of the address being added: this
 command fetches a single-use nonce, builds an EIP-4361 message for the added
@@ -226,7 +237,7 @@ var updateWalletActive string
 
 var walletsUpdateCmd = &cobra.Command{
 	Use:   "update <wallet>",
-	Short: "Update label or active status on a wallet (by id, 0x address or @alias)",
+	Short: "Update label or active status on the session's wallet (by id, 0x address or @alias)",
 	Long: `Change a wallet's label, or turn it on and off with --active.
 
 --active false is the merchant's REVOCATION switch, and it does more than hide a
@@ -236,11 +247,16 @@ is deliberate — deactivation says "stop trusting this address", and an outboun
 push to a revoked wallet's payments would contradict it.
 
 Existing payments are unaffected: they carry their own payee address and settle
-whatever the flag says now. Reversible with --active true.
+whatever the flag says now. Reversible, but only by an operator: a deactivated
+wallet's own session is read-only, and another wallet's session cannot change
+it (403 not_your_wallet).
 
 The account's ONLY active wallet cannot be switched off (422 last_active_wallet):
 login resolves the account from its wallet, so an account with none could neither
-act nor add one back. Register or reactivate another wallet first.
+act nor add one back. Another wallet must be active first.
+
+Only the wallet you signed in with: another wallet of the account is refused
+(403 not_your_wallet). 'rail0 auth login' with that wallet's key to change it.
 
 'wallets delete' is the same operation under the API's DELETE verb — a soft
 delete, not a removal — so the two are interchangeable.`,
@@ -287,17 +303,19 @@ delete, not a removal — so the two are interchangeable.`,
 
 var walletsDeleteCmd = &cobra.Command{
 	Use:   "delete <wallet>",
-	Short: "Deactivate a wallet — soft delete, reversible (by id, 0x address or @alias)",
+	Short: "Deactivate the session's wallet — soft delete, reversible (by id, 0x address or @alias)",
 	Long: `Deactivate a wallet. Despite the verb, this is a SOFT delete and it is
-reversible: the gateway sets active=false and keeps the row, so 'wallets update
-<wallet> --active true' brings it back. Nothing is removed, nothing on-chain is
+reversible: the gateway sets active=false and keeps the row, so it can be
+switched back on — by an operator, since a deactivated wallet's own session is
+read-only and another wallet's session cannot change it. Nothing is removed, nothing on-chain is
 touched, and no funds move.
 
 It is the same operation as 'wallets update <wallet> --active false'. Both
 spellings exist because the API exposes a DELETE verb as well as the flag —
 use whichever reads better where you are writing it. Either way the account's
-only active wallet is refused (422 last_active_wallet): register or reactivate
-another wallet first.
+only active wallet is refused (422 last_active_wallet): another wallet must be
+active first. And either way it acts only on the wallet you signed in with:
+another wallet of the account is refused (403 not_your_wallet).
 
 What deactivation actually does: the address stops being offered by
 'payment-methods', so buyers can no longer discover it and no new payment can
@@ -342,8 +360,9 @@ func deactivationPrompt(wallet string) string {
 		"Deactivate wallet %s?\n"+
 			"  - buyers can no longer discover it and no new payment can name it\n"+
 			"  - webhooks STOP for its payments that are still in flight (they settle, you are not told)\n"+
-			"  - reversible: rail0 wallets update %s --active true",
-		wallet, wallet)
+			"  - reversible only by an operator: once off, this wallet's session is read-only\n"+
+			"    and no other wallet's session can switch it back on",
+		wallet)
 }
 
 // ── wallets balances ──────────────────────────────────────────────────────────

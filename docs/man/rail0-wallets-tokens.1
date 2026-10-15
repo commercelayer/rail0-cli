@@ -25,6 +25,11 @@ active the gateway refuses to disable the default (422 default_payment_method) â
 move it first. The LAST active holding can be disabled even as the default: the
 wallet then accepts nothing, and the next holding enabled becomes the default.
 
+.PP
+These commands act only on the wallet you signed in with: another wallet of the
+account is refused (403 not_your_wallet). 'rail0 auth login' with that wallet's
+key to manage its tokens.
+
 
 .SH OPTIONS
 \fB-h\fP, \fB--help\fP[=false]

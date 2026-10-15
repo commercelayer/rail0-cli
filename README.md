@@ -960,6 +960,8 @@ Name and email are **unique across accounts**: one another account already holds
 
 `wallets` manages **your own** account's wallets and requires a login (`auth login`) — the gateway now protects the whole account section with SIWE. When **listing**, `--account` defaults to the logged-in session's account; if given it must be your own account (another account's id is rejected with 403). Run bare to list; the verbs act on one wallet, named by its id or **0x address** (the wallet's own identity, unique per account). Address-book `@aliases` are for external addresses in `payments`, not for your own wallets. To discover **another** merchant's accepted wallets/tokens without logging in, use [`payment-methods`](#payment-methods).
 
+A session is bound to the wallet it signed in with: reads cover every wallet of the account, but `update`, `delete` and `tokens` act only on that wallet (`403 not_your_wallet` otherwise). Adding a wallet (`wallets create`) is currently unavailable (`403 wallet_add_unavailable`).
+
 #### `wallets` — list
 
 Lists the account's wallets, each with its token holdings nested under `tokens`. A wallet with no tokens still appears (with an empty `tokens`), so it is never hidden just because nothing is associated.
@@ -995,6 +997,8 @@ rail0 wallets get @merchant
 ```
 
 #### `wallets create`
+
+> **Currently unavailable.** The gateway refuses `wallets create` for every session with `403 wallet_add_unavailable`, and the CLI prints that adding a wallet is not available yet. A session is bound to the one wallet it signed in with. Adding another wallet returns with the merchant wallet-management section, which keeps the proof below, so the command stays.
 
 Register a new EVM wallet address on the account. The gateway requires a **SIWE
 proof-of-ownership** of the address being added, so this command needs the
@@ -1043,20 +1047,22 @@ rail0 wallets update 0xABCD… --label "New label" --active false
 - the address stops being offered by [`payment-methods`](#payment-methods), so buyers can no longer discover it and no new payment can name it;
 - webhooks stop being dispatched for payments to it — deliberately: deactivation says "stop trusting this address", and an outbound push about its payments would contradict that.
 
-Existing payments are unaffected. They carry their own payee address and settle whatever the flag says now. Reversible with `--active true`.
+Existing payments are unaffected. They carry their own payee address and settle whatever the flag says now. Reversible, but **only by an operator**: a deactivated wallet's own session is read-only, and another wallet's session cannot change it (`403 not_your_wallet`).
 
-The account's **only active wallet cannot be switched off** — the gateway refuses it with `422 last_active_wallet`. Login resolves the account from the signing wallet, so an account with no active wallet could neither act nor add a wallet back. Register another (`wallets create`) or reactivate one (`--active true`) first.
+The account's **only active wallet cannot be switched off** — the gateway refuses it with `422 last_active_wallet`. Login resolves the account from the signing wallet, so an account with no active wallet could neither act nor add a wallet back. Another wallet must be active first; adding one is currently unavailable, so ask an operator to reactivate one.
+
+**Only the wallet you signed in with.** `wallets update`, `wallets delete` and `wallets tokens` act on the session's own wallet: another wallet of the same account is refused with `403 not_your_wallet`, and the CLI prints the hint to `rail0 auth login` with that wallet's key. Reads (`wallets`, `wallets get`, `wallets balances`) still cover every wallet of the account.
 
 #### `wallets delete <wallet>`
 
 **A soft delete, despite the verb.** The gateway sets `active=false` and keeps the row — it is the *same operation* as `wallets update <wallet> --active false`, with the same consequences and the same way back. Nothing is removed, nothing on-chain is touched, no funds move.
 
-Both spellings exist because the API exposes a `DELETE` verb as well as the flag. Use whichever reads better where you are writing it. The same last-active-wallet guard applies (`422 last_active_wallet`).
+Both spellings exist because the API exposes a `DELETE` verb as well as the flag. Use whichever reads better where you are writing it. The same last-active-wallet guard (`422 last_active_wallet`) and own-wallet rule (`403 not_your_wallet`) apply.
 
 ```sh
 rail0 wallets delete 0xABCD…                      # same as…
 rail0 wallets update 0xABCD… --active false       # …this
-rail0 wallets update 0xABCD… --active true        # back on
+rail0 wallets update 0xABCD… --active true        # back on (an operator session only)
 ```
 
 > Contrast [`webhooks delete`](#webhooks), which really does destroy the record.
@@ -1099,6 +1105,8 @@ rail0 wallets tokens enable 0xABCD… USDC --chain-id 84532
   (`422 default_payment_method`), so move it first.
 - Disabling is soft and reversible, and asks first (`--yes` skips the prompt). Payments
   already created with that token are unaffected.
+- Only on the wallet you signed in with: another wallet of the account is refused with
+  `403 not_your_wallet`.
 
 #### `wallets alias <address> <name>`
 

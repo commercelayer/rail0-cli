@@ -241,11 +241,21 @@ var errorHints = map[string]string{
 	"not_the_payer": "only the buyer (payer) can do this — 'rail0 auth login' with the payer's key",
 	// deactivation and account scoping: the session is fine, the thing it acts for is not
 	"account_deactivated": "the merchant account is deactivated — reads, void, release and refund still work; new payments, authorize, charge and capture need an operator to reactivate it",
-	"wallet_deactivated":  "this wallet is deactivated and can only read — sign in with another of the account's wallets ('rail0 auth login') and reactivate it with 'rail0 wallets update <wallet> --active true'",
-	"not_your_account":    "that account id is not the session's — pass your own to --account, or omit it to use the signed-in account ('rail0 auth status' shows which)",
+	// A deactivated session wallet cannot write, and a session changes only the wallet
+	// it signed in with (gateway#411), so another wallet's session cannot reactivate it.
+	"wallet_deactivated": "this wallet is deactivated and can only read — sign in with another of the account's active wallets ('rail0 auth login'); only an operator can reactivate it",
+	"not_your_account":   "that account id is not the session's — pass your own to --account, or omit it to use the signed-in account ('rail0 auth status' shows which)",
+	// A session is bound to the one wallet it signed in with (gateway#411): the account's
+	// other wallets are readable, but update, delete and the token commands act only on
+	// the session's own.
+	"not_your_wallet": "this session can change only the wallet it signed in with — 'rail0 auth login' with that wallet's key to update it, deactivate it or manage its tokens ('rail0 auth status' shows which wallet you are signed in as)",
+	// POST /accounts/:id/wallets is suspended for every session until the merchant
+	// wallet-management section lands (gateway#411).
+	"wallet_add_unavailable": "adding a wallet is not available yet — the gateway refuses 'rail0 wallets create' for every session until the merchant wallet-management section lands",
 	// Login resolves the account FROM a wallet, so an account left with no active one
 	// could neither act nor add a wallet back: the gateway refuses to switch off the last.
-	"last_active_wallet": "this is the account's only active wallet — register another ('rail0 wallets create') or reactivate one ('rail0 wallets update <wallet> --active true') first, then switch this one off",
+	// With adding suspended and the own-wallet rule, the way out is an operator.
+	"last_active_wallet": "this is the account's only active wallet — another wallet must be active before this one can be switched off; adding one ('rail0 wallets create') is not available yet, so ask an operator to reactivate another",
 	// Operator-side twin of last_active_wallet: the gateway keeps at least one active admin.
 	"last_admin": "this would leave the gateway with no active operator — grant the operator role to another active account first, then retry",
 	// `not_a_participant` was retired by gateway#157: a non-party now gets a plain

@@ -13,6 +13,12 @@ given it must be your own account (the gateway rejects another account's id with
 use 'rail0 payment-methods'. The verbs below act on one wallet (id or 0x
 address) of the session account.
 
+A session is bound to the wallet it signed in with. Reads ('wallets',
+'wallets get', 'wallets balances') cover every wallet of the account, but
+'wallets update', 'wallets delete' and 'wallets tokens' act only on the wallet
+you signed in with: another wallet of the account is refused (403
+not_your_wallet). Adding a wallet ('wallets create') is currently unavailable.
+
 ```
 rail0 wallets [flags]
 ```
@@ -23,7 +29,7 @@ rail0 wallets [flags]
   rail0 wallets                                   # session account
   rail0 wallets --account 019e748b-… --chain-id 5042002 --symbol USDC
   rail0 wallets get 0xABCD…
-  rail0 wallets create --address 0xABCD…
+  rail0 wallets balances 0xABCD…
 ```
 
 ### Options
@@ -56,9 +62,9 @@ rail0 wallets [flags]
 * [rail0](rail0.md)	 - CLI for the RAIL0 stablecoin payment protocol
 * [rail0 wallets alias](rail0_wallets_alias.md)	 - Save a unique address-book alias for an address (like 'aliases add', args reversed)
 * [rail0 wallets balances](rail0_wallets_balances.md)	 - Read a wallet's live on-chain balances (by id, 0x address or @alias)
-* [rail0 wallets create](rail0_wallets_create.md)	 - Register a new EVM wallet address on the account (SIWE proof-of-ownership)
-* [rail0 wallets delete](rail0_wallets_delete.md)	 - Deactivate a wallet — soft delete, reversible (by id, 0x address or @alias)
+* [rail0 wallets create](rail0_wallets_create.md)	 - Register a new wallet on the account (currently unavailable)
+* [rail0 wallets delete](rail0_wallets_delete.md)	 - Deactivate the session's wallet — soft delete, reversible (by id, 0x address or @alias)
 * [rail0 wallets get](rail0_wallets_get.md)	 - Fetch a single wallet (by id, 0x address or @alias)
 * [rail0 wallets tokens](rail0_wallets_tokens.md)	 - Choose which tokens (and chains) a wallet accepts
-* [rail0 wallets update](rail0_wallets_update.md)	 - Update label or active status on a wallet (by id, 0x address or @alias)
+* [rail0 wallets update](rail0_wallets_update.md)	 - Update label or active status on the session's wallet (by id, 0x address or @alias)
 

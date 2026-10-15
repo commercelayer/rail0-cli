@@ -20,6 +20,13 @@ given it must be your own account (the gateway rejects another account's id with
 use 'rail0 payment-methods'. The verbs below act on one wallet (id or 0x
 address) of the session account.
 
+.PP
+A session is bound to the wallet it signed in with. Reads ('wallets',
+\&'wallets get', 'wallets balances') cover every wallet of the account, but
+\&'wallets update', 'wallets delete' and 'wallets tokens' act only on the wallet
+you signed in with: another wallet of the account is refused (403
+not_your_wallet). Adding a wallet ('wallets create') is currently unavailable.
+
 
 .SH OPTIONS
 \fB--account\fP=""
@@ -88,7 +95,7 @@ address) of the session account.
   rail0 wallets                                   # session account
   rail0 wallets --account 019e748b-… --chain-id 5042002 --symbol USDC
   rail0 wallets get 0xABCD…
-  rail0 wallets create --address 0xABCD…
+  rail0 wallets balances 0xABCD…
 .EE
 
 

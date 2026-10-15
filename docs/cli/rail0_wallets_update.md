@@ -1,6 +1,6 @@
 ## rail0 wallets update
 
-Update label or active status on a wallet (by id, 0x address or @alias)
+Update label or active status on the session's wallet (by id, 0x address or @alias)
 
 ### Synopsis
 
@@ -13,11 +13,16 @@ is deliberate — deactivation says "stop trusting this address", and an outboun
 push to a revoked wallet's payments would contradict it.
 
 Existing payments are unaffected: they carry their own payee address and settle
-whatever the flag says now. Reversible with --active true.
+whatever the flag says now. Reversible, but only by an operator: a deactivated
+wallet's own session is read-only, and another wallet's session cannot change
+it (403 not_your_wallet).
 
 The account's ONLY active wallet cannot be switched off (422 last_active_wallet):
 login resolves the account from its wallet, so an account with none could neither
-act nor add one back. Register or reactivate another wallet first.
+act nor add one back. Another wallet must be active first.
+
+Only the wallet you signed in with: another wallet of the account is refused
+(403 not_your_wallet). 'rail0 auth login' with that wallet's key to change it.
 
 'wallets delete' is the same operation under the API's DELETE verb — a soft
 delete, not a removal — so the two are interchangeable.

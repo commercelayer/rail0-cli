@@ -11,7 +11,10 @@ Name and email are unique across accounts: a value another account already holds
 is refused with 409. A deactivated account, or a session signed in with a
 deactivated wallet, cannot change them (403) — a revoked key must not be able to
 redirect the contact email, which is where the merchant's operational
-notifications go.
+notifications go. The email is the owner's to change: an admin updating another
+account with --account may change its name and priority tip, but --email answers
+403 forbidden (before the account exists, it is corrected on its onboarding
+request in the console).
 
 --priority-tip is the fee setting of the account's OWN transactions (authorize,
 capture, void, release, refund). On, the default, they tip the network's suggested

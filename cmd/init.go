@@ -69,7 +69,7 @@ directly instead.`,
 			Options(names...).
 			Value(&env).
 			Run(); err != nil {
-			return err
+			return initPromptErr(err)
 		}
 		if err := switchEnv(env, false); err != nil {
 			return err
@@ -94,7 +94,7 @@ directly instead.`,
 			Description("Stored by the OS, never in a file. Referenced later as @name — no key on the command line.").
 			Value(&saveKey).
 			Run(); err != nil {
-			return err
+			return initPromptErr(err)
 		}
 
 		keyName := ""
@@ -105,7 +105,7 @@ directly instead.`,
 				Value(&keyName).
 				Validate(validateKeyName).
 				Run(); err != nil {
-				return err
+				return initPromptErr(err)
 			}
 			// The real command, guards included — notably its refusal to overwrite an
 			// orphaned keychain entry, which is the one mistake here that cannot be
@@ -123,7 +123,7 @@ directly instead.`,
 				Description("SIWE sign-in; the session is cached for this gateway only.").
 				Value(&signIn).
 				Run(); err != nil {
-				return err
+				return initPromptErr(err)
 			}
 			if signIn {
 				// authLoginCmd reads the key from its flag variable, so this is the
@@ -138,6 +138,20 @@ directly instead.`,
 		printNextSteps(keyName)
 		return nil
 	},
+}
+
+// initPromptErr maps a cancelled init prompt (Ctrl-C or ESC: huh.ErrUserAborted) onto
+// ErrAborted, so `rail0 init` exits 130 like every other prompt and as the README
+// documents, instead of 1 — a script must be able to tell "the user said no" from a
+// failure. Returned rather than os.Exit'd (abortOrReturn): init's prompts are steps of
+// one command, so ending through RunE keeps the single exit path. Any other error is
+// returned unchanged.
+func initPromptErr(err error) error {
+	if errors.Is(err, huh.ErrUserAborted) {
+		fmt.Fprintln(os.Stderr)
+		return ErrAborted
+	}
+	return err
 }
 
 // validateKeyName rejects a name the keychain path would reject later, at the point

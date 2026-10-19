@@ -48,6 +48,14 @@ jobs:
       # names are shared across these repos by convention (feature/webhook-topics in
       # both), looking for the twin first makes the pair testable before either merges,
       # and falls back to main for every ordinary PR.
+      #
+      # Deliberately NOT pinned to the go.mod version, unlike release.yml. CI's job is
+      # to catch SDK breakage early: building against main (or the twin branch) fails a
+      # CLI PR as soon as the SDK moves in an incompatible way, before that SDK is
+      # released, and keeps coordinated SDK+CLI branches testable together. The pinned
+      # build happens where it matters — at release time, against exactly the tag
+      # go.mod requires — so a CLI that only compiles against unreleased SDK code fails
+      # the release rather than shipping it.
       - name: Pick the rail0-go ref
         id: sdk_ref
         env:

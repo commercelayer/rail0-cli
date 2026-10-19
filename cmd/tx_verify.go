@@ -53,134 +53,85 @@ func (sc *signingContext) verify(unsignedJSON string) error {
 		Amount:    sc.amount,
 	})
 	if err != nil {
-		return errors.New(strings.TrimPrefix(err.Error(), "rail0: "))
+		return withoutSDKPrefix(err)
 	}
 	return nil
 }
 
 // ── EIP-712 / EIP-3009 authorization ─────────────────────────────────────────
-
-// payloadExpectation is what the caller independently knows about the
-// authorization it asked for. Every field is optional: a zero value means "not
-// known here", and that check is skipped rather than guessed at.
-type payloadExpectation struct {
-	// Address derived from the private key about to sign. Always known.
-	signer string
-	// Chain the authorization must be scoped to. 0 = unknown.
-	chainID int
-	// Token contract the authorization must be against — the EIP-712 domain's
-	// verifyingContract for EIP-3009. "" = unknown.
-	token string
-	// Exact amount in TOKEN BASE UNITS. "" = unknown (e.g. the token's decimals
-	// could not be resolved, so the human amount cannot be scaled locally).
-	valueBaseUnits string
-	// Recipient the authorization must pay: the payment's RAIL0 contract, taken
-	// from the payment record. "" = unknown.
-	to string
-}
-
-// verifySigningPayload is signingContext.verify's counterpart for the EIP-712
-// authorization, and exists for the same threat model: a hostile or merely
-// misconfigured endpoint — reachable via --base-url or RAIL0_BASE_URL — could have
-// the user's own key sign something they never asked for.
 //
-// It guarded only the EIP-1559 transaction, which is the LESS dangerous of the two
-// artifacts. A malicious transaction costs gas and goes through RAIL0; an EIP-3009
-// authorization is a bearer instrument the TOKEN honours directly, with no RAIL0
-// involvement, for up to message.value — so an endpoint that answered a refund
-// prepare with {from: <payee>, to: <attacker>, value: <the payee's whole balance>}
-// got that signed verbatim and could replay it against USDC. Phase 2 and verify()
-// never entered into it: the signature was already handed over.
+// verify's counterpart for the EIP-712 authorization, for the same threat model: a
+// hostile or merely misconfigured endpoint — reachable via --base-url or
+// RAIL0_BASE_URL — could have the user's own key sign something they never asked for.
 //
-// Asserting here does NOT break the sign-the-payload-verbatim rule (#93). The
-// typehash still comes from the payload's own primaryType and the digest is still
-// built from its message; this only refuses to sign a message whose fields
-// contradict what the caller asked for. Every value compared is already in hand, so
-// there is no extra round-trip — same property as verify().
+// The authorization is the MORE dangerous of the two artifacts. A malicious
+// transaction costs gas and goes through RAIL0; an EIP-3009 authorization is a bearer
+// instrument the TOKEN honours directly, with no RAIL0 involvement, for up to
+// message.value — so an endpoint that answered a refund prepare with {from: <payee>,
+// to: <attacker>, value: <the payee's whole balance>} would get that signed verbatim
+// and could replay it against USDC.
+//
+// The check is the SDK's: every signing path goes through signSigningPayload
+// (cmd/signing.go), which calls rail0.SignSigningPayloadFor (rail0-go v1.7.0, a port of
+// the copy that lived here). It runs rail0.VerifySigningPayload BEFORE the key touches
+// the payload — message.from = the signing key, domain.chainId, domain.verifyingContract
+// = the token, message.to = the payment's RAIL0 contract, message.value exactly the
+// expected base units — and signs only when it passes. Unlike the old local copy it
+// FAILS CLOSED on every field: an expectation with anything missing (no rail0_contract,
+// no chain, no amount) refuses instead of skipping that comparison.
+//
+// Asserting does NOT break the sign-the-payload-verbatim rule (#93): the typehash still
+// comes from the payload's own primaryType and the digest from its message; this only
+// refuses a message whose fields contradict what the caller asked for. Every value
+// compared is already in hand, so there is no extra round-trip — same property as
+// verify().
 //
 // What this does NOT establish, stated so nobody reads more into it:
 //
-//   - message.to, which for both RAIL0 flows is the RAIL0 contract, is compared only
-//     with the payment record's rail0_contract — the same gateway's word, so not
-//     independent (the limitation verify() documents). An authorization addressed to
-//     a contract the endpoint controls is spendable by that contract for its value.
-//   - message.nonce is NOT recomputed. For authorize/charge it is
-//     keccak256(abi.encode(prefix, rail0_id, configHash)), and configHash is the
-//     RAIL0-domain EIP-712 hash of the payment terms (payer, payee, token, amount,
-//     both expiries) — so it is what binds the signature to THESE terms on-chain.
-//     Recomputing it needs the deployment's VERSION() for the domain, and no payment
-//     response carries it: the only source is GET /blockchains (`contract.version`,
-//     typed in the SDK as Blockchain.Contract.Version). Reading it would add a gateway
-//     request to every create, which was judged not worth it for this check
-//     (2026-09-24), so a nonce for different terms (another payee) is not detectable
-//     here. Revisit if a payment response ever carries the version. `payments
-//     create` narrows this by checking the created payment's own terms against the
-//     request (checkCreatedPayment), which catches a gateway that records the wrong
-//     payment, but not one that records the right payment and serves a nonce for
-//     another.
+//   - message.to is compared only with the payment record's rail0_contract — the same
+//     gateway's word, so not independent (the limitation verify() documents).
+//   - message.nonce is NOT recomputed. For authorize/charge it binds the signature to
+//     the payment terms on-chain, but recomputing it needs the deployment's VERSION(),
+//     which no payment response carries (only GET /blockchains does, and reading it
+//     would add a request to every create — judged not worth it, 2026-09-24). `payments
+//     create` narrows this with checkCreatedPayment, which catches a gateway that
+//     records the wrong payment, but not one that records the right payment and serves
+//     a nonce for another.
 //
-// The bounded residual is therefore an authorization for the RIGHT token, on the
-// RIGHT chain, from the RIGHT signer, for EXACTLY the amount the user typed — a loss
-// of at most the intended amount instead of an unbounded drain of the balance.
+// The bounded residual is an authorization for the RIGHT token, on the RIGHT chain,
+// from the RIGHT signer, for EXACTLY the amount asked — a loss of at most the intended
+// amount instead of an unbounded drain of the balance.
+
+// payloadExpectation is the expectation for an authorization over a payment the
+// command already fetched (`payments sign`, `payments refund`): the SDK's
+// rail0.PayloadExpectationFor — chain, token and RAIL0 contract from the payment
+// record — with the signer this context derived from the key.
 //
-// One caveat worth stating: valueBaseUnits is derived by scaling the user's decimal
-// amount with the token's decimals, and those decimals come from the catalog — i.e.
-// from the same endpoint. A hostile one could overstate them to inflate the value it
-// gets signed. The check still holds the amount to what the user typed under the
-// endpoint's own declared scale, and every other field above is compared against
-// something the user supplied or the CLI derived locally.
-func verifySigningPayload(sp *rail0.SigningPayload, want payloadExpectation) error {
-	if sp == nil {
-		// Callers that require a payload already say so more precisely (create
-		// answers 502 signing_payload_unavailable; sign reports the status).
-		return nil
+// amount "" holds the authorization to the payment's own stored base-unit amount (sign:
+// the caller named a payment, not an amount, so the payment is what they agree to);
+// otherwise amount is the human decimal the USER typed (refund's --amount), scaled by
+// the payment's decimals. Fail-closed: unknown decimals or an amount finer than the
+// token allows is an error, not a skipped check.
+func (sc *signingContext) payloadExpectation(amount string) (rail0.PayloadExpectation, error) {
+	want, err := rail0.PayloadExpectationFor(sc.payment, amount)
+	if err != nil {
+		return rail0.PayloadExpectation{}, withoutSDKPrefix(err)
 	}
+	want.Signer = rail0.Address(sc.signer)
+	return want, nil
+}
 
-	// The authorization must be FROM the key about to sign it. This is the one
-	// comparison whose right-hand side is derived locally from the private key, so
-	// it holds no matter what the endpoint claims.
-	if want.signer != "" && !strings.EqualFold(string(sp.Message.From), want.signer) {
-		return fmt.Errorf(
-			"refusing to sign: the authorization is from %s but the signing key is %s",
-			sp.Message.From, want.signer)
-	}
-
-	if want.chainID != 0 && sp.Domain.ChainId != want.chainID {
-		return fmt.Errorf(
-			"refusing to sign: the authorization is scoped to chain %d but this payment is on chain %d",
-			sp.Domain.ChainId, want.chainID)
-	}
-
-	// For EIP-3009 the domain's verifyingContract IS the token: this is what stops an
-	// authorization being minted against a different token the signer happens to hold.
-	if want.token != "" && !strings.EqualFold(string(sp.Domain.VerifyingContract), want.token) {
-		return fmt.Errorf(
-			"refusing to sign: the authorization is against token %s but this payment's token is %s",
-			sp.Domain.VerifyingContract, want.token)
-	}
-
-	// A consistency check against the payment record, like verify's `to` check.
-	if want.to != "" && !strings.EqualFold(string(sp.Message.To), want.to) {
-		return fmt.Errorf(
-			"refusing to sign: the authorization pays %s but this payment's RAIL0 contract is %s",
-			sp.Message.To, want.to)
-	}
-
-	// Exact, not a ceiling: the gateway signs for the full amount of the operation,
-	// so anything else is a mismatch rather than a partial authorization.
-	if want.valueBaseUnits != "" && string(sp.Message.Value) != want.valueBaseUnits {
-		return fmt.Errorf(
-			"refusing to sign: the authorization is for %s base units but you asked for %s",
-			sp.Message.Value, want.valueBaseUnits)
-	}
-
-	return nil
+// withoutSDKPrefix drops the "rail0: " the SDK opens its errors with. The CLI's
+// refusals never carried it, so the user keeps reading "refusing to sign: …" naming
+// the field, in the SDK's own words (#174).
+func withoutSDKPrefix(err error) error {
+	return errors.New(strings.TrimPrefix(err.Error(), "rail0: "))
 }
 
 // checkCreatedPayment asserts the payment `payments create` got back is the one it
 // asked for, BEFORE the payer signs its authorization.
 //
-// verifySigningPayload holds the authorization to the request's signer, chain, token
+// The SDK's payload check holds the authorization to the request's signer, chain, token
 // and amount, but the payment record itself went unchecked — and the record is what
 // the payee then authorizes against: its payee is who the escrow settles to, its mode
 // decides whether funds are held or forwarded at once. A gateway that created the
@@ -212,20 +163,11 @@ func checkCreatedPayment(created *rail0.Payment, req rail0.CreatePaymentRequest,
 	return nil
 }
 
-// verifySigningPayload for a payment already fetched from the gateway: chain and
-// token come from the payment record, the amount from its stored base-unit value.
-func (sc *signingContext) verifySigningPayload(sp *rail0.SigningPayload, valueBaseUnits string) error {
-	want := payloadExpectation{signer: sc.signer, valueBaseUnits: valueBaseUnits}
-	if sc.payment != nil {
-		want.chainID = sc.payment.ChainID
-		want.token = string(sc.payment.Token)
-		want.to = string(sc.payment.Rail0Contract)
-	}
-	return verifySigningPayload(sp, want)
-}
-
 // expectedBaseUnits scales the human amount the USER typed by the token's decimals,
-// for comparison against the authorization's value.
+// for comparison against the authorization's value. Only `payments create` needs it:
+// its expectation must come from the REQUEST, before any payment record exists, so the
+// decimals are the catalog's; sign and refund scale against the fetched payment's own
+// decimals through payloadExpectation.
 //
 // The user's own input is the trustworthy side here, which is why this scales that
 // rather than reading the amount back off the gateway's response — comparing a
@@ -233,7 +175,7 @@ func (sc *signingContext) verifySigningPayload(sp *rail0.SigningPayload, valueBa
 //
 // FAILS CLOSED. It used to return "" when the decimals could not be resolved (an
 // unknown or retired token, a catalog read that failed) or the amount had more
-// decimals than the token, and "" told verifySigningPayload to SKIP the value check —
+// decimals than the token, and "" told the payload check to SKIP the value check —
 // the one check the whole guard exists for. So a flaky catalog, or `-a 1.0000001` on
 // USDC, had the authorization signed for whatever value the endpoint returned. The
 // callers now refuse to sign instead.

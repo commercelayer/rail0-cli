@@ -11,8 +11,8 @@ import (
 //
 // ONE rule governs this file: the gateway builds the signing payload, and we
 // sign it VERBATIM — typehash from its primaryType, fields from its message,
-// domain from its domain. The rule now lives in the SDK: rail0.SignSigningPayload
-// (rail0-go#27) is the shared mapper, so the logic that must be identical across
+// domain from its domain. The rule now lives in the SDK: rail0.SignSigningPayloadFor
+// (rail0-go#27, checked since v1.7.0) is the shared mapper, so the logic that must be identical across
 // every client exists in exactly one place. This file only adapts it to the CLI —
 // hex key in, packed-or-VRS signature out. The mapper was first written HERE
 // (#93, when the SDK had no payload signer) and moved down once it did (#99).
@@ -24,14 +24,21 @@ import (
 // well-formed signature over the WRONG digest, which fails only on-chain, after
 // gas. rail0#58 (authorize/charge → ReceiveWithAuthorization) is exactly that
 // change, and neither this CLI nor the SDK needs an edit for it.
+//
+// Verbatim is not blind: every signer here takes the caller's expectation and goes
+// through rail0.SignSigningPayloadFor, which refuses a payload whose from, chain,
+// token, recipient or value contradicts it before the key touches it (see the
+// EIP-712 section of cmd/tx_verify.go). There is deliberately no unchecked variant.
 
-// signSigningPayload signs the gateway's signing_payload and returns the packed
-// 65-byte signature (0x + r + s + v) that PUT /payments/:id/sign expects.
+// signSigningPayload verifies the gateway's signing_payload against want, signs it,
+// and returns the packed 65-byte signature (0x + r + s + v) that
+// PUT /payments/:id/sign expects. want.Signer may be empty: the SDK fills it from the
+// key.
 //
 // Works for authorize, charge and refund alike: which typehash to use is the
 // payload's own business, not ours.
-func signSigningPayload(sp *rail0.SigningPayload, privateKeyHex string) (string, error) {
-	sig, err := signSigningPayloadVRS(sp, privateKeyHex)
+func signSigningPayload(sp *rail0.SigningPayload, privateKeyHex string, want rail0.PayloadExpectation) (string, error) {
+	sig, err := signSigningPayloadVRS(sp, privateKeyHex, want)
 	if err != nil {
 		return "", err
 	}
@@ -40,7 +47,7 @@ func signSigningPayload(sp *rail0.SigningPayload, privateKeyHex string) (string,
 
 // signSigningPayloadVRS is signSigningPayload without the packing, for the
 // refund phase-2 call that submits v, r and s separately.
-func signSigningPayloadVRS(sp *rail0.SigningPayload, privateKeyHex string) (rail0.Eip3009Signature, error) {
+func signSigningPayloadVRS(sp *rail0.SigningPayload, privateKeyHex string, want rail0.PayloadExpectation) (rail0.Eip3009Signature, error) {
 	var zero rail0.Eip3009Signature
 
 	if sp == nil {
@@ -54,14 +61,18 @@ func signSigningPayloadVRS(sp *rail0.SigningPayload, privateKeyHex string) (rail
 		return zero, fmt.Errorf("invalid private key: %w", err)
 	}
 
-	return rail0.SignSigningPayload(privKey, sp)
+	sig, err := rail0.SignSigningPayloadFor(sp, privKey, want)
+	if err != nil {
+		return zero, withoutSDKPrefix(err)
+	}
+	return sig, nil
 }
 
 // signRefundPayload signs the phase-1 ReceiveWithAuthorization payload of
 // POST /payments/:id/refund/payload and returns v, r, s for phase 2. The key
 // must be the payee's.
-func signRefundPayload(sp *rail0.SigningPayload, privateKeyHex string) (int, string, string, error) {
-	sig, err := signSigningPayloadVRS(sp, privateKeyHex)
+func signRefundPayload(sp *rail0.SigningPayload, privateKeyHex string, want rail0.PayloadExpectation) (int, string, string, error) {
+	sig, err := signSigningPayloadVRS(sp, privateKeyHex, want)
 	if err != nil {
 		return 0, "", "", err
 	}

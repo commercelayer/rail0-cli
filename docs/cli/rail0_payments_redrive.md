@@ -14,6 +14,10 @@ transaction' or 'payments transactions'). A pending row WITHOUT a signed
 transaction is not stuck, it is unfinished: re-run the operation instead. The
 gateway also redrives on its own recovery cadence; this asks for it now.
 
+When the gateway's job queue is unreachable the redrive is refused with 503
+queue_unavailable: nothing was enqueued and the transaction is unchanged, so
+retry later.
+
 Payee only. Add -w/--wait to block until the transaction confirms (or fails).
 
 ```

@@ -210,6 +210,47 @@ func TestBuildRejectsSelfPayment(t *testing.T) {
 	}
 }
 
+// The gateway requires "mode", and -C/--charge does not apply to a payment file (the
+// file is the whole request), so a file without a valid mode is refused locally, with
+// a message that says both — before any network call or prompt.
+func TestBuildRequiresTheModeInAPaymentFile(t *testing.T) {
+	dir := t.TempDir()
+	write := func(modeField string) string {
+		p := filepath.Join(dir, "pay.json")
+		body := `{"chain_id":5042002,` + modeField + `"amount":"1.00",` +
+			`"token":"0x3600000000000000000000000000000000000000",` +
+			`"payer":"0x` + strings.Repeat("ab", 20) + `","payee":"0x` + strings.Repeat("cd", 20) + `"}`
+		if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+
+	// -C passed alongside: still refused, and the message says -C does not apply.
+	_, err := (&createPaymentFlags{paymentFile: write(""), charge: true}).build()
+	if err == nil || !strings.Contains(err.Error(), `"mode"`) || !strings.Contains(err.Error(), "-C/--charge") {
+		t.Fatalf("a payment file without mode must be refused naming mode and -C, got %v", err)
+	}
+	if _, err := (&createPaymentFlags{paymentFile: write(`"mode":"escrow",`)}).build(); err == nil || !strings.Contains(err.Error(), "escrow") {
+		t.Errorf("an unknown mode must be refused by name, got %v", err)
+	}
+
+	for _, mode := range []string{"authorize", "charge"} {
+		req, err := (&createPaymentFlags{paymentFile: write(`"mode":"` + mode + `",`)}).build()
+		if err != nil {
+			t.Fatalf("mode %s: %v", mode, err)
+		}
+		if req.Mode != mode {
+			t.Errorf("mode = %q, want the file's %q", req.Mode, mode)
+		}
+	}
+	// The file's mode wins: -C is a flag-path input.
+	req, err := (&createPaymentFlags{paymentFile: write(`"mode":"authorize",`), charge: true}).build()
+	if err != nil || req.Mode != "authorize" {
+		t.Errorf("-C must not override the file's mode: got %q, %v", req.Mode, err)
+	}
+}
+
 // An @alias in a payment file passes validation, so it must also be RESOLVED: the
 // request used to go out with the literal "@buyer", and the signer check then said
 // the key "does not match the payer @buyer" — which reads like a wrong key.

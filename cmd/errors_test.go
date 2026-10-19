@@ -130,6 +130,47 @@ func TestHintsForAccountWalletReleaseAndChainCodes(t *testing.T) {
 	}
 }
 
+// The release, void, SIWE-chain, webhook-limit and queue hints say what the gateway
+// actually means by each code (review 2026-10-19).
+func TestHintsMatchTheGatewaySemantics(t *testing.T) {
+	// C2: not_releasable is "nothing uncaptured left" (already captured, voided or
+	// released). The still-open window is authorization_not_expired — the old hint
+	// sent the user to wait for an expiry that would never make the release possible.
+	nr := hintFor("not_releasable", "")
+	for _, want := range []string{"nothing uncaptured", "captured", "voided", "released"} {
+		if !strings.Contains(nr, want) {
+			t.Errorf("not_releasable hint %q should say %q", nr, want)
+		}
+	}
+	if strings.Contains(nr, "expires") || strings.Contains(nr, "expiry") {
+		t.Errorf("not_releasable hint %q must not describe the window — that is authorization_not_expired", nr)
+	}
+	if h := hintFor("authorization_not_expired", ""); !strings.Contains(h, "release opens only after the authorization expires") {
+		t.Errorf("authorization_not_expired hint = %q, want the window", h)
+	}
+
+	for code, want := range map[string]string{
+		// void has no time guard: an expired, untouched authorization is voidable.
+		"not_voidable": "'expired'",
+		// chain id 1 or any active catalog chain (gateway#426), as the SDKs say.
+		"siwe_chain_mismatch":   "chain id 1",
+		"webhook_limit_reached": "disabled ones count too",
+		"queue_unavailable":     "retry in a moment",
+	} {
+		if got := hintFor(code, ""); !strings.Contains(got, want) {
+			t.Errorf("hintFor(%q) = %q, want substring %q", code, got, want)
+		}
+	}
+	if h := hintFor("siwe_chain_mismatch", ""); !strings.Contains(h, "rail0 chains") {
+		t.Errorf("siwe_chain_mismatch hint %q should point at the active chain list", h)
+	}
+
+	// Raised only on /…/submitted, which the CLI never calls: no hint to get wrong.
+	if h := hintFor("transaction_not_overwritable", ""); h != "" {
+		t.Errorf("transaction_not_overwritable is unreachable from the CLI, got hint %q", h)
+	}
+}
+
 // A cancelled operation must never exit 0. `rail0 payments refund <id> &&
 // mark_refunded_in_db` used to run the second command when the operator hit Ctrl-C at
 // the amount prompt, so a database recorded a refund that never happened (#65).

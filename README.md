@@ -162,7 +162,9 @@ directory you cannot write to (`/usr/local/bin` after `make install`), run
 Interactive sessions also **check once a day** and, when a newer release exists, ask
 `Update now? [Y/n]` before running your command. The command then runs normally
 whatever you answer. The check never runs in CI (`CI` set), with `--json` or
-`--quiet`, when stdin or stderr is not a terminal, or with `RAIL0_NO_UPDATE_CHECK=1`.
+`--quiet` (or a stored `output` default of `json` or `quiet`, from `rail0 config set
+output …` or `RAIL0_OUTPUT`, unless another output flag is passed), when stdin or
+stderr is not a terminal, or with `RAIL0_NO_UPDATE_CHECK=1`.
 It is skipped for local builds (`dev` or a `git describe` version), and a failed lookup
 is silent. The last check time lives in the user cache directory, next to the session
 tokens (`update-check.json`).
@@ -769,7 +771,11 @@ rail0 payments create -F @buyer -T @merchant -t USDC -a 10.50 -c 5042002 -p @buy
 > `token` (addresses compared case-insensitively), `mode`, `chain_id`, and `amount` in
 > base units (your `--amount` scaled locally). The EIP-3009 authorization must be from
 > the signing key, on that chain and token, addressed to the payment's RAIL0 contract,
-> for exactly that amount. Any mismatch refuses to sign. Not yet checked: the
+> for exactly that amount. Any mismatch refuses to sign, and so does anything the check
+> cannot compare: a created payment without a `rail0_contract` is refused, never signed
+> unchecked. `payments sign` and `payments refund` run the same check against the
+> fetched payment (its stored amount, or the refund `--amount` scaled by its decimals).
+> Not yet checked: the
 > authorization's `nonce`, which binds it to the payment terms on-chain — recomputing it
 > needs the contract version, which the SDK cannot read from `GET /blockchains` yet.
 
@@ -780,6 +786,10 @@ deposit the signature on the existing one:
 ```sh
 rail0 payments sign 0xRail0Id… -p @buyer-key
 ```
+
+If `payments sign` says the payment is unsigned but the gateway could not build its
+signing payload, the gateway's chain read failed (usually a transient RPC issue):
+retry the same command in a moment.
 
 **Token/chain discovery from the payee.** On a terminal, if you give `--to` but
 omit `--token` and/or `--chain-id`, the CLI looks up what that merchant accepts
@@ -853,7 +863,8 @@ The signing key is resolved in this order: `--private-key` (`-p` / `--pk`, where
 **Checked before signing.** The gateway prepares the transaction, but the CLI checks it
 locally before your key touches it, and refuses to sign on any mismatch: it must be
 value-0, on the payment's chain, from the signing key, addressed to the payment's RAIL0
-contract, call **the RAIL0 function you asked for** (its 4-byte selector — so a `void`
+contract (required: a transaction without `to`, or a payment without a
+`rail0_contract`, is refused), call **the RAIL0 function you asked for** (its 4-byte selector — so a `void`
 answered with `capture` calldata, or a `dispute` with `closeDispute`, is refused) on
 **this payment's id**, and — for `capture` and `refund` — move **exactly the `--amount`
 you typed**, scaled to base units locally. Like the refund authorization's check, the
@@ -1292,14 +1303,14 @@ rail0 webhooks delete <webhook_id>
 |---------|-------------|
 | `list` | List webhooks (`--topic` shows subscriptions that *include* that event, `--active`, `--circuit-state`, `--sort`) |
 | `get` | Fetch a single webhook |
-| `create` | Register a webhook (`--name`, `--callback-url`, `-t/--topic` repeated or comma-separated; returns shared secret) |
+| `create` | Register a webhook (`--name`, `--callback-url`, `-t/--topic` repeated or comma-separated; returns shared secret). At most **20 per account** (the gateway's `WEBHOOKS_PER_ACCOUNT` default): past it, 422 `webhook_limit_reached`. Disabled webhooks count toward the limit, deleted ones do not — delete one or add topics to an existing one |
 | `update` | Patch `--name`, `--callback-url`, or `--topic` — the topic flag **replaces** the set, which is also how one is removed |
 | `enable` | Clear the **manual** disable only — see [the two switches](#two-ways-to-be-off--and-only-one-enable) |
 | `disable` | Stop deliveries reversibly, keeping the id and secret (`delete` is the permanent form) |
 | `rotate-secret` | Issue a new shared secret (returned once) |
 | `reset-circuit` | Close the breaker **and** clear the manual disable — the only way back from a trip |
 | `event-callbacks` | Delivery attempts — the log to read when a callback did not arrive (`--status delivered\|failed`, `--response-code`, `--topic`, `--payment-id` as the payment's UUID or its 0x rail0_id — passed to the gateway as is, so any payment of the account matches whichever of its wallets it belongs to, `--since`, `--until`, `--sort`, `--page` / `--per-page`) |
-| `redeliver` | Replay one recorded attempt's exact payload (same event id, fresh signature); async, returns `queued` — needs an active webhook, so `enable` / `reset-circuit` first |
+| `redeliver` | Replay one recorded attempt's exact payload (same event id, fresh signature); async, returns `queued` — needs an active webhook, so `enable` / `reset-circuit` first. If the gateway's job queue is down nothing is queued: retry later |
 | `delete` | Destroy the webhook and its secret, permanently (unlike `wallets delete`, this one is real) |
 
 ---
@@ -1423,7 +1434,7 @@ Create a payment, sign the EIP-712 payload with the payer's key, and submit the 
 | `--chain-id` | `-c` | yes | — | EVM chain ID as in `chains` (e.g. `5042002`) |
 | `--charge` | `-C` | no | (off) | Create with mode `charge` (immediate, no escrow); default is `authorize` (escrow + capture) |
 | `--description` | `-d` | no | — | Reconciliation note (e.g. order id); prompted on a terminal when omitted |
-| `--payment-file` | `-f` | no | — | JSON file with the full request body |
+| `--payment-file` | `-f` | no | — | JSON file with the full request body: `chain_id`, `mode` (`authorize` or `charge`), `amount`, `token` (the contract address), `payer`, `payee` required, `description` optional. The file is the whole request: `-F -T -t -a -c -C -d` and the stored chain/token defaults are ignored with it, so put `"mode": "charge"` in the file instead of passing `-C` |
 | `--private-key` | `-p` | yes | — | Payer's key — creates and signs locally in one step |
 | `--idempotency-key` | — | no | fresh per run | Reuse to retry the same create without minting a second payment |
 
@@ -1567,6 +1578,8 @@ no new signature is asked for and nothing about the payment changes. Only a row 
 stuck, so re-run the operation instead. Payee only, and it takes no key: it runs on the
 stored session, so `auth login` as the payee first. `-w/--wait` blocks until it
 confirms. The gateway also redrives on its own recovery cadence; this asks for it now.
+When the gateway's job queue is unreachable it answers 503 `queue_unavailable`: nothing
+was enqueued and the transaction is unchanged, so retry later.
 
 ```sh
 rail0 payments transaction 0xabc123… 7f1c0c8e-…

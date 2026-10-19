@@ -11,6 +11,7 @@ import (
 	"time"
 
 	rail0 "github.com/commercelayer/rail0-go"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/rail0/cli/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -411,7 +412,13 @@ authorize. If --private-key is omitted, the CLI prompts for it (hidden) on a
 terminal — so the key stays out of the shell history and process arguments.
 
 --from (payer) and --to (payee) must be different addresses: a payment can't be
-sent from an address to itself.`,
+sent from an address to itself.
+
+--payment-file (-f) takes the whole request body as JSON instead of the flags:
+chain_id, mode ("authorize" or "charge"), amount, token (the contract ADDRESS),
+payer and payee are required, description optional. The file is the complete
+request, so -F, -T, -t, -a, -c, -C and -d are ignored with it, and so are the stored
+chain/token defaults: set "mode": "charge" in the file rather than passing -C.`,
 	Example: `  rail0 payments create \
     -F @buyer -T @merchant -t USDC -a 10.50 -c 5042002 \
     -p @buyer-key`,
@@ -477,7 +484,7 @@ sent from an address to itself.`,
 			// before signing. Everything on the right-hand side here came from the
 			// user (the flags they typed) or from the key itself, not from the
 			// response being checked — see checkCreatedPayment and
-			// verifySigningPayload. `to` is the one exception, a consistency check
+			// signSigningPayload. `to` is the one exception, a consistency check
 			// against the created record, as `payments sign` does.
 			if err := checkCreatedPayment(created, req, wantUnits); err != nil {
 				return nil, err
@@ -500,20 +507,25 @@ sent from an address to itself.`,
 					"payment %s is unsigned but the gateway did not include its signing_payload — retry with 'rail0 payments sign %[1]s'",
 					created.Rail0Id)
 			}
-			if err := verifySigningPayload(created.SigningPayload, payloadExpectation{
-				signer:         signer,
-				chainID:        req.ChainID,
-				token:          string(req.Token),
-				valueBaseUnits: wantUnits,
-				to:             string(created.Rail0Contract),
-			}); err != nil {
-				return nil, err
+			// The authorization's message.to is checked against the created record's
+			// rail0_contract, so a payment without one cannot be signed: the SDK's
+			// check fails closed on it. Refuse here first, naming the field.
+			if !common.IsHexAddress(string(created.Rail0Contract)) {
+				return nil, fmt.Errorf("refusing to sign: the gateway created payment %s without a valid rail0_contract (%q), "+
+					"so the authorization's recipient cannot be checked", created.Rail0Id, created.Rail0Contract)
 			}
-			// Sign the gateway's payload verbatim — see cmd/signing.go for why the
-			// CLI must not rebuild the digest (#93).
-			sig, err := signSigningPayload(created.SigningPayload, signingKey)
+			// Verify, then sign the gateway's payload verbatim — see cmd/signing.go for
+			// why the CLI must not rebuild the digest (#93). The expectation is the
+			// REQUEST, never the response being checked, except `to` (above).
+			sig, err := signSigningPayload(created.SigningPayload, signingKey, rail0.PayloadExpectation{
+				Signer:  rail0.Address(signer),
+				ChainID: req.ChainID,
+				Token:   req.Token,
+				To:      created.Rail0Contract,
+				Value:   rail0.Uint256String(wantUnits),
+			})
 			if err != nil {
-				return nil, fmt.Errorf("sign: %w", err)
+				return nil, err
 			}
 			return client.Payments.Sign(ctx, created.ID,
 				rail0.PayerSignatureRequest{Signature: sig})
@@ -573,26 +585,32 @@ recovered signer is the payment's payer.`,
 			}
 			// The gateway only embeds signing_payload while the payment is unsigned,
 			// so an already-signed one is reported as such instead of as a missing
-			// payload.
+			// payload. An UNSIGNED payment without one is not "already signed": the
+			// gateway could not build the payload right now (it reads the chain to do
+			// so — a transient RPC failure), so say that and that a retry is the fix,
+			// as `payments create` does.
 			if payment.SigningPayload == nil {
+				if payment.Status == "unsigned" {
+					return nil, fmt.Errorf(
+						"payment %s is unsigned but the gateway could not build its signing_payload right now "+
+							"(usually a transient chain RPC failure) — retry 'rail0 payments sign %[1]s' in a moment",
+						args[0])
+				}
 				return nil, fmt.Errorf(
 					"payment %s is %s, not unsigned — there is no signature to deposit",
 					args[0], payment.Status)
 			}
-			// The payment's own stored amount is the expectation here: the caller named
-			// a payment rather than an amount, so this is what they are agreeing to.
-			if err := verifySigningPayload(payment.SigningPayload, payloadExpectation{
-				signer:         signer,
-				chainID:        payment.ChainID,
-				token:          string(payment.Token),
-				valueBaseUnits: payment.Amount,
-				to:             string(payment.Rail0Contract),
-			}); err != nil {
+			// The payment's own stored amount is the expectation here (amount ""): the
+			// caller named a payment rather than an amount, so this is what they are
+			// agreeing to.
+			sc := &signingContext{payment: payment, signer: signer}
+			want, err := sc.payloadExpectation("")
+			if err != nil {
 				return nil, err
 			}
-			sig, err := signSigningPayload(payment.SigningPayload, signingKey)
+			sig, err := signSigningPayload(payment.SigningPayload, signingKey, want)
 			if err != nil {
-				return nil, fmt.Errorf("sign: %w", err)
+				return nil, err
 			}
 			return client.Payments.Sign(ctx, payment.ID,
 				rail0.PayerSignatureRequest{Signature: sig})
@@ -1230,9 +1248,9 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 				return resumeReplayed(ctx, client, rail0Id, sc.payment.ChainID, "refund", phase1)
 			}
 			// `refundAmount` is what the user typed. It is the right-hand side of BOTH
-			// refund checks: scaled locally (wantUnits) for the authorization's value,
-			// and by the SDK's pre-sign check for the amount the refund() calldata carries.
-			wantUnits, err := expectedBaseUnits(ctx, sc.payment.ChainID, string(sc.payment.Token), refundAmount)
+			// refund checks, each scaled by the payment's decimals inside the SDK: the
+			// authorization's value (want) and the amount the refund() calldata carries.
+			want, err := sc.payloadExpectation(refundAmount)
 			if err != nil {
 				return nil, err
 			}
@@ -1258,14 +1276,11 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 
 			// This is the payload the whole guard exists for: a ReceiveWithAuthorization
 			// is honoured by the token itself, so an endpoint that answered with the
-			// payee's whole balance as `value` used to get exactly that signed.
-			if err := sc.verifySigningPayload(phase1.SigningPayload, wantUnits); err != nil {
-				return nil, err
-			}
-			// Sign the EIP-3009 ReceiveWithAuthorization payload (payee key).
-			v, r, s, err := signRefundPayload(phase1.SigningPayload, signingKey)
+			// payee's whole balance as `value` used to get exactly that signed. Verify,
+			// then sign it (payee key).
+			v, r, s, err := signRefundPayload(phase1.SigningPayload, signingKey, want)
 			if err != nil {
-				return nil, fmt.Errorf("sign refund payload: %w", err)
+				return nil, err
 			}
 			// Combine V/R/S into a single 65-byte 0x-prefixed signature for phase 2.
 			signature := "0x" + r[2:] + s[2:] + fmt.Sprintf("%02x", v)

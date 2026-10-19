@@ -141,7 +141,7 @@ type createPaymentFlags struct {
 // addTo registers all create-payment flags on cmd.
 func (f *createPaymentFlags) addTo(cmd *cobra.Command) {
 	cmd.Flags().StringVarP(&f.paymentFile, "payment-file", "f", "",
-		"Path to a JSON file with the full request body (overrides individual flags)")
+		"Path to a JSON file with the full request body, \"mode\" included; the other request flags (-F -T -t -a -c -C -d) and stored defaults are then ignored")
 	cmd.Flags().StringVarP(&f.from, "from", "F", "",
 		"Payer wallet address (from) (0x-prefixed, funds are pulled from here)")
 	cmd.Flags().StringVarP(&f.to, "to", "T", "",
@@ -175,7 +175,8 @@ func (f *createPaymentFlags) addTo(cmd *cobra.Command) {
 //
 // A --payment-file skips this entirely (see buildResolved): a file is a complete
 // request by definition, so mixing stored defaults into it would produce a body the
-// author did not write.
+// author did not write. The same holds for every request flag, -C/--charge included:
+// the file's own "mode" decides authorize vs charge.
 func (f *createPaymentFlags) applyConfiguredDefaults() {
 	f.fromConfig = nil
 	if f.token == "" {
@@ -302,7 +303,18 @@ func (f *createPaymentFlags) buildResolved() (rail0.CreatePaymentRequest, error)
 // interesting one, because writing the symbol there is the natural mistake.
 func validateFileRequest(req rail0.CreatePaymentRequest) error {
 	if req.Payer == "" || req.Payee == "" || req.Token == "" || req.Amount == "" || req.ChainID == 0 {
-		return fmt.Errorf("payment file must set payer, payee, token, amount and chain_id")
+		return fmt.Errorf("payment file must set payer, payee, token, amount, chain_id and mode")
+	}
+	// The gateway requires mode, and the file is the whole request: -C/--charge is a
+	// FLAG-path input and is ignored with a file, like every other request flag. A
+	// file without mode therefore used to reach the gateway as a bare validation
+	// error, and one written expecting -C to apply was not obviously the culprit.
+	switch req.Mode {
+	case "authorize", "charge":
+	case "":
+		return fmt.Errorf(`payment file must set "mode": "authorize" or "charge" (the gateway requires it, and -C/--charge does not apply to a payment file)`)
+	default:
+		return fmt.Errorf(`payment file mode %q: must be "authorize" or "charge"`, req.Mode)
 	}
 	if err := validateAddress(string(req.Payer)); err != nil {
 		return fmt.Errorf("payment file payer: %w", err)

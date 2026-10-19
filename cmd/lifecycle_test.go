@@ -55,7 +55,7 @@ func unsignedFor(t *testing.T, op, amountUnits string) string {
 	t.Helper()
 	b, _ := json.Marshal(map[string]any{
 		"chain_id": lcChainID, "from": addressForTestKey(t),
-		"to": "0x4CCC4DdeBB8A63B9186936A8C0FA404910A4311b", "value": 0,
+		"to": lcCreateContract, "value": 0,
 		"data":  calldataFor(t, op, lcRail0ID, amountUnits),
 		"nonce": 1, "gas_limit": 200000, "max_priority_fee_per_gas": 1, "max_fee_per_gas": 2,
 	})
@@ -83,7 +83,7 @@ func newLifecycleGateway(t *testing.T) *lifecycleGateway {
 		case r.Method == http.MethodGet && r.URL.Path == base:
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"id": "pay-1", "rail0_id": lcRail0ID, "status": "captured", "chain_id": lcChainID,
-				"token": lcToken, "decimals": 6, "amount": "1000000",
+				"token": lcToken, "decimals": 6, "amount": "1000000", "rail0_contract": lcCreateContract,
 				"payer": "0x9999999999999999999999999999999999999999", "payee": signer,
 			})
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/prepare"):
@@ -325,7 +325,7 @@ func (g *createGateway) sent(methodPath string) int {
 }
 
 // newCreateGateway serves a well-formed create for 1.00 of lcToken (6 decimals) from
-// the test key to lcCreatePayee, with a signing payload verifySigningPayload accepts,
+// the test key to lcCreatePayee, with a signing payload the pre-sign check accepts,
 // and points `payments create` at it through a payment file.
 func newCreateGateway(t *testing.T) *createGateway {
 	t.Helper()
@@ -423,6 +423,23 @@ func TestCreateRefusesAPaymentOtherThanRequested(t *testing.T) {
 	}
 }
 
+// BEHAVIOUR CHANGE (rail0-go v1.7.0): the authorization's message.to is checked
+// against the created payment's rail0_contract, and a missing one is no longer a
+// skipped check. A created payment without it is refused by name; nothing is signed.
+func TestCreateRefusesAPaymentWithoutARail0Contract(t *testing.T) {
+	g := newCreateGateway(t)
+	delete(g.created, "rail0_contract")
+
+	var err error
+	_ = captureStdout(t, func() { err = paymentsCreateCmd.RunE(paymentsCreateCmd, nil) })
+	if err == nil || !strings.Contains(err.Error(), "refusing to sign") || !strings.Contains(err.Error(), "rail0_contract") {
+		t.Fatalf("a created payment without a rail0_contract must be refused by name, got %v", err)
+	}
+	if n := g.sent("PUT /payments/pay-new/sign"); n != 0 {
+		t.Errorf("signed %d time(s) after a refusal", n)
+	}
+}
+
 // A re-run with the same --idempotency-key after a create that went through: the
 // gateway replays the already-signed payment, with no signing_payload. That is the
 // retry succeeding — it must exit 0 with the payment, and deposit nothing.
@@ -489,5 +506,106 @@ func TestCaptureReRunOfAFailedTransactionFails(t *testing.T) {
 		if n := g.sent("POST /payments/" + lcRail0ID + "/capture"); n != 0 {
 			t.Errorf("wait=%v: the replayed capture was submitted %d time(s)", wait, n)
 		}
+	}
+}
+
+// ── payments sign ────────────────────────────────────────────────────────────
+
+// newSignGateway serves one payment (the test key as payer) for `payments sign`, with
+// whatever status and signing_payload the test sets, and records the deposits.
+func newSignGateway(t *testing.T, payment map[string]any) *createGateway {
+	t.Helper()
+	isolate(t)
+	isolateTokenStore(t)
+	t.Setenv("RAIL0_PRIVATE_KEY", "")
+	payer := addressForTestKey(t)
+	base := map[string]any{
+		"id": "pay-1", "rail0_id": lcRail0ID, "chain_id": lcChainID, "mode": "authorize",
+		"token": lcToken, "decimals": 6, "amount": "1000000", "payer": payer,
+		"payee": lcCreatePayee, "rail0_contract": lcCreateContract,
+	}
+	for k, v := range payment {
+		base[k] = v
+	}
+	g := &createGateway{created: base}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		g.mu.Lock()
+		g.requests = append(g.requests, r.Method+" "+r.URL.Path)
+		g.mu.Unlock()
+		_, _ = io.Copy(io.Discard, r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/payments/"+lcRail0ID:
+			_ = json.NewEncoder(w).Encode(g.created)
+		case r.Method == http.MethodPut && strings.HasSuffix(r.URL.Path, "/sign"):
+			_ = json.NewEncoder(w).Encode(map[string]any{"id": "pay-1", "rail0_id": lcRail0ID, "status": "signed"})
+		default:
+			_, _ = w.Write([]byte(`[]`))
+		}
+	}))
+	t.Cleanup(srv.Close)
+	t.Setenv("RAIL0_BASE_URL", srv.URL)
+	if err := saveTokenForTest(makeJWT(t, map[string]any{"sub": payer, "exp": time.Now().Add(time.Hour).Unix()})); err != nil {
+		t.Fatalf("seed session: %v", err)
+	}
+	signPrivateKey = testKeyHex
+	t.Cleanup(func() { signPrivateKey = "" })
+	return g
+}
+
+// An unsigned payment's payload, checked against the payment's own stored terms, is
+// signed and deposited once.
+func TestSignDepositsTheSignatureOnAnUnsignedPayment(t *testing.T) {
+	sp := payload(rail0.PrimaryTypeReceive)
+	sp.Domain.ChainId = lcChainID
+	sp.Domain.VerifyingContract = rail0.Address(lcToken)
+	sp.Message.From = rail0.Address(addressForTestKey(t))
+	sp.Message.To = rail0.Address(lcCreateContract)
+	sp.Message.Value = "1000000"
+	g := newSignGateway(t, map[string]any{"status": "unsigned", "signing_payload": sp})
+
+	_ = captureStdout(t, func() {
+		if err := paymentsSignCmd.RunE(paymentsSignCmd, []string{lcRail0ID}); err != nil {
+			t.Fatalf("sign: %v", err)
+		}
+	})
+	if n := g.sent("PUT /payments/pay-1/sign"); n != 1 {
+		t.Errorf("signature deposited %d time(s), want 1", n)
+	}
+}
+
+// C1: an UNSIGNED payment with no signing_payload used to be reported as "not
+// unsigned — there is no signature to deposit", which contradicts its own status and
+// hides the fix. The gateway could not build the payload right now (a chain read
+// failed), so the message says so and says to retry. Nothing is deposited.
+func TestSignAnUnsignedPaymentWithoutAPayloadSaysToRetry(t *testing.T) {
+	g := newSignGateway(t, map[string]any{"status": "unsigned"})
+
+	var err error
+	_ = captureStdout(t, func() { err = paymentsSignCmd.RunE(paymentsSignCmd, []string{lcRail0ID}) })
+	if err == nil {
+		t.Fatal("an unsigned payment without a payload must fail")
+	}
+	for _, want := range []string{"is unsigned", "could not build its signing_payload", "retry"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error should say %q, got: %v", want, err)
+		}
+	}
+	if strings.Contains(err.Error(), "not unsigned") {
+		t.Errorf("an unsigned payment must not be reported as already signed: %v", err)
+	}
+	if n := g.sent("PUT /payments/pay-1/sign"); n != 0 {
+		t.Errorf("deposited a signature %d time(s) with nothing to sign", n)
+	}
+}
+
+// A payment past `unsigned` carries no payload because there is nothing to sign.
+func TestSignAnAlreadySignedPaymentSaysSo(t *testing.T) {
+	newSignGateway(t, map[string]any{"status": "authorized"})
+
+	var err error
+	_ = captureStdout(t, func() { err = paymentsSignCmd.RunE(paymentsSignCmd, []string{lcRail0ID}) })
+	if err == nil || !strings.Contains(err.Error(), "is authorized, not unsigned") {
+		t.Fatalf("an already-signed payment must say so, got %v", err)
 	}
 }

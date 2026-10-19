@@ -42,14 +42,17 @@ func unsignedJSON(t *testing.T, overrides map[string]any) string {
 }
 
 // testContext is the signingContext ensureSignerFor builds for a void: the payment
-// (with its token's decimals, which the SDK scales a typed amount by), the signer and
-// the operation.
+// (with its token's decimals, which the SDK scales a typed amount by, and its RAIL0
+// contract, which the SDK requires `to` to equal), the signer and the operation.
 func testContext() *signingContext {
 	decimals := 6
 	return &signingContext{
-		payment: &rail0.Payment{Rail0Id: rail0.Bytes32(testRail0ID), ChainID: testChainID, Decimals: &decimals},
-		signer:  testSigner,
-		op:      "void",
+		payment: &rail0.Payment{
+			Rail0Id: rail0.Bytes32(testRail0ID), ChainID: testChainID, Decimals: &decimals,
+			Rail0Contract: rail0.Address(testRail0Contract),
+		},
+		signer: testSigner,
+		op:     "void",
 	}
 }
 
@@ -164,13 +167,14 @@ func TestVerifyErrorNamesTheActualValue(t *testing.T) {
 	}
 }
 
-// ── verifySigningPayload ─────────────────────────────────────────────────────
+// ── EIP-712 authorization (signSigningPayload → rail0.SignSigningPayloadFor) ──
 //
 // The EIP-1559 guard above had no counterpart for the EIP-712 authorization, which
 // is the more dangerous artifact of the two: the token honours it directly, with no
 // RAIL0 involvement, for up to message.value. So an endpoint reachable via
 // --base-url could answer a refund prepare with the payee's whole balance as `value`
-// and have it signed verbatim.
+// and have it signed verbatim. The check is the SDK's since rail0-go v1.7.0; these
+// pin that every CLI signer runs it, fail-closed, in the CLI's wording.
 
 const (
 	testPayloadToken = "0x3333333333333333333333333333333333333333"
@@ -178,6 +182,8 @@ const (
 	testAttacker = "0x4444444444444444444444444444444444444444"
 )
 
+// testPayload is an authorization from the test key (testKeyAddress) to the test
+// payment's RAIL0 contract for 1.000000 of testPayloadToken, with overrides.
 func testPayload(overrides func(*rail0.SigningPayload)) *rail0.SigningPayload {
 	sp := &rail0.SigningPayload{
 		PrimaryType: "ReceiveWithAuthorization",
@@ -188,8 +194,8 @@ func testPayload(overrides func(*rail0.SigningPayload)) *rail0.SigningPayload {
 			VerifyingContract: rail0.Address(testPayloadToken),
 		},
 		Message: rail0.EIP3009Message{
-			From:        rail0.Address(testSigner),
-			To:          "0x2222222222222222222222222222222222222222",
+			From:        rail0.Address(testKeyAddress),
+			To:          rail0.Address(testRail0Contract),
 			Value:       "1000000",
 			ValidAfter:  "0",
 			ValidBefore: "2000000000",
@@ -202,32 +208,32 @@ func testPayload(overrides func(*rail0.SigningPayload)) *rail0.SigningPayload {
 	return sp
 }
 
-func testExpectation() payloadExpectation {
-	return payloadExpectation{
-		signer:         testSigner,
-		chainID:        testChainID,
-		token:          testPayloadToken,
-		valueBaseUnits: "1000000",
+func testExpectation() rail0.PayloadExpectation {
+	return rail0.PayloadExpectation{
+		ChainID: testChainID,
+		Token:   testPayloadToken,
+		To:      testRail0Contract,
+		Value:   "1000000",
 	}
 }
 
 // The happy path must sail through, or every signing command breaks.
-func TestVerifySigningPayloadAcceptsAWellFormedPayload(t *testing.T) {
-	if err := verifySigningPayload(testPayload(nil), testExpectation()); err != nil {
+func TestSignSigningPayloadAcceptsAWellFormedPayload(t *testing.T) {
+	if _, err := signSigningPayload(testPayload(nil), testKey, testExpectation()); err != nil {
 		t.Fatalf("rejected a well-formed payload: %v", err)
 	}
 
 	// Addresses are compared case-insensitively — the gateway may return checksummed.
 	upper := testPayload(func(sp *rail0.SigningPayload) {
-		sp.Message.From = rail0.Address(strings.ToUpper(testSigner))
+		sp.Message.From = rail0.Address(strings.ToLower(testKeyAddress))
 		sp.Domain.VerifyingContract = rail0.Address(strings.ToUpper(testPayloadToken))
 	})
-	if err := verifySigningPayload(upper, testExpectation()); err != nil {
-		t.Errorf("rejected checksum-cased addresses: %v", err)
+	if _, err := signSigningPayload(upper, testKey, testExpectation()); err != nil {
+		t.Errorf("rejected differently-cased addresses: %v", err)
 	}
 }
 
-func TestVerifySigningPayloadRejectsHostilePayloads(t *testing.T) {
+func TestSignSigningPayloadRejectsHostilePayloads(t *testing.T) {
 	cases := []struct {
 		name    string
 		mutate  func(*rail0.SigningPayload)
@@ -266,16 +272,24 @@ func TestVerifySigningPayloadRejectsHostilePayloads(t *testing.T) {
 			},
 			wantErr: "chain",
 		},
+		{
+			// Pays someone other than the payment's RAIL0 contract.
+			name: "message pays another address",
+			mutate: func(sp *rail0.SigningPayload) {
+				sp.Message.To = rail0.Address(testAttacker)
+			},
+			wantErr: "RAIL0 contract",
+		},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			err := verifySigningPayload(testPayload(tc.mutate), testExpectation())
+			_, err := signSigningPayload(testPayload(tc.mutate), testKey, testExpectation())
 			if err == nil {
 				t.Fatal("expected a refusal, got nil")
 			}
-			if !strings.Contains(err.Error(), "refusing to sign") {
-				t.Errorf("error should say it is refusing to sign, got: %v", err)
+			if !strings.HasPrefix(err.Error(), "refusing to sign") {
+				t.Errorf("error should open with 'refusing to sign' (no SDK prefix), got: %v", err)
 			}
 			if !strings.Contains(err.Error(), tc.wantErr) {
 				t.Errorf("error should mention %q, got: %v", tc.wantErr, err)
@@ -284,43 +298,76 @@ func TestVerifySigningPayloadRejectsHostilePayloads(t *testing.T) {
 	}
 }
 
-// Every field is optional: an expectation the caller could not resolve must skip its
-// check rather than compare against a zero value and refuse a legitimate payload.
-func TestVerifySigningPayloadSkipsUnknownExpectations(t *testing.T) {
-	// Only the signer is known — e.g. the token's decimals could not be resolved, so
-	// the amount cannot be scaled locally.
-	if err := verifySigningPayload(testPayload(nil), payloadExpectation{signer: testSigner}); err != nil {
-		t.Errorf("an expectation with only a signer must not refuse: %v", err)
+// FLIPPED with rail0-go v1.7.0. The CLI's own copy skipped a check whose expectation
+// was unknown; the SDK refuses instead, since the value check skipped is exactly the
+// drain this guards against. No CLI caller ever relied on the skip (each always
+// supplied every field), so a missing one now means something is wrong and is refused.
+func TestSignSigningPayloadFailsClosedOnUnknownExpectations(t *testing.T) {
+	for name, clear := range map[string]func(*rail0.PayloadExpectation){
+		"token":    func(w *rail0.PayloadExpectation) { w.Token = "" },
+		"to":       func(w *rail0.PayloadExpectation) { w.To = "" },
+		"chain id": func(w *rail0.PayloadExpectation) { w.ChainID = 0 },
+		"amount":   func(w *rail0.PayloadExpectation) { w.Value = "" },
+	} {
+		want := testExpectation()
+		clear(&want)
+		_, err := signSigningPayload(testPayload(nil), testKey, want)
+		if err == nil || !strings.HasPrefix(err.Error(), "refusing to sign") {
+			t.Errorf("an expectation without its %s must refuse, got %v", name, err)
+		}
 	}
-	// A payload the gateway did not include is reported by the caller, not here.
-	if err := verifySigningPayload(nil, testExpectation()); err != nil {
-		t.Errorf("a nil payload must be left to the caller: %v", err)
-	}
-}
-
-// The signingContext form takes chain and token off the payment it already fetched.
-func TestSigningContextVerifySigningPayloadUsesThePayment(t *testing.T) {
-	sc := &signingContext{
-		payment: &rail0.Payment{
-			Rail0Id: rail0.Bytes32(testRail0ID),
-			ChainID: testChainID,
-			Token:   rail0.Address(testPayloadToken),
-		},
-		signer: testSigner,
-	}
-	if err := sc.verifySigningPayload(testPayload(nil), "1000000"); err != nil {
-		t.Fatalf("rejected a well-formed payload: %v", err)
-	}
-	hostile := testPayload(func(sp *rail0.SigningPayload) { sp.Message.Value = "50000000000" })
-	if err := sc.verifySigningPayload(hostile, "1000000"); err == nil {
-		t.Error("expected a refusal for an inflated value")
+	// A payload the gateway did not include is refused too, never signed.
+	if _, err := signSigningPayload(nil, testKey, testExpectation()); err == nil {
+		t.Error("a nil payload must be refused")
 	}
 }
 
 const testRail0Contract = "0x2222222222222222222222222222222222222222"
 
+// The signingContext form takes chain, token and contract off the payment it already
+// fetched: amount "" is the payment's stored amount (`payments sign`), a typed amount
+// is scaled by the payment's decimals (`payments refund`).
+func TestSigningContextPayloadExpectationUsesThePayment(t *testing.T) {
+	decimals := 6
+	sc := &signingContext{
+		payment: &rail0.Payment{
+			Rail0Id: rail0.Bytes32(testRail0ID), ChainID: testChainID, Amount: "1000000",
+			Token: rail0.Address(testPayloadToken), Rail0Contract: rail0.Address(testRail0Contract),
+			Decimals: &decimals,
+		},
+		signer: testKeyAddress,
+	}
+	for _, amount := range []string{"", "1", "1.00"} {
+		want, err := sc.payloadExpectation(amount)
+		if err != nil {
+			t.Fatalf("amount %q: %v", amount, err)
+		}
+		if want.Value != "1000000" || want.ChainID != testChainID || !strings.EqualFold(string(want.Signer), testKeyAddress) {
+			t.Errorf("amount %q: expectation %+v does not carry the payment's terms", amount, want)
+		}
+		if _, err := signSigningPayload(testPayload(nil), testKey, want); err != nil {
+			t.Errorf("amount %q: rejected a well-formed payload: %v", amount, err)
+		}
+		hostile := testPayload(func(sp *rail0.SigningPayload) { sp.Message.Value = "50000000000" })
+		if _, err := signSigningPayload(hostile, testKey, want); err == nil {
+			t.Errorf("amount %q: expected a refusal for an inflated value", amount)
+		}
+	}
+
+	// Fail-closed, in the CLI's wording: an amount finer than the token allows, and a
+	// payment whose decimals are unknown, refuse rather than skip the value check.
+	if _, err := sc.payloadExpectation("0.0000001"); err == nil || strings.HasPrefix(err.Error(), "rail0:") {
+		t.Errorf("an amount finer than the token's decimals must be refused without the SDK prefix, got %v", err)
+	}
+	sc.payment.Decimals = nil
+	if _, err := sc.payloadExpectation("1"); err == nil {
+		t.Error("a typed amount on a payment with unknown decimals must be refused")
+	}
+}
+
 // The transaction and the authorization must both be addressed to the payment's own
-// RAIL0 contract when the record names one; an unknown contract skips the check.
+// RAIL0 contract — and, since rail0-go v1.7.0, a payment that names none refuses
+// rather than skipping the check (an empty `to` would be a contract creation).
 func TestVerifyChecksTheRail0Contract(t *testing.T) {
 	sc := testContext()
 	sc.payment.Rail0Contract = rail0.Address(strings.ToUpper(testRail0Contract))
@@ -331,14 +378,12 @@ func TestVerifyChecksTheRail0Contract(t *testing.T) {
 	if err := sc.verify(other); err == nil || !strings.Contains(err.Error(), "RAIL0 contract") {
 		t.Errorf("a transaction to another address must be refused, got %v", err)
 	}
-
-	sc.payment.Token = rail0.Address(testPayloadToken)
-	if err := sc.verifySigningPayload(testPayload(nil), "1000000"); err != nil {
-		t.Fatalf("rejected an authorization paying the payment's contract: %v", err)
+	if err := sc.verify(unsignedJSON(t, map[string]any{"to": ""})); err == nil {
+		t.Error("a transaction without `to` (a contract creation) must be refused")
 	}
-	elsewhere := testPayload(func(sp *rail0.SigningPayload) { sp.Message.To = "0x3333333333333333333333333333333333333333" })
-	if err := sc.verifySigningPayload(elsewhere, "1000000"); err == nil {
-		t.Error("an authorization paying another address must be refused")
+	sc.payment.Rail0Contract = ""
+	if err := sc.verify(unsignedJSON(t, nil)); err == nil || !strings.Contains(err.Error(), "rail0_contract") {
+		t.Errorf("a payment without a rail0_contract must refuse, got %v", err)
 	}
 }
 

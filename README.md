@@ -769,7 +769,11 @@ rail0 payments create -F @buyer -T @merchant -t USDC -a 10.50 -c 5042002 -p @buy
 > `token` (addresses compared case-insensitively), `mode`, `chain_id`, and `amount` in
 > base units (your `--amount` scaled locally). The EIP-3009 authorization must be from
 > the signing key, on that chain and token, addressed to the payment's RAIL0 contract,
-> for exactly that amount. Any mismatch refuses to sign. Not yet checked: the
+> for exactly that amount. Any mismatch refuses to sign, and so does anything the check
+> cannot compare: a created payment without a `rail0_contract` is refused, never signed
+> unchecked. `payments sign` and `payments refund` run the same check against the
+> fetched payment (its stored amount, or the refund `--amount` scaled by its decimals).
+> Not yet checked: the
 > authorization's `nonce`, which binds it to the payment terms on-chain — recomputing it
 > needs the contract version, which the SDK cannot read from `GET /blockchains` yet.
 
@@ -780,6 +784,10 @@ deposit the signature on the existing one:
 ```sh
 rail0 payments sign 0xRail0Id… -p @buyer-key
 ```
+
+If `payments sign` says the payment is unsigned but the gateway could not build its
+signing payload, the gateway's chain read failed (usually a transient RPC issue):
+retry the same command in a moment.
 
 **Token/chain discovery from the payee.** On a terminal, if you give `--to` but
 omit `--token` and/or `--chain-id`, the CLI looks up what that merchant accepts
@@ -853,7 +861,8 @@ The signing key is resolved in this order: `--private-key` (`-p` / `--pk`, where
 **Checked before signing.** The gateway prepares the transaction, but the CLI checks it
 locally before your key touches it, and refuses to sign on any mismatch: it must be
 value-0, on the payment's chain, from the signing key, addressed to the payment's RAIL0
-contract, call **the RAIL0 function you asked for** (its 4-byte selector — so a `void`
+contract (required: a transaction without `to`, or a payment without a
+`rail0_contract`, is refused), call **the RAIL0 function you asked for** (its 4-byte selector — so a `void`
 answered with `capture` calldata, or a `dispute` with `closeDispute`, is refused) on
 **this payment's id**, and — for `capture` and `refund` — move **exactly the `--amount`
 you typed**, scaled to base units locally. Like the refund authorization's check, the

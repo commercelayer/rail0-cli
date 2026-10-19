@@ -38,15 +38,27 @@ func payload(primaryType string) *rail0.SigningPayload {
 	}
 }
 
+// wantFor is the expectation a payload satisfies: every signer now verifies before it
+// signs (rail0.SignSigningPayloadFor), so the mapper tests below pass the payload's
+// own terms as what was asked for and pin only the verbatim mapping.
+func wantFor(p *rail0.SigningPayload) rail0.PayloadExpectation {
+	return rail0.PayloadExpectation{
+		ChainID: p.Domain.ChainId,
+		Token:   p.Domain.VerifyingContract,
+		To:      p.Message.To,
+		Value:   p.Message.Value,
+	}
+}
+
 // Both primary types the gateway can emit must sign, and produce DIFFERENT
 // signatures: the typehash is part of the digest, so if the two ever matched it
 // would mean the primaryType was being ignored.
 func TestSignSigningPayloadHonoursPrimaryType(t *testing.T) {
-	transfer, err := signSigningPayload(payload(rail0.PrimaryTypeTransfer), testKey)
+	transfer, err := signSigningPayload(payload(rail0.PrimaryTypeTransfer), testKey, wantFor(payload(rail0.PrimaryTypeTransfer)))
 	if err != nil {
 		t.Fatalf("transfer: %v", err)
 	}
-	receive, err := signSigningPayload(payload(rail0.PrimaryTypeReceive), testKey)
+	receive, err := signSigningPayload(payload(rail0.PrimaryTypeReceive), testKey, wantFor(payload(rail0.PrimaryTypeReceive)))
 	if err != nil {
 		t.Fatalf("receive: %v", err)
 	}
@@ -72,7 +84,7 @@ func TestSignSigningPayloadHonoursPrimaryType(t *testing.T) {
 // known typehashes is how a CLI older than its gateway signs the wrong digest and
 // reports success — the failure then surfaces on-chain, blamed on the key.
 func TestSignSigningPayloadRefusesAnUnknownPrimaryType(t *testing.T) {
-	_, err := signSigningPayload(payload("SomeFutureAuthorization"), testKey)
+	_, err := signSigningPayload(payload("SomeFutureAuthorization"), testKey, wantFor(payload(rail0.PrimaryTypeTransfer)))
 	if err == nil {
 		t.Fatal("an unknown primaryType must not be signed")
 	}
@@ -86,9 +98,11 @@ func TestSignSigningPayloadRefusesAnUnknownPrimaryType(t *testing.T) {
 }
 
 // The whole point of the rule: what gets signed comes from the payload, not from
-// a payment record. Changing one payload field must change the signature.
+// a payment record. Changing one payload field must change the signature. (`from` is
+// not among them: a payload from another address than the key is refused before
+// signing — see TestSignSigningPayloadRejectsHostilePayloads.)
 func TestSignSigningPayloadReadsTheMessageFields(t *testing.T) {
-	base, err := signSigningPayload(payload(rail0.PrimaryTypeTransfer), testKey)
+	base, err := signSigningPayload(payload(rail0.PrimaryTypeTransfer), testKey, wantFor(payload(rail0.PrimaryTypeTransfer)))
 	if err != nil {
 		t.Fatalf("base: %v", err)
 	}
@@ -100,9 +114,6 @@ func TestSignSigningPayloadReadsTheMessageFields(t *testing.T) {
 		{"value", func(p *rail0.SigningPayload) { p.Message.Value = "2600001" }},
 		{"to", func(p *rail0.SigningPayload) {
 			p.Message.To = rail0.Address("0x0000000000000000000000000000000000000001")
-		}},
-		{"from", func(p *rail0.SigningPayload) {
-			p.Message.From = rail0.Address("0x0000000000000000000000000000000000000002")
 		}},
 		{"validBefore", func(p *rail0.SigningPayload) { p.Message.ValidBefore = "1900000000" }},
 		{"validAfter", func(p *rail0.SigningPayload) { p.Message.ValidAfter = "1" }},
@@ -116,7 +127,7 @@ func TestSignSigningPayloadReadsTheMessageFields(t *testing.T) {
 	} {
 		p := payload(rail0.PrimaryTypeTransfer)
 		tc.mutate(p)
-		got, err := signSigningPayload(p, testKey)
+		got, err := signSigningPayload(p, testKey, wantFor(p))
 		if err != nil {
 			t.Fatalf("%s: %v", tc.field, err)
 		}
@@ -139,7 +150,8 @@ func TestSignSigningPayloadNamesAMalformedField(t *testing.T) {
 	} {
 		p := payload(rail0.PrimaryTypeTransfer)
 		tc.mutate(p)
-		_, err := signSigningPayload(p, testKey)
+		// Expect the UNMUTATED terms, so the refusal is the malformed field itself.
+		_, err := signSigningPayload(p, testKey, wantFor(payload(rail0.PrimaryTypeTransfer)))
 		if err == nil {
 			t.Errorf("%s: a malformed field must be rejected", tc.field)
 			continue
@@ -151,10 +163,10 @@ func TestSignSigningPayloadNamesAMalformedField(t *testing.T) {
 }
 
 func TestSignSigningPayloadRejectsAMissingPayload(t *testing.T) {
-	if _, err := signSigningPayload(nil, testKey); err == nil {
+	if _, err := signSigningPayload(nil, testKey, wantFor(payload(rail0.PrimaryTypeTransfer))); err == nil {
 		t.Error("a nil signing payload must be rejected")
 	}
-	if _, err := signSigningPayload(payload(rail0.PrimaryTypeTransfer), "not-a-key"); err == nil {
+	if _, err := signSigningPayload(payload(rail0.PrimaryTypeTransfer), "not-a-key", wantFor(payload(rail0.PrimaryTypeTransfer))); err == nil {
 		t.Error("an invalid private key must be rejected")
 	}
 }
@@ -164,11 +176,11 @@ func TestSignSigningPayloadRejectsAMissingPayload(t *testing.T) {
 func TestSignRefundPayloadAgreesWithThePackedForm(t *testing.T) {
 	p := payload(rail0.PrimaryTypeReceive)
 
-	packed, err := signSigningPayload(p, testKey)
+	packed, err := signSigningPayload(p, testKey, wantFor(p))
 	if err != nil {
 		t.Fatalf("packed: %v", err)
 	}
-	v, r, s, err := signRefundPayload(p, testKey)
+	v, r, s, err := signRefundPayload(p, testKey, wantFor(p))
 	if err != nil {
 		t.Fatalf("vrs: %v", err)
 	}

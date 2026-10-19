@@ -13,6 +13,16 @@
 #
 # Both repos are checked out as siblings under the workspace so `../rail0-go`
 # resolves; GoReleaser runs inside the rail0-cli checkout.
+#
+# Which rail0-go a release is built against: EXACTLY the version go.mod requires
+# (`github.com/commercelayer/rail0-go vX.Y.Z`), checked out at that tag. It used to be
+# `ref: main`, so a CLI release built against whatever the SDK's main held at tag time
+# — unreleased, possibly breaking SDK code shipped inside a CLI binary whose go.mod
+# claimed a different version, and two builds of the same CLI tag could differ. The
+# release now fails if the require line is not a plain vX.Y.Z or that tag does not
+# exist in rail0-go: bump go.mod to a RELEASED SDK version before tagging the CLI.
+# (ci.yml deliberately keeps building against rail0-go main / a twin branch, to catch
+# SDK breakage early; see the comment there.)
 name: release
 
 on:
@@ -33,11 +43,35 @@ jobs:
           path: rail0-cli
           fetch-depth: 0 # full history + tags for `git describe` / changelog
 
-      - name: Checkout rail0-go (private sibling; resolves ../rail0-go)
+      # The version go.mod requires, in either form (inside the require block, or a
+      # one-line `require github.com/commercelayer/rail0-go vX.Y.Z`). The `replace`
+      # line never matches: its second field is `=>`.
+      - name: Resolve the rail0-go version from go.mod
+        id: sdk_ref
+        working-directory: rail0-cli
+        env:
+          GH_TOKEN: ${{ secrets.RAIL0_GO_TOKEN }}
+        run: |
+          version="$(awk '
+            $1 == "github.com/commercelayer/rail0-go" && $2 ~ /^v/ { print $2; exit }
+            $1 == "require" && $2 == "github.com/commercelayer/rail0-go" { print $3; exit }
+          ' go.mod)"
+          if ! printf '%s' "$version" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::go.mod must require a released rail0-go vX.Y.Z, got '${version}'"
+            exit 1
+          fi
+          if ! gh api "repos/commercelayer/rail0-go/git/ref/tags/${version}" >/dev/null 2>&1; then
+            echo "::error::rail0-go has no tag ${version} (required by go.mod) — release the SDK first, or fix the require line"
+            exit 1
+          fi
+          echo "Building against rail0-go@${version} (from go.mod)"
+          echo "ref=${version}" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout rail0-go at the go.mod version (private sibling; resolves ../rail0-go)
         uses: actions/checkout@v4
         with:
           repository: commercelayer/rail0-go
-          ref: main
+          ref: refs/tags/${{ steps.sdk_ref.outputs.ref }}
           path: rail0-go
           token: ${{ secrets.RAIL0_GO_TOKEN }}
 

@@ -33,7 +33,8 @@ If rail0 lives in a directory you cannot write to (e.g. /usr/local/bin, where
 'make install' puts it), run it with sudo.
 
 Interactive sessions also check for a new release once a day and offer to install
-it. The check never runs in CI, with --json or --quiet, when stdin or stderr is not
+it. The check never runs in CI, with --json or --quiet (or a stored 'output' default
+of json or quiet, unless another output flag is passed), when stdin or stderr is not
 a terminal, or with RAIL0_NO_UPDATE_CHECK=1.`,
 	Example: `  rail0 update           # install the latest release
   rail0 update --check   # only report whether one is available`,
@@ -151,7 +152,7 @@ func updateCheckSkippedFor(cmd *cobra.Command) bool {
 //
 // It is deliberately timid, because it runs in front of real work:
 //   - only for an interactive human: stdin and stderr are terminals, no --json or
-//     --quiet, not in CI (the CI variable every major provider sets), and not
+//     --quiet and no stored json/quiet output default (scriptedOutput), not in CI (the CI variable every major provider sets), and not
 //     opted out with RAIL0_NO_UPDATE_CHECK — a script must never block on a prompt
 //     or find a different binary between two steps;
 //   - never for a local build (dev / git describe), which has nothing to compare;
@@ -200,7 +201,7 @@ func maybeOfferUpdate(cmd *cobra.Command) {
 func updateCheckWanted() bool {
 	switch {
 	case !selfupdate.Updatable(version),
-		jsonOut, quietOut,
+		scriptedOutput(),
 		os.Getenv("CI") != "",
 		os.Getenv("RAIL0_NO_UPDATE_CHECK") != "",
 		!term.IsTerminal(os.Stdin.Fd()),
@@ -208,6 +209,23 @@ func updateCheckWanted() bool {
 		return false
 	}
 	return true
+}
+
+// scriptedOutput reports whether this session's output is meant for a program: --json
+// or --quiet, or — with no output flag — a stored or RAIL0_OUTPUT `output` default of
+// json or quiet. Looking only at the flags let `rail0 config set output json` still
+// get an interactive [Y/n] prompt, the one surface a scripting setup opted out of.
+// configuredDefault("output") already lets an explicit flag win (--pretty over a stored
+// json), the same resolution applyOutputMode renders with.
+func scriptedOutput() bool {
+	if jsonOut || quietOut {
+		return true
+	}
+	switch configuredDefault("output") {
+	case "json", "quiet":
+		return true
+	}
+	return false
 }
 
 // promptYes asks a [Y/n] question: Enter or anything starting with "y" accepts,

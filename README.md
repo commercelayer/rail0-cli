@@ -162,7 +162,9 @@ directory you cannot write to (`/usr/local/bin` after `make install`), run
 Interactive sessions also **check once a day** and, when a newer release exists, ask
 `Update now? [Y/n]` before running your command. The command then runs normally
 whatever you answer. The check never runs in CI (`CI` set), with `--json` or
-`--quiet`, when stdin or stderr is not a terminal, or with `RAIL0_NO_UPDATE_CHECK=1`.
+`--quiet` (or a stored `output` default of `json` or `quiet`, from `rail0 config set
+output …` or `RAIL0_OUTPUT`, unless another output flag is passed), when stdin or
+stderr is not a terminal, or with `RAIL0_NO_UPDATE_CHECK=1`.
 It is skipped for local builds (`dev` or a `git describe` version), and a failed lookup
 is silent. The last check time lives in the user cache directory, next to the session
 tokens (`update-check.json`).

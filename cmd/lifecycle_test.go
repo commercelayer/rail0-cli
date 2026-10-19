@@ -83,8 +83,8 @@ func newLifecycleGateway(t *testing.T) *lifecycleGateway {
 		case r.Method == http.MethodGet && r.URL.Path == base:
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"id": "pay-1", "rail0_id": lcRail0ID, "status": "captured", "chain_id": lcChainID,
-				"token": lcToken, "amount": "1000000", "payer": "0x9999999999999999999999999999999999999999",
-				"payee": signer,
+				"token": lcToken, "decimals": 6, "amount": "1000000",
+				"payer": "0x9999999999999999999999999999999999999999", "payee": signer,
 			})
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/prepare"):
 			op := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, base+"/"), "/prepare")

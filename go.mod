@@ -7,9 +7,10 @@ require (
 	github.com/charmbracelet/huh v1.0.0
 	github.com/charmbracelet/log v1.0.0
 	github.com/charmbracelet/x/term v0.2.2
-	github.com/commercelayer/rail0-go v0.0.0
+	github.com/commercelayer/rail0-go v1.6.0
 	github.com/ethereum/go-ethereum v1.17.7
 	github.com/spf13/cobra v1.10.2
+	github.com/spf13/pflag v1.0.10
 	github.com/zalando/go-keyring v0.2.8
 	gopkg.in/yaml.v3 v3.0.1
 )
@@ -56,7 +57,6 @@ require (
 	github.com/relvacode/iso8601 v1.1.1-0.20210511065120-b30b151cc433 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
-	github.com/spf13/pflag v1.0.10 // indirect
 	github.com/spruceid/siwe-go v0.2.1 // indirect
 	github.com/supranational/blst v0.3.16 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
@@ -69,8 +69,7 @@ require (
 )
 
 // Still the sibling checkout, because rail0-go is still a private repo the module proxy
-// cannot fetch. The CLI now needs the dispute-reason dictionary (DisputeReason, rail0-go#59,
-// with the reason optional again on the dispute prepares), which no tag carries yet: the
-// first release after v1.4.0 will be the minimum, so once the repo is public this becomes
-// a two-line change: drop this directive and require that release or later.
+// cannot fetch. The require above records the real minimum — v1.6.0, the first release
+// with VerifyUnsignedTransaction, which cmd/tx_verify.go delegates to — so once the repo
+// is public this is a one-line change: drop this directive.
 replace github.com/commercelayer/rail0-go => ../rail0-go

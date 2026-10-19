@@ -706,7 +706,7 @@ func signingKeyOrPrompt(explicitKey string) (string, error) {
 // before the gateway rejects it (mirrors the gateway's ensure_signed_by! guard).
 //
 // It returns the payment and the signer address it already had to obtain, bundled as
-// a signingContext, so the pre-sign checks in verifyUnsignedTx run on data ALREADY in
+// a signingContext, so the pre-sign checks in verify run on data ALREADY in
 // hand — no second payment fetch and no second key derivation. (#63)
 func ensureSignerFor(ctx context.Context, client *rail0.Client, rail0ID, signingKey, op string) (*signingContext, error) {
 	signer, err := addressFromKey(signingKey)
@@ -982,12 +982,10 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 			if replayedPastPending(prep) {
 				return resumeReplayed(ctx, client, rail0Id, sc.payment.ChainID, "capture", prep)
 			}
-			// The calldata's amount is checked against what the user typed, scaled
-			// locally — fail-closed like refund's authorization value (see
-			// checkCalldataCall).
-			if sc.amountBaseUnits, err = expectedBaseUnits(ctx, sc.payment.ChainID, string(sc.payment.Token), captureAmount); err != nil {
-				return nil, err
-			}
+			// The calldata's amount is checked against what the user typed, scaled by
+			// the payment's token decimals inside the SDK's check — fail-closed like
+			// refund's authorization value.
+			sc.amount = captureAmount
 			if err := sc.verify(prep.UnsignedTransaction); err != nil {
 				return nil, err
 			}
@@ -1231,14 +1229,14 @@ Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 			if replayedPastPending(phase1) {
 				return resumeReplayed(ctx, client, rail0Id, sc.payment.ChainID, "refund", phase1)
 			}
-			// `refundAmount` is what the user typed, scaled locally. It is the right-hand
-			// side of BOTH refund checks: the authorization's value and the amount the
-			// refund() calldata carries (see checkCalldataCall).
+			// `refundAmount` is what the user typed. It is the right-hand side of BOTH
+			// refund checks: scaled locally (wantUnits) for the authorization's value,
+			// and by the SDK's pre-sign check for the amount the refund() calldata carries.
 			wantUnits, err := expectedBaseUnits(ctx, sc.payment.ChainID, string(sc.payment.Token), refundAmount)
 			if err != nil {
 				return nil, err
 			}
-			sc.amountBaseUnits = wantUnits
+			sc.amount = refundAmount
 			// A replayed row still `pending` already carries the unsigned tx with the
 			// authorization embedded: finish it rather than asking for a new signature.
 			if idempotencyKey != "" && phase1.ID != "" && phase1.SigningPayload == nil {

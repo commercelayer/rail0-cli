@@ -191,32 +191,34 @@ func rateLimitHint(e *rail0.APIError) string {
 // contract_revert, the snake_case Solidity error).
 var errorHints = map[string]string{
 	// payment-state guards (HTTP 422)
-	"amount_exceeds_capturable":    "amount is above the capturable balance — see capturable_amount_human in 'rail0 payments get <id>'",
-	"amount_exceeds_refundable":    "amount is above the refundable balance — see refundable_amount_human in 'rail0 payments get <id>'",
-	"not_capturable":               "the payment must be 'authorized' or 'partially_captured' to capture",
-	"not_voidable":                 "void is only allowed while 'authorized' with nothing captured — use 'release' for the remainder after a capture",
-	"not_releasable":               "release opens only after the authorization expires — see authorization_expiry_at / authorization_expires_in in 'rail0 payments get <id>'",
-	"not_refundable":               "nothing is refundable — the payment must be charged/captured and within the refund window",
-	"not_signable":                 "the payment must be 'unsigned' to sign",
-	"already_signed":               "the payer signature is already stored — the payee can act now",
-	"no_signature":                 "the payer hasn't signed yet — run 'rail0 payments create' / 'payments sign' first",
-	"wrong_mode":                   "this operation doesn't match the payment's mode (authorize vs charge)",
-	"already_disputed":             "a dispute is already open — close it with 'rail0 payments dispute close <id>' first",
-	"not_disputed":                 "there is no open dispute to close",
-	"nothing_to_dispute":           "a dispute needs a merchant-held (refundable) balance",
-	"unknown_dispute_reason":       "--reason must be a code from the right list (open to open a dispute, close to close one) — see 'rail0 disputes reasons'",
-	"not_redrivable":               "only a pending transaction the gateway holds SIGNED can be redriven — check 'redrivable' in 'rail0 payments transaction <id> <transaction_id>'; an unsigned one needs the operation re-run",
-	"transaction_not_overwritable": "a transaction for this operation is already in flight — wait for it with 'rail0 payments wait <id>'",
-	"signer_mismatch":              "the signing key doesn't match the payment's payer/payee — use the right wallet's key",
+	"amount_exceeds_capturable": "amount is above the capturable balance — see capturable_amount_human in 'rail0 payments get <id>'",
+	"amount_exceeds_refundable": "amount is above the refundable balance — see refundable_amount_human in 'rail0 payments get <id>'",
+	"not_capturable":            "the payment must be 'authorized' or 'partially_captured' to capture",
+	"not_voidable":              "void is only allowed while 'authorized' or 'expired' with nothing captured — use 'release' for the remainder after a capture",
+	"not_releasable":            "nothing uncaptured is left to release — the payment was already captured, voided or released ('rail0 payments get <id>' shows its status)",
+	"not_refundable":            "nothing is refundable — the payment must be charged/captured and within the refund window",
+	"not_signable":              "the payment must be 'unsigned' to sign",
+	"already_signed":            "the payer signature is already stored — the payee can act now",
+	"no_signature":              "the payer hasn't signed yet — run 'rail0 payments create' / 'payments sign' first",
+	"wrong_mode":                "this operation doesn't match the payment's mode (authorize vs charge)",
+	"already_disputed":          "a dispute is already open — close it with 'rail0 payments dispute close <id>' first",
+	"not_disputed":              "there is no open dispute to close",
+	"nothing_to_dispute":        "a dispute needs a merchant-held (refundable) balance",
+	"unknown_dispute_reason":    "--reason must be a code from the right list (open to open a dispute, close to close one) — see 'rail0 disputes reasons'",
+	"queue_unavailable":         "the gateway's job queue could not be reached, so nothing was enqueued — retry in a moment",
+	"not_redrivable":            "only a pending transaction the gateway holds SIGNED can be redriven — check 'redrivable' in 'rail0 payments transaction <id> <transaction_id>'; an unsigned one needs the operation re-run",
+	"signer_mismatch":           "the signing key doesn't match the payment's payer/payee — use the right wallet's key",
 	// The SIWE BINDING failures, split out of signer_mismatch (gateway #216). These
 	// matter more here than in a library: the CLI signs the GATEWAY's own host, so a
 	// domain mismatch is a misconfigured base URL, and until this split it arrived
 	// looking like a bad signature — sending the operator after their key instead of
 	// their config. None of these echoes the server's allow-list; that endpoint is
-	// unauthenticated, so naming the config would make the hint a probe.
+	// unauthenticated, so naming the config would make the hint a probe. The chain-id hint
+	// may point at GET /blockchains: the accepted ids (1 plus every active catalog chain,
+	// gateway#426) are public there anyway.
 	"siwe_domain_not_allowed":      "the gateway does not accept that origin — check `rail0 config` points at the right base URL, and have that host added to the gateway's SIWE domain allow-list",
 	"siwe_uri_mismatch":            "the signed message's uri host must equal its own domain — this is a client bug, not a key problem",
-	"siwe_chain_mismatch":          "the login's chain id is not the one this gateway expects; it is nominal and off-chain, so use the value the SDK sends",
+	"siwe_chain_mismatch":          "sign with chain id 1 (what the CLI sends) or the id of a chain the gateway has active ('rail0 chains', GET /blockchains) — usually a hand-built message or a wallet on an unsupported or deactivated network",
 	"siwe_proof_expired":           "the proof took too long between nonce and signature — run `rail0 auth login` again",
 	"sessions_revoked":             "every session of this address from before its revoke-all cutoff is refused — run `rail0 auth login` again",
 	"config_hash_mismatch":         "this payment and its on-chain deployment disagree — check it with 'rail0 payments get <id>'; it can't be operated as recorded",
@@ -258,6 +260,13 @@ var errorHints = map[string]string{
 	"last_active_wallet": "this is the account's only active wallet — another wallet must be active before this one can be switched off; adding one ('rail0 wallets create') is not available yet, so ask an operator to reactivate another",
 	// Operator-side twin of last_active_wallet: the gateway keeps at least one active admin.
 	"last_admin": "this would leave the gateway with no active operator — grant the operator role to another active account first, then retry",
+	// POST /webhooks past the account's cap (WEBHOOKS_PER_ACCOUNT, 20 by default).
+	// Disabled subscriptions count, deleted ones do not.
+	"webhook_limit_reached": "the account already holds the most webhook subscriptions it may (disabled ones count too) — delete one ('rail0 webhooks list', 'rail0 webhooks delete <id>'), or add topics to an existing subscription with 'rail0 webhooks update'",
+	// Not hinted: transaction_not_overwritable. The gateway raises it only on the
+	// /…/submitted endpoints (reporting an externally broadcast hash onto a transaction
+	// already confirmed), and the CLI never calls them — every operation here is
+	// prepared, signed and submitted by the CLI itself.
 	// `not_a_participant` was retired by gateway#157: a non-party now gets a plain
 	// 404, deliberately, so a payment endpoint can't be used as an existence
 	// oracle. The advice for that case therefore belongs on the 404 branch below,

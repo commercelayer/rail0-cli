@@ -15,7 +15,8 @@ If rail0 lives in a directory you cannot write to (e.g. /usr/local/bin, where
 'make install' puts it), run it with sudo.
 
 Interactive sessions also check for a new release once a day and offer to install
-it. The check never runs in CI, with --json or --quiet, when stdin or stderr is not
+it. The check never runs in CI, with --json or --quiet (or a stored 'output' default
+of json or quiet, unless another output flag is passed), when stdin or stderr is not
 a terminal, or with RAIL0_NO_UPDATE_CHECK=1.
 
 ```

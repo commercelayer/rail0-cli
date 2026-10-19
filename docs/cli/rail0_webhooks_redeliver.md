@@ -22,7 +22,8 @@ Delivery is asynchronous: the gateway answers 202 with status "queued" once the
 replay is accepted, not once it has arrived. Check 'webhooks event-callbacks
 <webhook_id>' for the new attempt to see the outcome. A 404 means the webhook or
 callback is not this account's, or the attempt was recorded before payloads
-were stored — there is nothing to replay.
+were stored — there is nothing to replay. If the gateway's job queue is down the
+replay cannot be queued and the command fails with nothing recorded: retry later.
 
 ```
 rail0 webhooks redeliver <webhook_id> <callback_id> [flags]

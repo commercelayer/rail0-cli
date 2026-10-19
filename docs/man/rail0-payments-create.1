@@ -19,6 +19,13 @@ terminal — so the key stays out of the shell history and process arguments.
 --from (payer) and --to (payee) must be different addresses: a payment can't be
 sent from an address to itself.
 
+.PP
+--payment-file (-f) takes the whole request body as JSON instead of the flags:
+chain_id, mode ("authorize" or "charge"), amount, token (the contract ADDRESS),
+payer and payee are required, description optional. The file is the complete
+request, so -F, -T, -t, -a, -c, -C and -d are ignored with it, and so are the stored
+chain/token defaults: set "mode": "charge" in the file rather than passing -C.
+
 
 .SH OPTIONS
 \fB-a\fP, \fB--amount\fP=""
@@ -50,7 +57,7 @@ sent from an address to itself.
 
 .PP
 \fB-f\fP, \fB--payment-file\fP=""
-	Path to a JSON file with the full request body (overrides individual flags)
+	Path to a JSON file with the full request body, "mode" included; the other request flags (-F -T -t -a -c -C -d) and stored defaults are then ignored
 
 .PP
 \fB-p\fP, \fB--private-key\fP=""

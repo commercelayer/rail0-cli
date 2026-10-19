@@ -412,7 +412,13 @@ authorize. If --private-key is omitted, the CLI prompts for it (hidden) on a
 terminal — so the key stays out of the shell history and process arguments.
 
 --from (payer) and --to (payee) must be different addresses: a payment can't be
-sent from an address to itself.`,
+sent from an address to itself.
+
+--payment-file (-f) takes the whole request body as JSON instead of the flags:
+chain_id, mode ("authorize" or "charge"), amount, token (the contract ADDRESS),
+payer and payee are required, description optional. The file is the complete
+request, so -F, -T, -t, -a, -c, -C and -d are ignored with it, and so are the stored
+chain/token defaults: set "mode": "charge" in the file rather than passing -C.`,
 	Example: `  rail0 payments create \
     -F @buyer -T @merchant -t USDC -a 10.50 -c 5042002 \
     -p @buyer-key`,

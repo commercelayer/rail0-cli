@@ -12,6 +12,12 @@ terminal — so the key stays out of the shell history and process arguments.
 --from (payer) and --to (payee) must be different addresses: a payment can't be
 sent from an address to itself.
 
+--payment-file (-f) takes the whole request body as JSON instead of the flags:
+chain_id, mode ("authorize" or "charge"), amount, token (the contract ADDRESS),
+payer and payee are required, description optional. The file is the complete
+request, so -F, -T, -t, -a, -c, -C and -d are ignored with it, and so are the stored
+chain/token defaults: set "mode": "charge" in the file rather than passing -C.
+
 ```
 rail0 payments create [flags]
 ```
@@ -34,7 +40,7 @@ rail0 payments create [flags]
   -F, --from string              Payer wallet address (from) (0x-prefixed, funds are pulled from here)
   -h, --help                     help for create
       --idempotency-key string   Replay-safety key (default: a fresh one per invocation). Reuse it to retry the SAME create without minting a second payment
-  -f, --payment-file string      Path to a JSON file with the full request body (overrides individual flags)
+  -f, --payment-file string      Path to a JSON file with the full request body, "mode" included; the other request flags (-F -T -t -a -c -C -d) and stored defaults are then ignored
   -p, --private-key string       Payer's secp256k1 private key (0x-prefixed hex); creates the payment and signs locally
   -T, --to string                Payee wallet address (to) (0x-prefixed, address from 'wallets')
   -t, --token string             Token symbol as listed in GET /tokens (e.g. USDC)

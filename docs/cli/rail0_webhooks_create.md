@@ -17,6 +17,11 @@ now — 'rotate-secret' issues a new one, which is the recovery, not a lookup.
 With -q/--quiet the command prints the secret rather than the id, since the id can
 be looked up again ('webhooks list') and the secret cannot.
 
+An account holds at most 20 webhooks (the gateway's WEBHOOKS_PER_ACCOUNT default).
+Past the limit the create is refused with 422 webhook_limit_reached. Disabled
+webhooks count toward it, deleted ones do not: delete one ('webhooks delete'), or
+add topics to an existing webhook ('webhooks update') instead.
+
 Use the secret to verify the X-Rail0-Signature header on each delivery. A
 delivery whose signature you cannot verify should be treated as untrusted, not
 as a malformed request.

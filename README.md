@@ -33,7 +33,7 @@ rotate is reported rather than silently honoured. Keys are scoped to the payment
 - [Installation](#installation) — [install script](#install-script-macos-and-linux--recommended) · [manual download](#manual-download-any-platform-windows-included) · [from source](#build-from-source-contributors) · [`rail0 update`](#updating-rail0-update) · [`rail0 init`](#guided-setup-rail0-init)
 - [**Your first payment**](#your-first-payment) — the guided path
 - [Shell completion](#shell-completion)
-- [Configuration](#configuration) — [defaults](#persisted-defaults-config) · [environments](#environments-env) · [address book](#address-book-aliases) · [signing keys](#signing-keys-os-keychain)
+- [Configuration](#configuration) — [defaults](#persisted-defaults-config) · [environments](#environments-env) · [address book](#address-book-aliases) · [signing keys](#signing-keys-os-keychain) · [new wallet](#new-wallet-keys-generate)
 - [Signing modes](#signing-modes) — who signs what, and when
 - [Commands](#commands) — the full reference, including [repairing a webhook](#repairing-a-webhook-that-stopped-delivering)
 - [Full flow examples](#full-flow-examples) — authorize/capture, charge, refund
@@ -272,6 +272,9 @@ rail0 keys address buyer-key     # the derived 0x address, to check you saved th
 
 On headless Linux there may be no keychain; there, pass `--private-key` or set
 `RAIL0_PRIVATE_KEY`.
+
+No wallet yet? [`rail0 keys generate`](#new-wallet-keys-generate) creates one
+locally and prints its key once.
 
 ### 4. Sign in as the merchant
 
@@ -698,8 +701,38 @@ rail0 payments create -F @buyer -T @payee -t USDC -a 1.00 -c 5042002 -p @payer
 
 Backends: macOS Keychain, Windows Credential Manager, Linux Secret Service
 (gnome-keyring/KWallet). On a system without one (e.g. **headless Linux**) the
-`keys` commands return an error — there, pass `--private-key` or set
+keychain `keys` commands return an error — there, pass `--private-key` or set
 `RAIL0_PRIVATE_KEY`.
+
+### New wallet (`keys generate`)
+
+No wallet yet? `rail0 keys generate` creates a new key pair **on your machine** and
+prints its EIP-55 address and its private key (0x-prefixed hex). It is fully
+offline — no gateway call, no update check — and writes nothing: not the config,
+not the keychain, not a file.
+
+```sh
+rail0 keys generate           # address + private key on stdout, warning on stderr
+rail0 keys generate --json    # {"address": "0x…", "private_key": "0x…"} — stdout stays clean JSON
+```
+
+> **The private key is shown once and cannot be recovered** — not by RAIL0, not by
+> anyone. Store it right away in a password manager. Whoever has it controls the
+> funds: never paste it into a website or a chat, never share it with RAIL0
+> operators (they will never ask), and mind shell history, terminal scrollback,
+> screen sharing and wherever you redirect stdout.
+
+Next steps:
+
+1. `rail0 keys add <name>` saves it in the OS keychain (prompted hidden), so you sign
+   with `-p @<name>` instead of pasting it.
+2. Register the **address** — never the key — with RAIL0: sign up as a merchant
+   (`/signup` in the admin) or ask an operator for an invite, then claim the account
+   from the emailed link by signing with this wallet (import the key into a wallet
+   you control to sign there). After that, `rail0 auth login -p @<name>`.
+
+Adding the address to an account you already have (`wallets create`) is currently
+unavailable (`403 wallet_add_unavailable`).
 
 ---
 

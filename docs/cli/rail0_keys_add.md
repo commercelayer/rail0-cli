@@ -48,5 +48,5 @@ rail0 keys add <name> [flags]
 
 ### SEE ALSO
 
-* [rail0 keys](rail0_keys.md)	 - Manage signing keys in the OS keychain
+* [rail0 keys](rail0_keys.md)	 - Generate signing keys locally and manage them in the OS keychain
 

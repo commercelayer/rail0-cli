@@ -19,7 +19,7 @@ import (
 // OS keychain; each key is one entry keyed by its name.
 const keyringService = "rail0-cli"
 
-// keysCmd groups the add/rm/address verbs. It deliberately does NOT list the
+// keysCmd groups the generate/add/rm/address verbs. It deliberately does NOT list the
 // saved keys: an OS keychain cannot be enumerated, so any listing could only
 // replay the name index in the config file — a copy, which drifts. Delete the
 // config, or copy one between machines, and that listing confidently reports
@@ -32,21 +32,25 @@ const keyringService = "rail0-cli"
 // there. It cannot be stale, because there is no copy in the path. (#139)
 var keysCmd = &cobra.Command{
 	Use:   "keys",
-	Short: "Manage signing keys in the OS keychain",
-	Long: `Save signing keys in the OS keychain and reference them as "@name" on the
+	Short: "Generate signing keys locally and manage them in the OS keychain",
+	Long: `Create a new wallet key pair locally with 'rail0 keys generate' (offline; the
+private key is printed once and stored nowhere).
+
+Save signing keys in the OS keychain and reference them as "@name" on the
 --private-key flag (e.g. 'rail0 payments create -p @payer'), instead of pasting
 a raw key or exporting RAIL0_PRIVATE_KEY.
 
 The secret never touches the config file or your shell history. Backends: macOS
 Keychain, Windows Credential Manager, Linux Secret Service. On a system without
-one (e.g. headless Linux) these commands return an error; use --private-key /
+one (e.g. headless Linux) add/rm/address return an error; use --private-key /
 RAIL0_PRIVATE_KEY there.
 
 There is no listing of saved keys, by design: a keychain cannot be enumerated,
 so a list could only report a copy of the names kept alongside the config — and
 that copy drifts. Ask about one key at a time with 'rail0 keys address <name>',
 which reads the keychain itself and cannot go stale.`,
-	Example: `  rail0 keys add payer
+	Example: `  rail0 keys generate
+  rail0 keys add payer
   rail0 payments create -p @payer …
   rail0 keys address payer
   rail0 keys rm payer`,
@@ -231,5 +235,5 @@ func init() {
 	addYesFlag(keysRemoveCmd)
 	keysRemoveCmd.ValidArgsFunction = completeKeyNames
 	keysAddressCmd.ValidArgsFunction = completeKeyNames
-	keysCmd.AddCommand(keysAddCmd, keysRemoveCmd, keysAddressCmd)
+	keysCmd.AddCommand(keysGenerateCmd, keysAddCmd, keysRemoveCmd, keysAddressCmd)
 }

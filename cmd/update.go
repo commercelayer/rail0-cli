@@ -123,9 +123,22 @@ func installRelease(ctx context.Context, up *selfupdate.Updater, rel *selfupdate
 // updateCheckSkipped lists the commands the automatic check never interrupts: the
 // update command itself, the meta commands, and shell completion (which runs on every
 // Tab press and must answer instantly and silently).
+//
+// Entries are top-level names (covering the whole tree beneath) or a full subcommand
+// path without the "rail0 " prefix, for a single leaf: "keys generate" promises to be
+// fully offline — it creates a private key, and must not even ask GitHub for a release
+// (let alone offer to swap the binary) on the way.
 var updateCheckSkipped = map[string]bool{
 	"update": true, "version": true, "help": true, "completion": true,
 	cobra.ShellCompRequestCmd: true, cobra.ShellCompNoDescRequestCmd: true,
+	"keys generate": true,
+}
+
+// updateCheckSkippedFor reports whether cmd is exempt from the automatic check, by its
+// top-level name or by its own subcommand path (see updateCheckSkipped).
+func updateCheckSkippedFor(cmd *cobra.Command) bool {
+	path := strings.TrimPrefix(cmd.CommandPath(), cmd.Root().Name()+" ")
+	return updateCheckSkipped[topLevelName(cmd)] || updateCheckSkipped[path]
 }
 
 // maybeOfferUpdate is the automatic update check, run before every command.
@@ -146,7 +159,7 @@ var updateCheckSkipped = map[string]bool{
 //     release yet — is silent and simply waits for the next day's check;
 //   - a failed install warns and lets the command carry on.
 func maybeOfferUpdate(cmd *cobra.Command) {
-	if updateCheckSkipped[topLevelName(cmd)] || !updateCheckWanted() {
+	if updateCheckSkippedFor(cmd) || !updateCheckWanted() {
 		return
 	}
 	now := time.Now()

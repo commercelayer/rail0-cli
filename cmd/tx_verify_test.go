@@ -17,17 +17,17 @@ const (
 	testChainID = 84532
 )
 
-// unsignedJSON builds the gateway's unsigned_transaction shape, with overrides.
+// unsignedJSON builds the gateway's unsigned_transaction shape, with overrides. The
+// default calldata is a void of testRail0ID — the operation testContext asks for, since
+// the SDK's check never runs without one.
 func unsignedJSON(t *testing.T, overrides map[string]any) string {
 	t.Helper()
-	// A well-formed call: 4-byte selector, then paymentId as the first argument.
-	calldata := "0xdeadbeef" + strings.TrimPrefix(testRail0ID, "0x")
 	fields := map[string]any{
 		"chain_id":  testChainID,
 		"from":      testSigner,
 		"to":        "0x2222222222222222222222222222222222222222",
 		"value":     0,
-		"data":      calldata,
+		"data":      calldataFor(t, "void", testRail0ID, ""),
 		"nonce":     7,
 		"gas_limit": 200000,
 	}
@@ -41,10 +41,15 @@ func unsignedJSON(t *testing.T, overrides map[string]any) string {
 	return string(b)
 }
 
+// testContext is the signingContext ensureSignerFor builds for a void: the payment
+// (with its token's decimals, which the SDK scales a typed amount by), the signer and
+// the operation.
 func testContext() *signingContext {
+	decimals := 6
 	return &signingContext{
-		payment: &rail0.Payment{Rail0Id: rail0.Bytes32(testRail0ID), ChainID: testChainID},
+		payment: &rail0.Payment{Rail0Id: rail0.Bytes32(testRail0ID), ChainID: testChainID, Decimals: &decimals},
 		signer:  testSigner,
+		op:      "void",
 	}
 }
 
@@ -95,22 +100,22 @@ func TestVerifyRejectsHostileTransactions(t *testing.T) {
 		},
 		{
 			name:      "calldata acts on a different payment",
-			overrides: map[string]any{"data": "0xdeadbeef" + strings.Repeat("ab", 32)},
+			overrides: map[string]any{"data": calldataFor(t, "void", "0x"+strings.Repeat("ab", 32), "")},
 			wantErr:   "acts on payment",
 		},
 		{
-			// The profitable swap: approve(spender, MAX) on the token contract. Its
-			// first argument is a left-padded address, so it cannot be a rail0_id.
+			// The profitable swap: approve(spender, MAX) on the token contract. Named by
+			// its foreign selector — the function is checked before the payment id.
 			name: "approve(spender, MAX) on the token",
 			overrides: map[string]any{
 				"data": "0x095ea7b3" + strings.Repeat("0", 24) + strings.Repeat("9", 40) +
 					strings.Repeat("f", 64),
 			},
-			wantErr: "acts on payment",
+			wantErr: "selector 0x095ea7b3",
 		},
 		{
 			name:      "calldata too short to carry a paymentId",
-			overrides: map[string]any{"data": "0xdeadbeef"},
+			overrides: map[string]any{"data": "0x" + rail0.Rail0Selectors["void"]},
 			wantErr:   "too short",
 		},
 		{
@@ -128,8 +133,9 @@ func TestVerifyRejectsHostileTransactions(t *testing.T) {
 			if !strings.Contains(err.Error(), tc.wantErr) {
 				t.Errorf("error = %q, want it to mention %q", err, tc.wantErr)
 			}
-			if !strings.Contains(err.Error(), "refusing to sign") {
-				t.Errorf("error = %q, want it to say it is refusing to sign", err)
+			// The CLI's own wording, not the SDK's "rail0: " prefix.
+			if !strings.HasPrefix(err.Error(), "refusing to sign") {
+				t.Errorf("error = %q, want it to open with refusing to sign", err)
 			}
 		})
 	}
@@ -141,43 +147,13 @@ func TestVerifyRejectsUnparseableJSON(t *testing.T) {
 	}
 }
 
-// Zero-value encodings that must be accepted, and everything that must not. Inputs
-// are RAW JSON, so a quoted form is how a hex-string quantity arrives.
-func TestIsZeroNativeValue(t *testing.T) {
-	for _, ok := range []string{"", "null", "0", `"0"`, "0x0", `"0x0"`, `"0X0"`, " 0 "} {
-		if !isZeroNativeValue(json.RawMessage(ok)) {
-			t.Errorf("isZeroNativeValue(%s) = false, want true", ok)
-		}
-	}
-	for _, bad := range []string{
-		"1", `"0x1"`, "00", "0.0", "-0",
-		`"0xde0b6b3a7640000"`,        // 1 ETH as a hex string
-		"99999999999999999999999999", // beyond any Go integer type
-	} {
-		if isZeroNativeValue(json.RawMessage(bad)) {
-			t.Errorf("isZeroNativeValue(%s) = true, want false (unrecognised must refuse)", bad)
-		}
-	}
-}
-
-// With no rail0_id to compare against there is nothing to assert — a missing id must
-// not become a false alarm that blocks a legitimate operation.
-func TestCheckCalldataPaymentIDSkipsWithoutAnID(t *testing.T) {
-	for _, id := range []string{"", "0x", "not-an-id", "0xabc"} {
-		if err := checkCalldataPaymentID("0xdeadbeef", id); err != nil {
-			t.Errorf("checkCalldataPaymentID(_, %q) = %v, want nil", id, err)
-		}
-	}
-}
-
-// A nil payment (defensive: verify is only reached with one) must not panic.
-func TestVerifyToleratesAMissingPayment(t *testing.T) {
-	sc := &signingContext{signer: testSigner}
-	if err := sc.verify(unsignedJSON(t, nil)); err != nil {
-		t.Errorf("verify with no payment = %v, want nil", err)
-	}
-	if err := sc.verify(unsignedJSON(t, map[string]any{"value": 1})); err == nil {
-		t.Error("verify with no payment still must reject a non-zero value")
+// The SDK's check never runs without the payment it is for: a nil payment (defensive —
+// verify is only reached with one, from ensureSignerFor) is a refusal, not a pass.
+func TestVerifyRefusesWithoutAPayment(t *testing.T) {
+	sc := &signingContext{signer: testSigner, op: "void"}
+	err := sc.verify(unsignedJSON(t, nil))
+	if err == nil || !strings.Contains(err.Error(), "refusing to sign") {
+		t.Errorf("verify with no payment = %v, want a refusal", err)
 	}
 }
 
@@ -390,7 +366,7 @@ func TestExpectedBaseUnitsFailsClosed(t *testing.T) {
 // trailing arguments. amountUnits, when set, is capture/refund's uint256 amount.
 func calldataFor(t *testing.T, op, rail0ID, amountUnits string) string {
 	t.Helper()
-	sel, ok := rail0Selectors[canonicalOp(op)]
+	sel, ok := rail0.Rail0Selectors[rail0.CanonicalOperation(op)]
 	if !ok {
 		t.Fatalf("no selector for %q", op)
 	}
@@ -404,34 +380,10 @@ func calldataFor(t *testing.T, op, rail0ID, amountUnits string) string {
 		}
 		b.WriteString(fmt.Sprintf("%064x", n))
 	}
-	if canonicalOp(op) == "refund" {
+	if rail0.CanonicalOperation(op) == "refund" {
 		b.WriteString(strings.Repeat("0", 64*3)) // v, r, s
 	}
 	return b.String()
-}
-
-// The selectors are pinned against RAIL0.sol's compiled methodIdentifiers
-// (rail0/contracts/out/RAIL0.sol/RAIL0.json), not against the table they are computed
-// from — a typo in a signature string would otherwise agree with itself.
-func TestRail0SelectorsMatchTheABI(t *testing.T) {
-	abi := map[string]string{
-		"authorize":     "c36c951c",
-		"charge":        "1eddc5e5",
-		"capture":       "11bf1806",
-		"void":          "69438554",
-		"release":       "955b0ee2",
-		"refund":        "e8ed339d",
-		"dispute":       "eebaa720",
-		"close_dispute": "6e6923ab",
-	}
-	if len(rail0Selectors) != len(abi) {
-		t.Errorf("%d selectors, want %d", len(rail0Selectors), len(abi))
-	}
-	for op, want := range abi {
-		if got := rail0Selectors[op]; got != want {
-			t.Errorf("%s selector = %s, want %s (from the contract ABI)", op, got, want)
-		}
-	}
 }
 
 // The right calldata for each operation passes; the amount-taking ones only with the
@@ -447,7 +399,7 @@ func TestVerifyAcceptsTheRightCallForEachOperation(t *testing.T) {
 	}
 	for _, op := range []string{"capture", "refund"} {
 		sc := testContext()
-		sc.op, sc.amountBaseUnits = op, "1500000"
+		sc.op, sc.amount = op, "1.5"
 		tx := unsignedJSON(t, map[string]any{"data": calldataFor(t, op, testRail0ID, "1500000")})
 		if err := sc.verify(tx); err != nil {
 			t.Errorf("%s: rejected its own calldata: %v", op, err)
@@ -469,14 +421,14 @@ func TestVerifyRejectsASwappedOperation(t *testing.T) {
 	}
 	for _, tc := range cases {
 		sc := testContext()
-		sc.op, sc.amountBaseUnits = tc.asked, "1000000"
+		sc.op, sc.amount = tc.asked, "1"
 		tx := unsignedJSON(t, map[string]any{"data": calldataFor(t, tc.served, testRail0ID, tc.amount)})
 		err := sc.verify(tx)
 		if err == nil {
 			t.Errorf("asked to %s, served %s: signed it", tc.asked, tc.served)
 			continue
 		}
-		name := rail0FunctionSignatures[canonicalOp(tc.served)]
+		name := rail0.Rail0FunctionSignatures[rail0.CanonicalOperation(tc.served)]
 		name = name[:strings.IndexByte(name, '(')]
 		if !strings.Contains(err.Error(), "refusing to sign") || !strings.Contains(err.Error(), name+"()") {
 			t.Errorf("asked to %s, served %s: error %q should name %s()", tc.asked, tc.served, err, name)
@@ -489,7 +441,7 @@ func TestVerifyRejectsASwappedOperation(t *testing.T) {
 func TestVerifyRejectsAForeignSelector(t *testing.T) {
 	sc := testContext()
 	sc.op = "void"
-	err := sc.verify(unsignedJSON(t, nil)) // 0xdeadbeef + the right id
+	err := sc.verify(unsignedJSON(t, map[string]any{"data": "0xdeadbeef" + strings.TrimPrefix(testRail0ID, "0x")}))
 	if err == nil || !strings.Contains(err.Error(), "0xdeadbeef") {
 		t.Errorf("a foreign selector must be refused by name, got %v", err)
 	}
@@ -499,7 +451,7 @@ func TestVerifyRejectsAForeignSelector(t *testing.T) {
 func TestVerifyRejectsAnAmountOtherThanAskedFor(t *testing.T) {
 	for _, op := range []string{"capture", "refund"} {
 		sc := testContext()
-		sc.op, sc.amountBaseUnits = op, "1000000"
+		sc.op, sc.amount = op, "1"
 		tx := unsignedJSON(t, map[string]any{"data": calldataFor(t, op, testRail0ID, "999000000")})
 		err := sc.verify(tx)
 		if err == nil || !strings.Contains(err.Error(), "999000000") || !strings.Contains(err.Error(), "1000000") {
@@ -516,16 +468,21 @@ func TestVerifyRejectsAnAmountOtherThanAskedFor(t *testing.T) {
 	}
 }
 
-// Fail closed: an amount-taking operation with nothing local to compare against, and an
-// operation with no known selector, both refuse rather than skip.
-func TestCheckCalldataCallFailsClosed(t *testing.T) {
-	if err := checkCalldataCall(calldataFor(t, "capture", testRail0ID, "1"), "capture", ""); err == nil {
+// Fail closed: an amount-taking operation with no --amount to compare against, an
+// operation with no known selector, and empty calldata all refuse rather than skip.
+func TestVerifyFailsClosed(t *testing.T) {
+	sc := testContext()
+	sc.op = "capture"
+	if err := sc.verify(unsignedJSON(t, map[string]any{"data": calldataFor(t, "capture", testRail0ID, "1")})); err == nil {
 		t.Error("capture with no expected amount must be refused")
 	}
-	if err := checkCalldataCall(calldataFor(t, "void", testRail0ID, ""), "approve", ""); err == nil {
+	sc = testContext()
+	sc.op = "approve"
+	if err := sc.verify(unsignedJSON(t, nil)); err == nil {
 		t.Error("an operation with no known selector must be refused")
 	}
-	if err := checkCalldataCall("0x", "void", ""); err == nil || !strings.Contains(err.Error(), "too short") {
+	sc = testContext()
+	if err := sc.verify(unsignedJSON(t, map[string]any{"data": "0x"})); err == nil || !strings.Contains(err.Error(), "too short") {
 		t.Errorf("empty calldata must be refused as too short, got %v", err)
 	}
 }

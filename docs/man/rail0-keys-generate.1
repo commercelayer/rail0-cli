@@ -1,0 +1,73 @@
+.nh
+.TH "RAIL0" "1" "Aug 2026" "rail0 CLI" ""
+
+.SH NAME
+rail0-keys-generate - Create a new wallet key pair locally and print its address and private key
+
+
+.SH SYNOPSIS
+\fBrail0 keys generate [flags]\fP
+
+
+.SH DESCRIPTION
+Create a new wallet (a secp256k1 key pair) on this machine and print its
+EIP-55 address and its private key (0x-prefixed hex).
+
+.PP
+Fully offline: nothing is sent to the gateway or anywhere else, and nothing is
+written to disk — not the config file, not the OS keychain. The private key
+exists only in this command's output, and it is shown ONCE: it cannot be
+recovered by RAIL0 or by anyone else. Store it now in a password manager (and,
+to sign with it in a browser, import it into a wallet you control). Anyone who
+has it controls the funds of the address.
+
+.PP
+The address and the key go to stdout (a JSON object with --json); the warning
+goes to stderr, so piping or redirecting stdout keeps clean JSON. Mind where
+stdout goes: a redirected file, a CI log, shell scrollback or a shared screen
+all end up holding the key.
+
+.PP
+Next steps:
+  rail0 keys add      save it in the OS keychain for -p @ (prompts hidden)
+  then register the ADDRESS (never the key) with RAIL0: sign up as a merchant
+  (/signup in the admin) or ask an operator for an invite, and claim the account
+  by signing with this wallet. Adding it to an existing account
+  ('wallets create') is currently unavailable.
+
+
+.SH OPTIONS
+\fB-h\fP, \fB--help\fP[=false]
+	help for generate
+
+
+.SH OPTIONS INHERITED FROM PARENT COMMANDS
+\fB--base-url\fP=""
+	RAIL0 gateway base URL (env: RAIL0_BASE_URL)
+
+.PP
+\fB--debug\fP[=false]
+	Print HTTP request/response details to stderr
+
+.PP
+\fB--json\fP[=false]
+	Force plain (uncolored) JSON output (useful in scripts)
+
+.PP
+\fB--pretty\fP[=false]
+	Use the key-value/table view instead of JSON (terminal only)
+
+.PP
+\fB-q\fP, \fB--quiet\fP[=false]
+	Print only the result's id/hash, one per line (useful in scripts)
+
+
+.SH EXAMPLE
+.EX
+  rail0 keys generate
+  rail0 keys generate --json
+.EE
+
+
+.SH SEE ALSO
+\fBrail0-keys(1)\fP

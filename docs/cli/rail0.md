@@ -42,7 +42,7 @@ Use 'rail0 <command> --help' for detailed usage of any command.
 * [rail0 env](rail0_env.md)	 - Switch the active environment (development/staging/production) in one shot
 * [rail0 health](rail0_health.md)	 - Report gateway health (liveness/readiness)
 * [rail0 init](rail0_init.md)	 - Guided first-run setup: environment, key, sign-in
-* [rail0 keys](rail0_keys.md)	 - Manage signing keys in the OS keychain
+* [rail0 keys](rail0_keys.md)	 - Generate signing keys locally and manage them in the OS keychain
 * [rail0 payment-methods](rail0_payment-methods.md)	 - Discover a merchant's accepted wallets/tokens (public, no login)
 * [rail0 payments](rail0_payments.md)	 - Payment lifecycle operations
 * [rail0 token](rail0_token.md)	 - Print the stored session token, or suggest logging in

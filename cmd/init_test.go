@@ -1,9 +1,12 @@
 package cmd
 
 import (
+	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
+	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
 )
 
@@ -85,3 +88,21 @@ func TestRootHelpDisambiguatesTokenFromTokens(t *testing.T) {
 }
 
 var _ = cobra.Command{}
+
+// Ctrl-C or ESC at any init prompt is a cancellation: exit 130 (ErrAborted), as the
+// README documents and every other prompt does — not 1, which reads as a failure.
+func TestInitPromptAbortExitsAsACancellation(t *testing.T) {
+	for _, err := range []error{huh.ErrUserAborted, fmt.Errorf("select: %w", huh.ErrUserAborted)} {
+		got := initPromptErr(err)
+		if !errors.Is(got, ErrAborted) {
+			t.Errorf("initPromptErr(%v) = %v, want ErrAborted", err, got)
+		}
+		if code := exitCode(got); code != ExitCodeAborted {
+			t.Errorf("exit code for an aborted init prompt = %d, want %d", code, ExitCodeAborted)
+		}
+	}
+	other := errors.New("terminal went away")
+	if got := initPromptErr(other); got != other {
+		t.Errorf("a non-abort prompt error must pass through unchanged, got %v", got)
+	}
+}

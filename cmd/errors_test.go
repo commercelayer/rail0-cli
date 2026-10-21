@@ -104,16 +104,17 @@ func TestNotFoundWordingDependsOnTheResource(t *testing.T) {
 // through apiHint (gateway detail + hint) instead of the SDK's bare line.
 func TestHintsForAccountWalletReleaseAndChainCodes(t *testing.T) {
 	for code, want := range map[string]string{
-		"account_deactivated":           "void, release and refund still work",
-		"wallet_deactivated":            "only an operator can reactivate it",
-		"last_active_wallet":            "ask an operator",
-		"not_your_wallet":               "rail0 auth login",
-		"wallet_add_unavailable":        "not available yet",
-		"last_admin":                    "operator",
-		"not_your_account":              "--account",
-		"release_submitter_not_a_party": "payer or the payee",
-		"unknown_chain":                 "rail0 chains",
-		"validation_failed":             "--help",
+		"account_deactivated":            "void, release and refund still work",
+		"wallet_deactivated":             "--active true",
+		"wallet_deactivated_by_operator": "ask an operator to reactivate it",
+		"last_active_wallet":             "ask an operator",
+		"not_your_wallet":                "rail0 auth login",
+		"wallet_add_unavailable":         "not available yet",
+		"last_admin":                     "operator",
+		"not_your_account":               "--account",
+		"release_submitter_not_a_party":  "payer or the payee",
+		"unknown_chain":                  "rail0 chains",
+		"validation_failed":              "--help",
 	} {
 		if got := hintFor(code, ""); !strings.Contains(got, want) {
 			t.Errorf("hintFor(%q) = %q, want substring %q", code, got, want)

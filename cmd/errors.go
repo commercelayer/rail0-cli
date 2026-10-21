@@ -243,10 +243,15 @@ var errorHints = map[string]string{
 	"not_the_payer": "only the buyer (payer) can do this — 'rail0 auth login' with the payer's key",
 	// deactivation and account scoping: the session is fine, the thing it acts for is not
 	"account_deactivated": "the merchant account is deactivated — reads, void, release and refund still work; new payments, authorize, charge and capture need an operator to reactivate it",
-	// A deactivated session wallet cannot write, and a session changes only the wallet
-	// it signed in with (gateway#411), so another wallet's session cannot reactivate it.
-	"wallet_deactivated": "this wallet is deactivated and can only read — sign in with another of the account's active wallets ('rail0 auth login'); only an operator can reactivate it",
-	"not_your_account":   "that account id is not the session's — pass your own to --account, or omit it to use the signed-in account ('rail0 auth status' shows which)",
+	// A deactivated session wallet cannot write, with one exception (gateway#439): its
+	// own session may switch it back on when its owner switched it off. Another wallet's
+	// session cannot (gateway#411), and an operator's switch-off is the operator's to lift.
+	"wallet_deactivated": "this wallet is deactivated and can only read — if you switched it off, switch it back on with 'rail0 wallets update <wallet> --active true' from its own session; otherwise sign in with another of the account's active wallets ('rail0 auth login')",
+	// gateway#439: the owner's session reactivating a wallet an operator switched off (or
+	// one switched off before the gateway recorded who did it). The switch-off revoked the
+	// key, so that key's own session cannot lift it.
+	"wallet_deactivated_by_operator": "an operator deactivated this wallet, so only an operator can reactivate it — ask an operator to reactivate it",
+	"not_your_account":               "that account id is not the session's — pass your own to --account, or omit it to use the signed-in account ('rail0 auth status' shows which)",
 	// A session is bound to the one wallet it signed in with (gateway#411): the account's
 	// other wallets are readable, but update, delete and the token commands act only on
 	// the session's own.
@@ -256,8 +261,10 @@ var errorHints = map[string]string{
 	"wallet_add_unavailable": "adding a wallet is not available yet — the gateway refuses 'rail0 wallets create' for every session until the merchant wallet-management section lands",
 	// Login resolves the account FROM a wallet, so an account left with no active one
 	// could neither act nor add a wallet back: the gateway refuses to switch off the last.
-	// With adding suspended and the own-wallet rule, the way out is an operator.
-	"last_active_wallet": "this is the account's only active wallet — another wallet must be active before this one can be switched off; adding one ('rail0 wallets create') is not available yet, so ask an operator to reactivate another",
+	// With adding suspended and the own-wallet rule, the way out is to switch another wallet
+	// back on: from its own session if its owner switched it off (gateway#439), otherwise
+	// through an operator.
+	"last_active_wallet": "this is the account's only active wallet — another wallet must be active before this one can be switched off; adding one ('rail0 wallets create') is not available yet, so sign in with a wallet you switched off and run 'rail0 wallets update <wallet> --active true', or ask an operator to reactivate one",
 	// Operator-side twin of last_active_wallet: the gateway keeps at least one active admin.
 	"last_admin": "this would leave the gateway with no active operator — grant the operator role to another active account first, then retry",
 	// POST /webhooks past the account's cap (WEBHOOKS_PER_ACCOUNT, 20 by default).

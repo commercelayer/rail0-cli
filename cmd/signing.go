@@ -63,7 +63,15 @@ func signSigningPayloadVRS(sp *rail0.SigningPayload, privateKeyHex string, want 
 
 	sig, err := rail0.SignSigningPayloadFor(sp, privKey, want)
 	if err != nil {
-		return zero, withoutSDKPrefix(err)
+		err = withoutSDKPrefix(err)
+		// rail0-go v1.7.1 words an unknown primaryType as "not an EIP-3009 authorization
+		// type" and no longer says why that happens. For a CLI the likely cause is a
+		// gateway newer than the binary, so say so: the reader should reach for an
+		// upgrade, not suspect the key.
+		if sp.PrimaryType != rail0.PrimaryTypeTransfer && sp.PrimaryType != rail0.PrimaryTypeReceive {
+			err = fmt.Errorf("%w — this CLI may be older than the gateway it is talking to; upgrade it ('rail0 update')", err)
+		}
+		return zero, err
 	}
 	return sig, nil
 }

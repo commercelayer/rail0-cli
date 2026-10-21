@@ -13,9 +13,14 @@ is deliberate — deactivation says "stop trusting this address", and an outboun
 push to a revoked wallet's payments would contradict it.
 
 Existing payments are unaffected: they carry their own payee address and settle
-whatever the flag says now. Reversible, but only by an operator: a deactivated
-wallet's own session is read-only, and another wallet's session cannot change
-it (403 not_your_wallet).
+whatever the flag says now. Reversible: switching it back on (--active true) is
+the one write a deactivated wallet's own session may make, when you switched it
+off yourself. A wallet an operator switched off is the operator's to switch back
+on (403 wallet_deactivated_by_operator); 'wallets get' shows deactivated_by.
+Another wallet's session cannot change it (403 not_your_wallet).
+
+Because the key's own session can switch an owner's switch-off back on, a
+definitive revocation (a leaked key) must come from an operator.
 
 The account's ONLY active wallet cannot be switched off (422 last_active_wallet):
 login resolves the account from its wallet, so an account with none could neither

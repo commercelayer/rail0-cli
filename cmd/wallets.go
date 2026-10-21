@@ -247,9 +247,14 @@ is deliberate — deactivation says "stop trusting this address", and an outboun
 push to a revoked wallet's payments would contradict it.
 
 Existing payments are unaffected: they carry their own payee address and settle
-whatever the flag says now. Reversible, but only by an operator: a deactivated
-wallet's own session is read-only, and another wallet's session cannot change
-it (403 not_your_wallet).
+whatever the flag says now. Reversible: switching it back on (--active true) is
+the one write a deactivated wallet's own session may make, when you switched it
+off yourself. A wallet an operator switched off is the operator's to switch back
+on (403 wallet_deactivated_by_operator); 'wallets get' shows deactivated_by.
+Another wallet's session cannot change it (403 not_your_wallet).
+
+Because the key's own session can switch an owner's switch-off back on, a
+definitive revocation (a leaked key) must come from an operator.
 
 The account's ONLY active wallet cannot be switched off (422 last_active_wallet):
 login resolves the account from its wallet, so an account with none could neither
@@ -305,10 +310,11 @@ var walletsDeleteCmd = &cobra.Command{
 	Use:   "delete <wallet>",
 	Short: "Deactivate the session's wallet — soft delete, reversible (by id, 0x address or @alias)",
 	Long: `Deactivate a wallet. Despite the verb, this is a SOFT delete and it is
-reversible: the gateway sets active=false and keeps the row, so it can be
-switched back on — by an operator, since a deactivated wallet's own session is
-read-only and another wallet's session cannot change it. Nothing is removed, nothing on-chain is
-touched, and no funds move.
+reversible: the gateway sets active=false, records you as the one who switched
+it off (deactivated_by: owner) and keeps the row, so the wallet's own session can
+switch it back on with 'wallets update <wallet> --active true'. One an operator
+switched off only an operator can (403 wallet_deactivated_by_operator). Nothing is
+removed, nothing on-chain is touched, and no funds move.
 
 It is the same operation as 'wallets update <wallet> --active false'. Both
 spellings exist because the API exposes a DELETE verb as well as the flag —
@@ -360,8 +366,9 @@ func deactivationPrompt(wallet string) string {
 		"Deactivate wallet %s?\n"+
 			"  - buyers can no longer discover it and no new payment can name it\n"+
 			"  - webhooks STOP for its payments that are still in flight (they settle, you are not told)\n"+
-			"  - reversible only by an operator: once off, this wallet's session is read-only\n"+
-			"    and no other wallet's session can switch it back on",
+			"  - reversible: this wallet's own session can switch it back on (--active true),\n"+
+			"    but nothing else; no other wallet's session can, and an operator's switch-off\n"+
+			"    only an operator lifts",
 		wallet)
 }
 

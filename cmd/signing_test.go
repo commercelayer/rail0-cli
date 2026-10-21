@@ -18,9 +18,27 @@ import (
 const testKey = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
 const testKeyAddress = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"
 
+// eip3009Types is the `types` envelope the gateway sends with every signing payload.
+// rail0-go v1.7.1 checks it (exact EIP-3009 struct, exact domain, nothing else), so a
+// fixture without it is refused before any of the mapping under test runs.
+func eip3009Types(primaryType string) map[string]any {
+	field := func(name, typ string) any { return map[string]any{"name": name, "type": typ} }
+	return map[string]any{
+		"EIP712Domain": []any{
+			field("name", "string"), field("version", "string"),
+			field("chainId", "uint256"), field("verifyingContract", "address"),
+		},
+		primaryType: []any{
+			field("from", "address"), field("to", "address"), field("value", "uint256"),
+			field("validAfter", "uint256"), field("validBefore", "uint256"), field("nonce", "bytes32"),
+		},
+	}
+}
+
 func payload(primaryType string) *rail0.SigningPayload {
 	return &rail0.SigningPayload{
 		PrimaryType: primaryType,
+		Types:       eip3009Types(primaryType),
 		Domain: rail0.EIP712Domain{
 			Name:              "USD Coin",
 			Version:           "2",

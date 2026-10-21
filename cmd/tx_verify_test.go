@@ -187,6 +187,7 @@ const (
 func testPayload(overrides func(*rail0.SigningPayload)) *rail0.SigningPayload {
 	sp := &rail0.SigningPayload{
 		PrimaryType: "ReceiveWithAuthorization",
+		Types:       eip3009Types("ReceiveWithAuthorization"),
 		Domain: rail0.EIP712Domain{
 			Name:              "USD Coin",
 			Version:           "2",

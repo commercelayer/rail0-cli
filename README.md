@@ -1091,9 +1091,11 @@ rail0 wallets update 0xABCD… --label "New label" --active false
 - the address stops being offered by [`payment-methods`](#payment-methods), so buyers can no longer discover it and no new payment can name it;
 - webhooks stop being dispatched for payments to it — deliberately: deactivation says "stop trusting this address", and an outbound push about its payments would contradict that.
 
-Existing payments are unaffected. They carry their own payee address and settle whatever the flag says now. Reversible, but **only by an operator**: a deactivated wallet's own session is read-only, and another wallet's session cannot change it (`403 not_your_wallet`).
+Existing payments are unaffected. They carry their own payee address and settle whatever the flag says now.
 
-The account's **only active wallet cannot be switched off** — the gateway refuses it with `422 last_active_wallet`. Login resolves the account from the signing wallet, so an account with no active wallet could neither act nor add a wallet back. Another wallet must be active first; adding one is currently unavailable, so ask an operator to reactivate one.
+**Switching it back on.** Every switch-off records who did it in the wallet's `deactivated_by` (`owner` or `operator`, shown by `wallets get`). A deactivated wallet's session is read-only (`403 wallet_deactivated`) except for one write: `wallets update <wallet> --active true` on its **own** wallet, which switches it back on when you switched it off yourself. A wallet an operator switched off — or one switched off before the gateway recorded who did it (`deactivated_by` null) — is refused with `403 wallet_deactivated_by_operator`, and the CLI tells you to ask an operator to reactivate it. Another wallet's session cannot change it at all (`403 not_your_wallet`). The flip side: a wallet you switched off can be switched back on by whoever holds its key, so a definitive revocation (a leaked key) must come from an operator.
+
+The account's **only active wallet cannot be switched off** — the gateway refuses it with `422 last_active_wallet`. Login resolves the account from the signing wallet, so an account with no active wallet could neither act nor add a wallet back. Another wallet must be active first; adding one is currently unavailable, so sign in with a wallet you switched off and switch it back on (`--active true`), or ask an operator to reactivate one.
 
 **Only the wallet you signed in with.** `wallets update`, `wallets delete` and `wallets tokens` act on the session's own wallet: another wallet of the same account is refused with `403 not_your_wallet`, and the CLI prints the hint to `rail0 auth login` with that wallet's key. Reads (`wallets`, `wallets get`, `wallets balances`) still cover every wallet of the account.
 
@@ -1106,7 +1108,7 @@ Both spellings exist because the API exposes a `DELETE` verb as well as the flag
 ```sh
 rail0 wallets delete 0xABCD…                      # same as…
 rail0 wallets update 0xABCD… --active false       # …this
-rail0 wallets update 0xABCD… --active true        # back on (an operator session only)
+rail0 wallets update 0xABCD… --active true        # back on (its own session, if you switched it off; else an operator)
 ```
 
 > Contrast [`webhooks delete`](#webhooks), which really does destroy the record.

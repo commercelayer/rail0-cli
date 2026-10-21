@@ -5,10 +5,11 @@ Deactivate the session's wallet — soft delete, reversible (by id, 0x address o
 ### Synopsis
 
 Deactivate a wallet. Despite the verb, this is a SOFT delete and it is
-reversible: the gateway sets active=false and keeps the row, so it can be
-switched back on — by an operator, since a deactivated wallet's own session is
-read-only and another wallet's session cannot change it. Nothing is removed, nothing on-chain is
-touched, and no funds move.
+reversible: the gateway sets active=false, records you as the one who switched
+it off (deactivated_by: owner) and keeps the row, so the wallet's own session can
+switch it back on with 'wallets update <wallet> --active true'. One an operator
+switched off only an operator can (403 wallet_deactivated_by_operator). Nothing is
+removed, nothing on-chain is touched, and no funds move.
 
 It is the same operation as 'wallets update <wallet> --active false'. Both
 spellings exist because the API exposes a DELETE verb as well as the flag —

@@ -1,61 +1,143 @@
-# Build and publish cross-platform `rail0` binaries to a GitHub Release on every
-# `v*` tag (via GoReleaser — see .goreleaser.yaml).
+# Release the rail0 CLI when an approved release pull request merges.
 #
-#   git tag v1.2.0 && git push origin v1.2.0
+# Releasing is three steps:
+#   1. bin/release-prepare opens "chore(release): vX.Y.Z", which bumps VERSION (and, if
+#      asked, the rail0-go version go.mod requires) and carries the release notes;
+#   2. a reviewer approves it and it is merged;
+#   3. this workflow, on that push to main: plan → gate (ci.yml on the release commit,
+#      against the go.mod rail0-go tag) → tag vX.Y.Z → GoReleaser (binaries + a draft
+#      release) → publish the release → Slack.
+#
+# Why on merge, not on a pushed tag: a tag pushed from a laptop was the release, with no
+# review and no CI on that commit. Now the reviewed pull request IS the release, and the
+# tag is created only here, equal to VERSION. A push that does not change VERSION is a
+# no-op (plan stops). "Run workflow" (workflow_dispatch, main only) resumes a run that
+# stopped halfway: the tag is reused, GoReleaser reuses its draft and replaces the
+# artifacts, and the release is published once complete.
+#
+# The release commit is the one that SET the version (the release PR's merge), found from
+# history, not the head of main: a resume after other merges still ships exactly the
+# reviewed commit.
 #
 # rail0-cli depends on rail0-go through `replace github.com/commercelayer/rail0-go =>
-# ../rail0-go` (go.mod). rail0-go is PRIVATE, and the default GITHUB_TOKEN only
-# grants access to this repo, so the sibling checkout needs a dedicated token:
-#
-#   Secret RAIL0_GO_TOKEN — a fine-grained PAT (or deploy key) with
-#   `contents: read` on commercelayer/rail0-go. Add it under
-#   Settings → Secrets and variables → Actions in commercelayer/rail0-cli.
-#
-# Both repos are checked out as siblings under the workspace so `../rail0-go`
-# resolves; GoReleaser runs inside the rail0-cli checkout.
-#
-# Which rail0-go a release is built against: EXACTLY the version go.mod requires
-# (`github.com/commercelayer/rail0-go vX.Y.Z`), checked out at that tag. It used to be
-# `ref: main`, so a CLI release built against whatever the SDK's main held at tag time
-# — unreleased, possibly breaking SDK code shipped inside a CLI binary whose go.mod
-# claimed a different version, and two builds of the same CLI tag could differ. The
-# release now fails if the require line is not a plain vX.Y.Z or that tag does not
-# exist in rail0-go: bump go.mod to a RELEASED SDK version before tagging the CLI.
-# (ci.yml deliberately keeps building against rail0-go main / a twin branch, to catch
-# SDK breakage early; see the comment there.)
+# ../rail0-go` (go.mod). rail0-go is PRIVATE, so the sibling checkout uses the secret
+# RAIL0_GO_TOKEN (fine-grained PAT, `contents: read` on commercelayer/rail0-go). The
+# release builds against EXACTLY the version go.mod requires, checked out at that tag;
+# the run fails if the require line is not a plain vX.Y.Z or that tag does not exist.
 name: release
 
 on:
   push:
-    tags:
-      - "v*"
+    branches: [main]
+  workflow_dispatch: # resume a release that stopped halfway; refused off main
 
 permissions:
-  contents: write # create the GitHub Release + upload assets
+  contents: read
+
+# One release at a time, never cancelled halfway.
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 jobs:
-  goreleaser:
+  plan:
+    name: Plan
     runs-on: ubuntu-latest
+    outputs:
+      release: ${{ steps.plan.outputs.release }}
+      version: ${{ steps.plan.outputs.version }}
+      tag: ${{ steps.plan.outputs.tag }}
+      commit: ${{ steps.plan.outputs.commit }}
+      sdk_ref: ${{ steps.sdk_ref.outputs.ref }}
     steps:
-      - name: Checkout rail0-cli
-        uses: actions/checkout@v4
-        with:
-          path: rail0-cli
-          fetch-depth: 0 # full history + tags for `git describe` / changelog
+      - name: Only from main
+        if: github.ref != 'refs/heads/main'
+        run: |
+          echo "::error::releases run from main only (got ${GITHUB_REF})"
+          exit 1
 
-      # The version go.mod requires, in either form (inside the require block, or a
-      # one-line `require github.com/commercelayer/rail0-go vX.Y.Z`). The `replace`
-      # line never matches: its second field is `=>`.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # history (the commit that set the version) and tags
+
+      - name: What to release
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          version_at() { git show "$1:VERSION" 2>/dev/null | tr -d ' \t\r\n' || true; }
+
+          version="$(version_at HEAD)"
+          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::VERSION '$version' is not X.Y.Z"
+            exit 1
+          fi
+          tag="v$version"
+          echo "version=$version" >>"$GITHUB_OUTPUT"
+          echo "tag=$tag" >>"$GITHUB_OUTPUT"
+
+          tagged=false
+          git rev-parse -q --verify "refs/tags/$tag" >/dev/null && tagged=true
+          draft="$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft 2>/dev/null || echo missing)"
+          if [ "$tagged" = true ] && [ "$draft" = false ]; then
+            echo "::notice::$tag is tagged and released: nothing to release"
+            echo "release=false" >>"$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # The commit that set this version: the newest first-parent commit of main whose
+          # VERSION differs from its parent's.
+          commit=""
+          for c in $(git log --first-parent --format=%H -- VERSION); do
+            if [ "$(version_at "$c")" = "$version" ] && [ "$(version_at "$c^1")" != "$version" ]; then
+              commit="$c"
+              break
+            fi
+          done
+          if [ -z "$commit" ]; then
+            echo "::error::cannot find the commit that set VERSION $version"
+            exit 1
+          fi
+
+          if [ "$tagged" = true ]; then
+            tag_commit="$(git rev-list -n 1 "$tag")"
+            if [ "$tag_commit" != "$commit" ]; then
+              echo "::error::tag $tag is on $tag_commit, but VERSION $version was set by $commit"
+              exit 1
+            fi
+          else
+            latest="$(git tag -l 'v*' --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n 1 || true)"
+            if [ -n "$latest" ] && [ "$(printf '%s\n%s\n' "${latest#v}" "$version" | sort -V | tail -n 1)" != "$version" ]; then
+              echo "::error::$version is older than the latest tag $latest"
+              exit 1
+            fi
+          fi
+
+          echo "release=true" >>"$GITHUB_OUTPUT"
+          echo "commit=$commit" >>"$GITHUB_OUTPUT"
+          {
+            echo "### Releasing rail0 CLI $version"
+            echo "- commit: \`$commit\`"
+            echo "- tagged already: $tagged"
+            echo "- GitHub release: $( [ "$draft" = missing ] && echo none || echo draft )"
+          } >>"$GITHUB_STEP_SUMMARY"
+
+      # The version go.mod requires AT THE RELEASE COMMIT, in either form (inside the
+      # require block, or a one-line `require github.com/commercelayer/rail0-go vX.Y.Z`).
+      # The `replace` line never matches: its second field is `=>`.
       - name: Resolve the rail0-go version from go.mod
         id: sdk_ref
-        working-directory: rail0-cli
+        if: steps.plan.outputs.release == 'true'
         env:
           GH_TOKEN: ${{ secrets.RAIL0_GO_TOKEN }}
+          COMMIT: ${{ steps.plan.outputs.commit }}
         run: |
-          version="$(awk '
+          set -euo pipefail
+          version="$(git show "$COMMIT:go.mod" | awk '
             $1 == "github.com/commercelayer/rail0-go" && $2 ~ /^v/ { print $2; exit }
             $1 == "require" && $2 == "github.com/commercelayer/rail0-go" { print $3; exit }
-          ' go.mod)"
+          ')"
           if ! printf '%s' "$version" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
             echo "::error::go.mod must require a released rail0-go vX.Y.Z, got '${version}'"
             exit 1
@@ -65,13 +147,46 @@ jobs:
             exit 1
           fi
           echo "Building against rail0-go@${version} (from go.mod)"
-          echo "ref=${version}" >> "$GITHUB_OUTPUT"
+          echo "ref=${version}" >>"$GITHUB_OUTPUT"
+
+  gate:
+    name: CI on the release commit
+    needs: plan
+    if: needs.plan.outputs.release == 'true'
+    uses: ./.github/workflows/ci.yml
+    with:
+      ref: ${{ needs.plan.outputs.commit }}
+      sdk-ref: refs/tags/${{ needs.plan.outputs.sdk_ref }}
+    secrets: inherit
+
+  publish:
+    name: Tag, build, release
+    needs: [plan, gate]
+    runs-on: ubuntu-latest
+    environment:
+      name: release
+      url: ${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ needs.plan.outputs.tag }}
+    permissions:
+      contents: write # the tag, the GitHub release and its assets
+      pull-requests: read # the release notes, from the release PR's body
+    env:
+      GH_TOKEN: ${{ github.token }}
+      VERSION: ${{ needs.plan.outputs.version }}
+      TAG: ${{ needs.plan.outputs.tag }}
+      COMMIT: ${{ needs.plan.outputs.commit }}
+    steps:
+      - name: Checkout rail0-cli at the release commit
+        uses: actions/checkout@v4
+        with:
+          path: rail0-cli
+          ref: ${{ needs.plan.outputs.commit }}
+          fetch-depth: 0 # full history + tags for GoReleaser's previous-tag lookup
 
       - name: Checkout rail0-go at the go.mod version (private sibling; resolves ../rail0-go)
         uses: actions/checkout@v4
         with:
           repository: commercelayer/rail0-go
-          ref: refs/tags/${{ steps.sdk_ref.outputs.ref }}
+          ref: refs/tags/${{ needs.plan.outputs.sdk_ref }}
           path: rail0-go
           token: ${{ secrets.RAIL0_GO_TOKEN }}
 
@@ -80,16 +195,104 @@ jobs:
         with:
           go-version: "1.26"
           # Latest 1.26.x patch, not whatever the runner has cached: the stdlib ships
-          # inside the binary, so a stale patch release ships its CVEs too (1.26.8 on
-          # the runner missed nine net/http and crypto/tls fixes in 1.26.9).
+          # inside the binary, so a stale patch release ships its CVEs too.
           check-latest: true
           cache-dependency-path: rail0-cli/go.sum
+
+      - name: Release notes from the release pull request
+        id: notes
+        run: |
+          set -euo pipefail
+          number="$(gh api "repos/$GITHUB_REPOSITORY/commits/$COMMIT/pulls" \
+            --jq '[.[] | select(.merged_at != null and (.title | startswith("chore(release)")) and (.title | contains(env.TAG)))][0].number // empty' || true)"
+          if [ -z "$number" ]; then
+            number="$(gh pr list --repo "$GITHUB_REPOSITORY" --state merged --search "\"chore(release): $TAG\" in:title" \
+              --json number,title --jq '[.[] | select(.title | contains(env.TAG))][0].number // empty' || true)"
+          fi
+          if [ -z "$number" ]; then
+            echo "::notice::no merged release pull request for $TAG found: GoReleaser writes the changelog"
+            exit 0
+          fi
+          gh pr view "$number" --repo "$GITHUB_REPOSITORY" --json body --jq .body >"$RUNNER_TEMP/pr-body.md"
+          awk '/<!-- release-notes:end -->/ { inside = 0 } inside { print } /<!-- release-notes:start -->/ { inside = 1 }' \
+            "$RUNNER_TEMP/pr-body.md" >"$RUNNER_TEMP/notes.md"
+          [ -s "$RUNNER_TEMP/notes.md" ] || cp "$RUNNER_TEMP/pr-body.md" "$RUNNER_TEMP/notes.md"
+          printf '\nRelease pull request: #%s\n' "$number" >>"$RUNNER_TEMP/notes.md"
+          echo "file=$RUNNER_TEMP/notes.md" >>"$GITHUB_OUTPUT"
+
+      # The tag comes first: GoReleaser builds from the tag at HEAD and takes the
+      # version from it, so the binaries' `rail0 version` is VERSION by construction.
+      - name: Tag the release commit
+        working-directory: rail0-cli
+        run: |
+          set -euo pipefail
+          [ "$(tr -d ' \t\r\n' <VERSION)" = "$VERSION" ] || { echo "::error::VERSION does not say $VERSION"; exit 1; }
+          if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null; then
+            echo "::notice::$TAG already exists (a resumed run)"
+            git fetch --quiet origin "refs/tags/$TAG:refs/tags/$TAG"
+          else
+            git tag "$TAG" "$COMMIT"
+            git push origin "refs/tags/$TAG"
+          fi
+          [ "$(git rev-list -n 1 "$TAG")" = "$COMMIT" ] || { echo "::error::$TAG is not on $COMMIT"; exit 1; }
 
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v6
         with:
           version: "~> v2"
-          args: release --clean
+          args: release --clean ${{ steps.notes.outputs.file && format('--release-notes={0}', steps.notes.outputs.file) || '' }}
           workdir: rail0-cli
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # GoReleaser leaves a draft (see .goreleaser.yaml): publish it only now, with every
+      # binary and checksums.txt in place, so `rail0 update` never sees half a release.
+      - name: Publish the GitHub release
+        run: gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false
+
+  announce:
+    name: Slack message
+    needs: [plan, publish]
+    if: needs.publish.result == 'success'
+    runs-on: ubuntu-latest
+    env:
+      # The channel: swap the secret here (one place) to post somewhere else.
+      SLACK_WEBHOOK_URL: ${{ secrets.PIPELINE_SLACK_CHANNEL_WEBHOOK_URL }}
+      SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+    steps:
+      - name: No Slack webhook
+        if: env.SLACK_WEBHOOK_URL == ''
+        run: echo "::warning::the Slack webhook secret is not available to this repository; no message posted"
+
+      - name: Post to a Slack channel
+        if: env.SLACK_WEBHOOK_URL != ''
+        uses: slackapi/slack-github-action@v4
+        with:
+          webhook-type: incoming-webhook
+          payload: |
+            {
+            "text": "New release rail0 CLI v${{ needs.plan.outputs.version }}.",
+            "blocks": [
+              {
+              "type": "section",
+              "text": {
+                "type": "mrkdwn",
+                "text": "New release for <${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ needs.plan.outputs.tag }}|`rail0 CLI`>\n*<${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ needs.plan.outputs.tag }}|release notes>*"
+              }
+              },
+              {
+              "type": "section",
+              "fields": [
+                { "type": "mrkdwn", "text": "*Package:*\nrail0 CLI" },
+                { "type": "mrkdwn", "text": "*Version:*\n${{ needs.plan.outputs.version }}" }
+              ]
+              },
+              {
+              "type": "context",
+              "elements": [
+                { "type": "image", "image_url": "${{ github.event.sender.avatar_url }}", "alt_text": "${{ github.event.sender.login }}" },
+                { "type": "mrkdwn", "text": "*${{ github.event.sender.login }}* has triggered this release." }
+              ]
+              }
+            ]
+            }

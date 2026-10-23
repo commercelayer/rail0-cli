@@ -1,5 +1,7 @@
-# GoReleaser — build cross-platform `rail0` binaries and publish them to a
-# GitHub Release on every `v*` tag. See .github/workflows/release.yml.
+# GoReleaser — build cross-platform `rail0` binaries and publish them to a GitHub
+# Release. Run by .github/workflows/release.yml when a release pull request merges: the
+# workflow creates the tag v$(cat VERSION) on the release commit first, so {{ .Version }}
+# below (the tag without its "v") is always the reviewed VERSION.
 #
 # The CLI is pure Go (no cgo), so every target is a single static binary that
 # runs on the user's machine with no toolchain, no libc, nothing to install.
@@ -88,5 +90,11 @@ release:
   github:
     owner: commercelayer
     name: rail0-cli
-  draft: false
+  # Created as a DRAFT and published by the workflow only once every artifact is up:
+  # `rail0 update` and install.sh read the latest published release, so a half-uploaded
+  # release must never be visible. A resumed run reuses that draft and replaces whatever
+  # artifacts the failed run had uploaded.
+  draft: true
+  use_existing_draft: true
+  replace_existing_artifacts: true
   prerelease: auto

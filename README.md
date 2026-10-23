@@ -38,6 +38,7 @@ rotate is reported rather than silently honoured. Keys are scoped to the payment
 - [Commands](#commands) — the full reference, including [repairing a webhook](#repairing-a-webhook-that-stopped-delivering)
 - [Full flow examples](#full-flow-examples) — authorize/capture, charge, refund
 - [Output modes](#output-modes)
+- [Releasing](#releasing) — for maintainers
 
 ---
 
@@ -52,8 +53,8 @@ rotate is reported rather than silently honoured. Keys are scoped to the payment
 ## Installation
 
 Three ways to install a release, all the same static binary with nothing else to set
-up. Every `v*` tag publishes them for macOS and Linux (amd64 and arm64) and Windows
-(amd64).
+up. Every release (see [Releasing](#releasing)) publishes them for macOS and Linux
+(amd64 and arm64) and Windows (amd64).
 
 ### Install script (macOS and Linux) — recommended
 
@@ -1815,3 +1816,32 @@ RAIL0_ID=$(rail0 payments create -F @buyer -T @merchant -t USDC -a 10.50 -c 5042
 # Check payment status in a script
 STATUS=$(rail0 payments get <rail0Id> --json | jq -r .status)
 ```
+
+## Releasing
+
+A release is an approved pull request: merging it is what builds and publishes the
+binaries. Never push a `v*` tag by hand.
+
+1. `bin/release-prepare`, on an up-to-date, clean `main`. It asks for patch / minor /
+   major (or takes `X.Y.Z`), bumps `VERSION`, writes the release notes from the pull
+   requests merged since the last tag, and opens `chore(release): vX.Y.Z`. If `go.mod`
+   requires an older rail0-go than the latest tag (or a pseudo-version) it says so and
+   offers the bump; the `replace … => ../rail0-go` line is never touched. `--dry-run`
+   prints all of it and writes nothing.
+2. Review the pull request (edit the notes in its body if needed), approve and merge it.
+3. `.github/workflows/release.yml` runs on that push to `main`: CI again on the release
+   commit (against the rail0-go tag `go.mod` requires), the tag `vX.Y.Z` = `VERSION`,
+   GoReleaser (binaries, archives, `checksums.txt`, notes from the pull request) into a
+   draft release, published once complete, then a Slack message.
+
+A merge that does not change `VERSION` releases nothing. If a run stops halfway, Actions →
+release → Run workflow (on `main`) resumes it: the tag and GoReleaser's draft are reused.
+
+One-time settings (repository admins):
+
+- environment `release` (Settings → Environments), deployment limited to `main`;
+- a tag ruleset on `v*`: block updates and deletions, restrict creation to GitHub Actions
+  and admins;
+- branch protection on `main`: required `ci` check, "Include administrators";
+- the Slack channel: `release.yml` posts through the `PIPELINE_SLACK_CHANNEL_WEBHOOK_URL`
+  secret, named in one place (the `announce` job).

@@ -22,6 +22,7 @@ rail0 env current [flags]
 ### Options inherited from parent commands
 
 ```
+      --agent             Agent mode: one JSON envelope on stdout, JSON events on stderr, no prompts (env: RAIL0_AGENT=1)
       --base-url string   RAIL0 gateway base URL (env: RAIL0_BASE_URL)
       --debug             Print HTTP request/response details to stderr
   -d, --details           Also print each parameter's effective value and origin

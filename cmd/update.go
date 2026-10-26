@@ -53,29 +53,29 @@ a terminal, or with RAIL0_NO_UPDATE_CHECK=1.`,
 
 		if !selfupdate.Updatable(version) {
 			if updateCheckOnly {
-				fmt.Printf("Latest release: %s (this is a development build, %s)\n", rel.Version, version)
-				return nil
+				return printLine(fmt.Sprintf("Latest release: %s (this is a development build, %s)", rel.Version, version),
+					map[string]any{"installed": version, "latest": rel.Version, "update_available": false, "development_build": true})
 			}
 			return fmt.Errorf("this is a development build (%s), not a release; install a release binary to use 'rail0 update' (latest: %s)", version, rel.Version)
 		}
 		if !selfupdate.Newer(version, rel.Version) {
-			fmt.Printf("rail0 %s is the latest version\n", version)
-			return nil
+			return printLine(fmt.Sprintf("rail0 %s is the latest version", version),
+				map[string]any{"installed": version, "latest": rel.Version, "update_available": false})
 		}
 		// Installed by a package manager: the upgrade goes through it, never around it
 		// (see selfupdate.ManagedBy). Not an error — there is a newer release, and this is
 		// how to get it.
 		manager := installedBy()
 		if updateCheckOnly || manager != "" {
-			fmt.Printf("rail0 %s is available (installed: %s). Run '%s' to install it.\n",
-				rel.Version, version, selfupdate.UpgradeCommand(manager))
-			return nil
+			upgrade := selfupdate.UpgradeCommand(manager)
+			return printLine(fmt.Sprintf("rail0 %s is available (installed: %s). Run '%s' to install it.", rel.Version, version, upgrade),
+				map[string]any{"installed": version, "latest": rel.Version, "update_available": true, "upgrade_command": upgrade})
 		}
 		if err := installRelease(ctx, up, rel); err != nil {
 			return err
 		}
-		fmt.Printf("rail0 updated: %s → %s\n", version, rel.Version)
-		return nil
+		return printLine(fmt.Sprintf("rail0 updated: %s → %s", version, rel.Version),
+			map[string]any{"previous": version, "installed": rel.Version, "updated": true})
 	},
 }
 
@@ -105,11 +105,11 @@ func installRelease(ctx context.Context, up *selfupdate.Updater, rel *selfupdate
 	label := fmt.Sprintf("Downloading rail0 %s", rel.Version)
 	var progress selfupdate.Progress
 	var bar *ui.ProgressBar
-	if term.IsTerminal(os.Stderr.Fd()) {
+	if term.IsTerminal(os.Stderr.Fd()) && !agentMode() {
 		bar = ui.NewProgressBar(os.Stderr, label)
 		progress = bar.Update
 	} else {
-		fmt.Fprintln(os.Stderr, label+"…")
+		ui.Notice("downloading", map[string]any{"version": rel.Version}, label+"…")
 	}
 	err = up.Install(ctx, rel, exe, progress)
 	if bar != nil {
@@ -204,6 +204,7 @@ func updateCheckWanted() bool {
 		scriptedOutput(),
 		os.Getenv("CI") != "",
 		os.Getenv("RAIL0_NO_UPDATE_CHECK") != "",
+		agentMode(),
 		!term.IsTerminal(os.Stdin.Fd()),
 		!term.IsTerminal(os.Stderr.Fd()):
 		return false

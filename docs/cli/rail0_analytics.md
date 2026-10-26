@@ -38,6 +38,7 @@ these are the MERCHANT's figures, not an address's.
 ### Options inherited from parent commands
 
 ```
+      --agent             Agent mode: one JSON envelope on stdout, JSON events on stderr, no prompts (env: RAIL0_AGENT=1)
       --base-url string   RAIL0 gateway base URL (env: RAIL0_BASE_URL)
       --debug             Print HTTP request/response details to stderr
       --json              Force plain (uncolored) JSON output (useful in scripts)

@@ -35,6 +35,10 @@ var rootCmd = &cobra.Command{
 	// PersistentPreRunE, which would shadow this one). See checkBaseURL (#62) and
 	// maybeOfferUpdate, the once-a-day release check for interactive sessions.
 	PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
+		if agentMode() && (quietOut || prettyOut) {
+			return newUsageError("flag_conflict",
+				"--agent prints one JSON envelope per command; it cannot be combined with --quiet or --pretty")
+		}
 		maybeOfferUpdate(cmd)
 		return checkBaseURL(cmd)
 	},
@@ -51,17 +55,28 @@ Defaults to https://api.rail0.xyz. Override with --base-url or RAIL0_BASE_URL.
 Note the singular/plural pair: 'rail0 token' prints your SESSION JWT, while
 'rail0 tokens' lists the gateway's accepted PAYMENT tokens.
 
+AGENTS
+  --agent (or RAIL0_AGENT=1) prints one JSON envelope per command on stdout
+  ({"ok":true,"data":…} or {"ok":false,"error":…}), JSON events on stderr, and
+  never prompts. Exit codes: 2 usage, 3 auth, 4 forbidden, 5 not found,
+  6 conflict, 7 rejected, 8 gateway, 9 network, 10 rate-limited, 11 in flight.
+
 Use 'rail0 <command> --help' for detailed usage of any command.`,
 }
 
 func Execute() {
 	selfupdate.CleanupOld()
 	rejectUnknownSubcommands(rootCmd)
+	markUsageErrors(rootCmd)
 	// ExecuteC, not Execute: it also returns the command that ran, which the error
 	// wording needs (a 404 means something different for a payment than for a
 	// webhook — see notFoundHint).
 	if c, err := rootCmd.ExecuteC(); err != nil {
-		ui.FatalCode(humanizeErrorFor(c, err), exitCode(err))
+		code := exitCode(err)
+		if agentMode() {
+			ui.FatalAgent(agentErrorPayload(c, err, code), code)
+		}
+		ui.FatalCode(humanizeErrorFor(c, err), code)
 	}
 }
 
@@ -97,7 +112,7 @@ func rejectUnknownSubcommands(cmd *cobra.Command) {
 		if suggestions := c.SuggestionsFor(args[0]); len(suggestions) > 0 {
 			msg += "\n\nDid you mean this?\n\t" + strings.Join(suggestions, "\n\t")
 		}
-		return fmt.Errorf("%s\n\nRun '%s --help' for usage", msg, c.CommandPath())
+		return newUsageError("usage_error", "%s\n\nRun '%s --help' for usage", msg, c.CommandPath())
 	}
 }
 
@@ -112,8 +127,14 @@ func init() {
 	rootCmd.PersistentFlags().BoolVar(&jsonOut, "json", false, "Force plain (uncolored) JSON output (useful in scripts)")
 	rootCmd.PersistentFlags().BoolVar(&prettyOut, "pretty", false, "Use the key-value/table view instead of JSON (terminal only)")
 	rootCmd.PersistentFlags().BoolVarP(&quietOut, "quiet", "q", false, "Print only the result's id/hash, one per line (useful in scripts)")
+	rootCmd.PersistentFlags().BoolVar(&agentFlag, "agent", false, "Agent mode: one JSON envelope on stdout, JSON events on stderr, no prompts (env: RAIL0_AGENT=1)")
 
 	cobra.OnInitialize(applyOutputMode)
+	// A malformed flag is a usage error (exit 2), not a failed operation. The root's
+	// function is inherited by every subcommand.
+	rootCmd.SetFlagErrorFunc(func(c *cobra.Command, err error) error {
+		return newUsageError("usage_error", "%v\n\nRun '%s --help' for usage", err, c.CommandPath())
+	})
 
 	// Grouped help. Sixteen top-level commands listed alphabetically gave
 	// `completion` the same weight as `payments`, and put the confusable `token`
@@ -227,9 +248,11 @@ func httpTimeout() time.Duration {
 	secs, err := strconv.Atoi(raw)
 	if err != nil || secs <= 0 {
 		if fromEnv {
-			fmt.Fprintf(os.Stderr, "warning: ignoring invalid RAIL0_HTTP_TIMEOUT=%q (want seconds)\n", raw)
+			ui.Notice("warning", map[string]any{"setting": "RAIL0_HTTP_TIMEOUT"},
+				fmt.Sprintf("warning: ignoring invalid RAIL0_HTTP_TIMEOUT=%q (want seconds)", raw))
 		} else {
-			fmt.Fprintf(os.Stderr, "warning: ignoring invalid stored http-timeout=%q (want seconds)\n", raw)
+			ui.Notice("warning", map[string]any{"setting": "http-timeout"},
+				fmt.Sprintf("warning: ignoring invalid stored http-timeout=%q (want seconds)", raw))
 		}
 		return 0
 	}
@@ -264,6 +287,15 @@ func outputFlagMode() string {
 // "auto" is a no-op, since that IS the built-in behaviour (colorized JSON on a
 // terminal, plain JSON when piped).
 func applyOutputMode() {
+	// Agent mode overrides every other output setting, flag or stored default; an
+	// explicit --quiet/--pretty beside it is refused in PersistentPreRunE.
+	ui.SetAgent(agentMode())
+	if agentMode() {
+		ui.SetJSON(true)
+		ui.SetPretty(false)
+		ui.SetQuiet(false)
+		return
+	}
 	mode := outputFlagMode()
 	if mode == "" {
 		mode = configuredDefault("output")
@@ -369,14 +401,14 @@ func ensureSession(ctx context.Context, client *rail0.Client, keyHex, addr strin
 	// silently showed the buyer's payments. The client is authenticated either
 	// way — Auth.Login stashed the JWT on it — so the command still works. (#95)
 	if otherSessionStored {
-		fmt.Fprintf(os.Stderr,
-			"Signed in as %s for this command only (the stored session was left in place)\n", addr)
+		ui.Notice("signed_in", map[string]any{"address": addr, "stored": false},
+			fmt.Sprintf("Signed in as %s for this command only (the stored session was left in place)", addr))
 		return nil
 	}
 	if err := token.Save(baseURL, authResp.Token); err != nil {
 		return err
 	}
-	fmt.Fprintf(os.Stderr, "Signed in as %s\n", addr)
+	ui.Notice("signed_in", map[string]any{"address": addr, "stored": true}, fmt.Sprintf("Signed in as %s", addr))
 	return nil
 }
 
@@ -474,6 +506,10 @@ func checkBaseURL(cmd *cobra.Command) error {
 func makeDebugLogger() rail0.Logger {
 	logger := charmlog.New(os.Stderr)
 	logger.SetLevel(charmlog.DebugLevel)
+	// Agent mode keeps stderr JSON Lines only, --debug traces included.
+	if agentMode() {
+		logger.SetFormatter(charmlog.JSONFormatter)
+	}
 	return func(e rail0.LogEntry) {
 		fields := []any{
 			"method", e.Method,

@@ -1363,6 +1363,7 @@ Pass --private-key (-p): the CLI signs locally with the payer key and broadcasts
 		if err != nil {
 			return err
 		}
+		openDisputeReasons.report(reason)
 		// An on-chain, gas-burning action the counterparty sees — not undoable
 		// except by explicitly closing the dispute. (#104)
 		if err := confirmDestructive(fmt.Sprintf("Open a dispute on payment %s (reason: %s)? This is an on-chain action the merchant will see.", shortID(rail0Id), reasonLabel(reason))); err != nil {
@@ -1441,6 +1442,7 @@ Pass --private-key (-p): the CLI signs locally with the payer key and broadcasts
 		if err != nil {
 			return err
 		}
+		closeDisputeReasons.report(reason)
 		// Closing is on-chain too, and reopening requires a fresh dispute. (#104)
 		if err := confirmDestructive(fmt.Sprintf("Close the dispute on payment %s (reason: %s)?", shortID(rail0Id), reasonLabel(reason))); err != nil {
 			return err

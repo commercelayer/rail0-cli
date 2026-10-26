@@ -23,6 +23,7 @@ rail0 account get [flags]
 
 ```
       --account string    Account id (default: the logged-in session account; another account's needs an admin session)
+      --agent             Agent mode: one JSON envelope on stdout, JSON events on stderr, no prompts (env: RAIL0_AGENT=1)
       --base-url string   RAIL0 gateway base URL (env: RAIL0_BASE_URL)
       --debug             Print HTTP request/response details to stderr
       --json              Force plain (uncolored) JSON output (useful in scripts)

@@ -27,10 +27,21 @@ Note the singular/plural pair: 'rail0 token' prints your SESSION JWT, while
 \&'rail0 tokens' lists the gateway's accepted PAYMENT tokens.
 
 .PP
+AGENTS
+  --agent (or RAIL0_AGENT=1) prints one JSON envelope per command on stdout
+  ({"ok":true,"data":…} or {"ok":false,"error":…}), JSON events on stderr, and
+  never prompts. Exit codes: 2 usage, 3 auth, 4 forbidden, 5 not found,
+  6 conflict, 7 rejected, 8 gateway, 9 network, 10 rate-limited, 11 in flight.
+
+.PP
 Use 'rail0  --help' for detailed usage of any command.
 
 
 .SH OPTIONS
+\fB--agent\fP[=false]
+	Agent mode: one JSON envelope on stdout, JSON events on stderr, no prompts (env: RAIL0_AGENT=1)
+
+.PP
 \fB--base-url\fP=""
 	RAIL0 gateway base URL (env: RAIL0_BASE_URL)
 

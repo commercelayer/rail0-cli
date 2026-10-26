@@ -490,7 +490,11 @@ func pollUntil(ctx context.Context, timeout time.Duration, checkCmd string, dela
 // interruptedError wraps ErrAborted (exit 130) and says the thing the bare
 // signal death did not: the operation is still running on-chain.
 func interruptedError(checkCmd string) error {
-	return fmt.Errorf("%w while waiting — the operation is still in flight; check it with '%s'", ErrAborted, checkCmd)
+	return &nextStepError{
+		err:      fmt.Errorf("%w while waiting — the operation is still in flight; check it with '%s'", ErrAborted, checkCmd),
+		steps:    []string{checkCmd},
+		inFlight: true,
+	}
 }
 
 // ErrWaitGaveUp marks a wait that ran out of time. It is a DECISION about the wait,
@@ -499,7 +503,7 @@ func interruptedError(checkCmd string) error {
 // ("connection refused", "deadline exceeded") — replacing "may still be in flight" with
 // "can't reach the gateway" and exiting 9, the code a script reads as "nothing
 // happened, safe to retry". Retrying a capture that was in flight is the one wrong
-// answer, so both now return this error untouched and exit 1.
+// answer, so both now return this error untouched and exit ExitCodeInFlight (11).
 var ErrWaitGaveUp = errors.New("stopped waiting")
 
 // gaveUpError names the deadline, refuses to imply the operation failed, and
@@ -514,7 +518,7 @@ func gaveUpError(timeout time.Duration, checkCmd string, lastTransient error) er
 	if lastTransient != nil {
 		msg += fmt.Sprintf(" (last read error: %v)", lastTransient)
 	}
-	return fmt.Errorf("%w%s", ErrWaitGaveUp, msg)
+	return &nextStepError{err: fmt.Errorf("%w%s", ErrWaitGaveUp, msg), steps: []string{checkCmd}, inFlight: true}
 }
 
 // terminalMismatchError is the answer to `--until captured` on a payment that

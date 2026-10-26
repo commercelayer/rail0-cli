@@ -11,7 +11,6 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/huh"
-	"github.com/charmbracelet/x/term"
 	rail0 "github.com/commercelayer/rail0-go"
 	"github.com/rail0/cli/internal/ui"
 	"github.com/spf13/cobra"
@@ -206,8 +205,9 @@ func (f *createPaymentFlags) noteConfiguredDefaults() {
 	if len(f.fromConfig) == 0 || ui.IsQuiet() {
 		return
 	}
-	fmt.Fprintf(os.Stderr, "Using %s — pass -c/-t to override, 'rail0 config' to see the stored settings\n",
-		strings.Join(f.fromConfig, " and "))
+	ui.Notice("defaults_used", map[string]any{"settings": f.fromConfig},
+		fmt.Sprintf("Using %s — pass -c/-t to override, 'rail0 config' to see the stored settings",
+			strings.Join(f.fromConfig, " and ")))
 }
 
 // build constructs and validates a rail0.CreatePaymentRequest. It resolves the
@@ -282,7 +282,7 @@ func (f *createPaymentFlags) buildResolved() (rail0.CreatePaymentRequest, error)
 	}
 
 	missing := f.from == "" || f.to == "" || f.token == "" || f.amount == "" || f.chainID == 0
-	if term.IsTerminal(os.Stdin.Fd()) {
+	if interactive() {
 		// On a terminal, go interactive when a required field is missing OR when
 		// --description was omitted. The description is optional, but it's the
 		// reconciliation reference, so the creator is always asked — and leaves it
@@ -660,7 +660,8 @@ func (f *createPaymentFlags) proposeFromPaymentMethods() {
 	} else {
 		// Exactly one accepted method given what was already supplied — take it
 		// and say so, since no picker is shown.
-		fmt.Fprintf(os.Stderr, "Using the merchant's %s on %s\n", pick.symbol, chainLabel(pick.chainID))
+		ui.Notice("payment_method_selected", map[string]any{"token": pick.symbol, "chain_id": pick.chainID},
+			fmt.Sprintf("Using the merchant's %s on %s", pick.symbol, chainLabel(pick.chainID)))
 	}
 
 	if f.token == "" {

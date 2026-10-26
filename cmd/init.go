@@ -7,7 +7,6 @@ import (
 	"os"
 
 	"github.com/charmbracelet/huh"
-	"github.com/charmbracelet/x/term"
 	"github.com/spf13/cobra"
 )
 
@@ -46,9 +45,9 @@ directly instead.`,
 		// A guided setup with nobody to guide is a hang waiting on stdin, so it fails
 		// with the commands it would have run instead — which is the information a
 		// script needs anyway.
-		if !term.IsTerminal(os.Stdin.Fd()) {
-			return errors.New(
-				"'rail0 init' is interactive; in a script use: rail0 env <name> && rail0 health && " +
+		if !interactive() {
+			return newUsageError("interactive_only",
+				"'rail0 init' is interactive; in a script use: rail0 env <name> && rail0 health && "+
 					"rail0 keys add <name> && rail0 auth login -p @<name>")
 		}
 

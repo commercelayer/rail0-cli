@@ -126,8 +126,9 @@ func TestHintsForAccountWalletReleaseAndChainCodes(t *testing.T) {
 	if !strings.HasPrefix(got, "invalid request (HTTP 400): amount is invalid — fix the field") {
 		t.Errorf("400 = %q, want the detail followed by the validation hint", got)
 	}
-	if exitCode(e) != 1 {
-		t.Errorf("exitCode(400) = %d, want 1 (unchanged)", exitCode(e))
+	// A 400 is a request the gateway rejected, the same class as a 422.
+	if exitCode(e) != 7 {
+		t.Errorf("exitCode(400) = %d, want 7 (rejected)", exitCode(e))
 	}
 }
 
@@ -310,8 +311,8 @@ func TestAGaveUpWaitIsNeverReportedAsANetworkError(t *testing.T) {
 		if got := humanizeError(err); !strings.Contains(got.Error(), "may still be in flight") {
 			t.Errorf("humanizeError rewrote the give-up (last error %q): %v", blip, got)
 		}
-		if code := exitCode(err); code != 1 {
-			t.Errorf("exit code for a give-up quoting %q = %d, want 1", blip, code)
+		if code := exitCode(err); code != ExitCodeInFlight {
+			t.Errorf("exit code for a give-up quoting %q = %d, want %d (in flight)", blip, code, ExitCodeInFlight)
 		}
 	}
 }

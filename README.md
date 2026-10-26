@@ -1822,8 +1822,12 @@ STATUS=$(rail0 payments get <rail0Id> --json | jq -r .status)
 A release is an approved pull request: merging it is what builds and publishes the
 binaries. Never push a `v*` tag by hand.
 
-1. `bin/release-prepare`, on an up-to-date, clean `main`. It asks for patch / minor /
-   major (or takes `X.Y.Z`), bumps `VERSION`, writes the release notes from the pull
+1. `bin/release-prepare`, on an up-to-date, clean `main`. It computes the version from the titles of the pull requests merged since the last tag
+   (Conventional Commits): a breaking change — `!` after the type, as in `feat(api)!:`, or a
+   `BREAKING CHANGE:` footer — makes it a major, any `feat` a minor, anything else a patch,
+   and it refuses when nothing merged. `bin/release-prepare minor` (or `patch`, `major`,
+   `X.Y.Z`) sets it by hand instead. The release PR says which pull requests decided it.
+   It then bumps `VERSION`, writes the release notes from the pull
    requests merged since the last tag, and opens `chore(release): vX.Y.Z`. If `go.mod`
    requires an older rail0-go than the latest tag (or a pseudo-version) it says so and
    offers the bump; the `replace … => ../rail0-go` line is never touched. `--dry-run`

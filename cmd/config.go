@@ -260,7 +260,7 @@ func warnConfigUnreadable(err error) {
 		return
 	}
 	configWarned = true
-	fmt.Fprintf(os.Stderr, "warning: ignoring the config file — %v\n", err)
+	ui.Notice("warning", map[string]any{"what": "config_unreadable"}, fmt.Sprintf("warning: ignoring the config file — %v", err))
 }
 
 // loadConfigForWrite is config.LoadForWrite plus the one thing the package
@@ -273,7 +273,7 @@ func loadConfigForWrite() (*config.Config, error) {
 		return nil, err
 	}
 	if replaced {
-		fmt.Fprintln(os.Stderr,
+		ui.Notice("warning", map[string]any{"what": "config_replaced"},
 			"warning: the config file could not be parsed, so it is being replaced —\n"+
 				"         any settings, aliases or key names it held are gone")
 	}
@@ -412,8 +412,7 @@ var configPathCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		fmt.Println(path)
-		return nil
+		return printLine(path, map[string]any{"path": path})
 	},
 }
 

@@ -25,6 +25,21 @@ on:
   pull_request:
   push:
     branches: [main]
+  # release.yml calls this as its gate: on the exact commit it is about to release, and
+  # against the exact rail0-go tag go.mod requires (what GoReleaser will build with).
+  workflow_call:
+    inputs:
+      ref:
+        description: "Commit to check (default: the commit of the triggering event)"
+        type: string
+        default: ""
+      sdk-ref:
+        description: "rail0-go ref to build against (default: the twin branch, else main)"
+        type: string
+        default: ""
+    secrets:
+      RAIL0_GO_TOKEN:
+        required: true
 
 permissions:
   contents: read
@@ -37,6 +52,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           path: rail0-cli
+          ref: ${{ inputs.ref }} # empty outside workflow_call: the event's own commit
 
       # Which rail0-go to build against: the branch of the SAME NAME when it exists,
       # otherwise main.
@@ -60,8 +76,15 @@ jobs:
         id: sdk_ref
         env:
           GH_TOKEN: ${{ secrets.RAIL0_GO_TOKEN }}
+          SDK_REF: ${{ inputs.sdk-ref }}
+          BRANCH: ${{ github.head_ref || github.ref_name }}
         run: |
-          branch="${{ github.head_ref || github.ref_name }}"
+          if [ -n "$SDK_REF" ]; then
+            echo "Building against rail0-go@$SDK_REF (release gate: the go.mod version)"
+            echo "ref=$SDK_REF" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          branch="$BRANCH"
           if gh api "repos/commercelayer/rail0-go/branches/$branch" >/dev/null 2>&1; then
             echo "Building against rail0-go@$branch (twin branch found)"
             echo "ref=$branch" >> "$GITHUB_OUTPUT"
@@ -149,3 +172,16 @@ jobs:
       - name: install.sh parses as POSIX sh
         working-directory: rail0-cli
         run: sh -n install.sh
+
+      # VERSION is the release version: the release workflow tags v$(cat VERSION) and
+      # GoReleaser stamps the binaries from that tag. Anything but X.Y.Z would make a tag
+      # GoReleaser and `rail0 update` cannot order.
+      - name: VERSION is X.Y.Z
+        working-directory: rail0-cli
+        run: grep -Eqx '(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)' VERSION
+
+      # bin/release-prepare opens every release pull request; its test drives it against
+      # a throwaway repository (no network, no GitHub), refusals and one full run included.
+      - name: bin/release-prepare
+        working-directory: rail0-cli
+        run: bin/release-prepare-test

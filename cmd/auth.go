@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/url"
-	"os"
 	"strings"
 
 	rail0 "github.com/commercelayer/rail0-go"
@@ -103,9 +102,9 @@ add'), or omit it to fall back to the RAIL0_PRIVATE_KEY environment variable.`,
 		if saveErr != nil {
 			// Reports the failure and how to recover, but NEVER the token itself —
 			// see tokenSaveFailureNotice for why that matters. (#64)
-			fmt.Fprint(os.Stderr, tokenSaveFailureNotice(saveErr))
+			ui.Notice("warning", map[string]any{"what": "token_not_saved"}, tokenSaveFailureNotice(saveErr))
 		} else {
-			fmt.Fprintf(os.Stderr, "Token saved to %s\n", tokenPath)
+			ui.Notice("token_saved", map[string]any{"path": tokenPath}, fmt.Sprintf("Token saved to %s", tokenPath))
 		}
 
 		// Print the session summary; include the raw token only with --token.
@@ -166,13 +165,11 @@ useful when several environments are in play, or to remove one by hand.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		t := token.Load(resolveBaseURL())
 		if t == "" {
-			fmt.Fprintln(os.Stderr, "Not logged in. "+loginHint)
-			return nil
+			return notLoggedIn("Not logged in. " + loginHint)
 		}
 		claims, err := parseJWTClaims(t)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "Token invalid or expired. "+loginHint)
-			return nil
+			return notLoggedIn("Token invalid or expired. " + loginHint)
 		}
 		expiresAt, expiresIn := tokenExpiry(claims)
 		return ui.RunAPI(func() (any, error) {
@@ -210,7 +207,8 @@ is a normal reason to log out), and the outcome says which of the two happened.`
 		// what the operator acts on; the result carries the same verdict for a
 		// script, with the vocabulary `env` uses for previous_session.
 		if revoked.Had && !revoked.Revoked {
-			fmt.Fprintf(os.Stderr, "warning: the token was NOT revoked — %s\n", revoked.Why)
+			ui.Notice("warning", map[string]any{"what": "token_not_revoked", "why": revoked.Why},
+				fmt.Sprintf("warning: the token was NOT revoked — %s", revoked.Why))
 		}
 		// A result rather than fmt.Println: plain text on stdout broke --json and -q
 		// callers, and was the one command whose outcome a script could not read.
@@ -332,4 +330,15 @@ func init() {
 	addYesFlag(authRevokeAllCmd)
 
 	authCmd.AddCommand(authLoginCmd, authStatusCmd, authLogoutCmd, authRevokeAllCmd)
+}
+
+// notLoggedIn is the answer of a command that reports the session when there is none:
+// the hint on stderr and exit 0, as before — and in agent mode also the success envelope
+// with {"logged_in":false}, since an empty stdout would read as a crash.
+func notLoggedIn(hint string) error {
+	ui.Notice("not_logged_in", nil, hint)
+	if agentMode() {
+		return ui.RunAPI(func() (any, error) { return map[string]any{"logged_in": false}, nil })
+	}
+	return nil
 }

@@ -22,10 +22,11 @@ package token
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/rail0/cli/internal/ui"
 )
 
 // legacyFileName is the pre-#94 single-token file, which carried no record of
@@ -99,7 +100,7 @@ func Load(baseURL string) string {
 		legacy := filepath.Join(dir, legacyFileName)
 		if _, statErr := os.Stat(legacy); statErr == nil {
 			_ = os.Remove(legacy)
-			fmt.Fprintln(os.Stderr,
+			ui.Notice("note", map[string]any{"what": "legacy_session_removed"},
 				"note: sessions are now stored per gateway — run 'rail0 auth login' once more for this one")
 		}
 	}

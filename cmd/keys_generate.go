@@ -64,7 +64,12 @@ Next steps:
 	Example: `  rail0 keys generate
   rail0 keys generate --json`,
 	Args: cobra.NoArgs,
-	RunE: func(_ *cobra.Command, _ []string) error {
+	RunE: func(cmd *cobra.Command, _ []string) error {
+		// The key would land in the agent's context (and its logs): generating one is a
+		// person's job, in a terminal, outside the agent.
+		if err := refuseInAgentMode(cmd, "it would put a private key in the agent's context — generate it in a terminal, outside the agent, and give the agent only an alias ('rail0 keys add <name>')"); err != nil {
+			return err
+		}
 		w, err := generateWallet()
 		if err != nil {
 			return err

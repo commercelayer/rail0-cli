@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/huh"
-	"github.com/charmbracelet/x/term"
 	"github.com/rail0/cli/internal/ui"
 	"github.com/spf13/cobra"
 	"github.com/zalando/go-keyring"
@@ -214,7 +213,7 @@ func loadKey(name string) (string, error) {
 // huh input; when stdin is piped it reads a single line, so scripts can feed the
 // key in without it appearing in the shell history or process arguments.
 func promptSecret(label string) (string, error) {
-	if !term.IsTerminal(os.Stdin.Fd()) {
+	if !interactive() {
 		line, err := bufio.NewReader(os.Stdin).ReadString('\n')
 		if err != nil && line == "" {
 			return "", fmt.Errorf("read key from stdin: %w", err)

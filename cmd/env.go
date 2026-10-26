@@ -3,7 +3,6 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"os"
 	"sort"
 	"strings"
 
@@ -306,10 +305,14 @@ func switchEnv(name string, details bool) error {
 	// overwrite outright instead of asking (#70).
 	cleared := staleAfterSwitch(cfg, e)
 	if len(cleared) > 0 {
-		fmt.Fprintf(os.Stderr, "Switching to %q clears settings it does not define:\n", name)
+		lines := make([]string, 0, len(cleared))
+		values := make(map[string]string, len(cleared))
 		for _, key := range cleared {
-			fmt.Fprintf(os.Stderr, "  %s = %s\n", key, cfg.Settings[key])
+			lines = append(lines, fmt.Sprintf("  %s = %s", key, cfg.Settings[key]))
+			values[key] = cfg.Settings[key]
 		}
+		ui.Notice("settings_to_clear", map[string]any{"environment": name, "settings": values},
+			fmt.Sprintf("Switching to %q clears settings it does not define:\n%s", name, strings.Join(lines, "\n")))
 		if err := confirmDestructive("Clear them and switch?"); err != nil {
 			return err
 		}
@@ -345,7 +348,7 @@ func switchEnv(name string, details bool) error {
 	// with a 401 that looked like the switch had broken something.
 	loggedIn := hasLiveSession()
 	if !loggedIn {
-		fmt.Fprintln(os.Stderr, "No session for this gateway. "+loginHint)
+		ui.Notice("not_logged_in", nil, "No session for this gateway. "+loginHint)
 	}
 	return ui.RunAPI(func() (any, error) { return switchResult(name, details, revoked, loggedIn, cleared), nil })
 }

@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 	"time"
 
 	rail0 "github.com/commercelayer/rail0-go"
@@ -37,8 +36,7 @@ which lists the gateway's accepted payment tokens.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		info, hint := tokenSession(token.Load(resolveBaseURL()))
 		if hint != "" {
-			fmt.Fprintln(os.Stderr, hint)
-			return nil
+			return notLoggedIn(hint)
 		}
 		return ui.RunAPI(func() (any, error) { return info, nil })
 	},

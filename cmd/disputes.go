@@ -3,11 +3,9 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/charmbracelet/huh"
-	"github.com/charmbracelet/x/term"
 	rail0 "github.com/commercelayer/rail0-go"
 	"github.com/rail0/cli/internal/ui"
 	"github.com/spf13/cobra"
@@ -142,7 +140,7 @@ func (l disputeReasonList) orPick(flag string) (rail0.DisputeReason, error) {
 	if flag != "" {
 		return l.resolve(flag)
 	}
-	if !term.IsTerminal(os.Stdin.Fd()) {
+	if !interactive() {
 		return "", nil
 	}
 	opts := make([]huh.Option[string], 0, len(l.list)+1)
@@ -160,6 +158,18 @@ func (l disputeReasonList) orPick(flag string) (rail0.DisputeReason, error) {
 		return "", err
 	}
 	return rail0.DisputeReason(chosen), nil
+}
+
+// report tells an agent which reason is about to be sent — {"event":"dispute_reason",
+// "kind":"open"|"close","reason":<code>|null} — because leaving --reason out is a valid
+// choice ("no reason") that the result itself does not show. Agent mode only; a person
+// read it in the confirmation prompt.
+func (l disputeReasonList) report(r rail0.DisputeReason) {
+	var code any
+	if r != "" {
+		code = string(r)
+	}
+	ui.Event("dispute_reason", map[string]any{"kind": l.kind, "reason": code})
 }
 
 // reasonLabel is how a confirmation prompt names the chosen reason.

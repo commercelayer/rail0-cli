@@ -16,8 +16,10 @@ var versionCmd = &cobra.Command{
 	Use:   "version",
 	Short: "Print the rail0 CLI version",
 	Args:  cobra.NoArgs,
-	Run: func(_ *cobra.Command, _ []string) {
-		fmt.Printf("rail0 %s (%s %s/%s)\n", version, runtime.Version(), runtime.GOOS, runtime.GOARCH)
+	RunE: func(_ *cobra.Command, _ []string) error {
+		return printLine(
+			fmt.Sprintf("rail0 %s (%s %s/%s)", version, runtime.Version(), runtime.GOOS, runtime.GOARCH),
+			map[string]any{"version": version, "go": runtime.Version(), "os": runtime.GOOS, "arch": runtime.GOARCH})
 	},
 }
 

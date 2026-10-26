@@ -17,11 +17,18 @@ Defaults to https://api.rail0.xyz. Override with --base-url or RAIL0_BASE_URL.
 Note the singular/plural pair: 'rail0 token' prints your SESSION JWT, while
 'rail0 tokens' lists the gateway's accepted PAYMENT tokens.
 
+AGENTS
+  --agent (or RAIL0_AGENT=1) prints one JSON envelope per command on stdout
+  ({"ok":true,"data":…} or {"ok":false,"error":…}), JSON events on stderr, and
+  never prompts. Exit codes: 2 usage, 3 auth, 4 forbidden, 5 not found,
+  6 conflict, 7 rejected, 8 gateway, 9 network, 10 rate-limited, 11 in flight.
+
 Use 'rail0 <command> --help' for detailed usage of any command.
 
 ### Options
 
 ```
+      --agent             Agent mode: one JSON envelope on stdout, JSON events on stderr, no prompts (env: RAIL0_AGENT=1)
       --base-url string   RAIL0 gateway base URL (env: RAIL0_BASE_URL)
       --debug             Print HTTP request/response details to stderr
   -h, --help              help for rail0

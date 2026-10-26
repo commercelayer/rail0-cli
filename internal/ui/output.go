@@ -18,7 +18,19 @@ var (
 	jsonMode   bool
 	prettyMode bool
 	quietMode  bool
+	agentMode  bool
 )
+
+// SetAgent selects agent mode (--agent / RAIL0_AGENT): the output contract for a program
+// driving the CLI, an AI agent above all. stdout carries exactly one JSON object per
+// command, on one line — {"ok":true,"data":…} or, from FatalAgent, {"ok":false,"error":…}
+// — and stderr carries only JSON Lines events ({"event":…}). No spinner, no colour, no
+// prompt, no free text: everything a human-only view adds is gone, so a caller parses
+// both streams without guessing which kind of line it is reading.
+func SetAgent(on bool) { agentMode = on }
+
+// IsAgent reports whether agent mode is in effect.
+func IsAgent() bool { return agentMode }
 
 // SetJSON forces plain JSON output regardless of TTY state.
 func SetJSON(on bool) { jsonMode = on }
@@ -39,7 +51,7 @@ func IsQuiet() bool { return quietMode }
 // IsMachineOutput reports whether the result will be emitted as plain JSON — --json
 // is set or stdout is not a terminal — the same test RunAPI applies. A caller can add
 // fields only a script needs without cluttering the terminal views.
-func IsMachineOutput() bool { return jsonMode || !isTerminal(os.Stdout) }
+func IsMachineOutput() bool { return agentMode || jsonMode || !isTerminal(os.Stdout) }
 
 func isTerminal(f *os.File) bool { return term.IsTerminal(f.Fd()) }
 
@@ -60,6 +72,13 @@ func RunAPI(fn func() (any, error)) error {
 // starts and is cleared the moment the response arrives, right before the result
 // is rendered. Behaviour is otherwise identical.
 func RunAPIWithMessage(msg string, fn func() (any, error)) error {
+	if agentMode {
+		data, err := fn()
+		if err != nil {
+			return err
+		}
+		return printEnvelope(data)
+	}
 	if quietMode {
 		data, err := fn()
 		if err != nil {
@@ -94,10 +113,91 @@ func RunAPIWithMessage(msg string, fn func() (any, error)) error {
 // stderr, never stdout: a caller parsing the result must not have to filter
 // progress out of it.
 func Progressf(format string, args ...any) {
+	if agentMode {
+		Event("progress", map[string]any{"message": fmt.Sprintf(format, args...)})
+		return
+	}
 	if !quietMode && !jsonMode && isTerminal(os.Stdout) {
 		return
 	}
 	fmt.Fprintf(os.Stderr, format+"\n", args...)
+}
+
+// Event writes one JSON Lines event to stderr in agent mode — {"event":name, …fields} —
+// and nothing otherwise: a caller that has a human sentence for the same moment uses
+// Notice instead. The fields are the facts (an address, a duration in seconds), never a
+// secret: stderr ends up in an agent's context and in CI logs.
+func Event(name string, fields map[string]any) {
+	if !agentMode {
+		return
+	}
+	ev := make(map[string]any, len(fields)+1)
+	for k, v := range fields {
+		ev[k] = v
+	}
+	ev["event"] = name
+	b, err := compactJSON(ev)
+	if err != nil {
+		return
+	}
+	fmt.Fprintln(os.Stderr, string(b))
+}
+
+// compactJSON is json.Marshal without HTML escaping: an agent reads "<name>" and "&&"
+// in a message, not \u003cname\u003e. One line, no trailing newline.
+func compactJSON(v any) ([]byte, error) {
+	var buf strings.Builder
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(v); err != nil {
+		return nil, err
+	}
+	return []byte(strings.TrimSuffix(buf.String(), "\n")), nil
+}
+
+// Notice tells the user something beside the result: the sentence text on stderr, or in
+// agent mode the event name with fields plus that same sentence as "message", so an agent
+// gets the fact as data and the wording a human would have read.
+func Notice(name string, fields map[string]any, text string) {
+	if agentMode {
+		ev := make(map[string]any, len(fields)+1)
+		for k, v := range fields {
+			ev[k] = v
+		}
+		ev["message"] = strings.TrimSpace(text)
+		Event(name, ev)
+		return
+	}
+	fmt.Fprintln(os.Stderr, text)
+}
+
+// printEnvelope is the agent-mode result: {"ok":true,"data":…} as ONE line, so a caller
+// reads exactly one line of stdout per command. A nil result (a 204) is "data":null
+// rather than nothing — an empty stdout would read as a crash.
+func printEnvelope(v any) error {
+	b, err := compactJSON(struct {
+		OK   bool `json:"ok"`
+		Data any  `json:"data"`
+	}{true, v})
+	if err != nil {
+		return fmt.Errorf("marshal output: %w", err)
+	}
+	fmt.Println(string(b))
+	return nil
+}
+
+// FatalAgent prints the agent-mode failure envelope — {"ok":false,"error":…, …} built by
+// the caller — on stdout, where the success envelope would have gone, and exits with
+// code. stdout rather than stderr: one stream holds the outcome whatever it was, and the
+// exit code says which.
+func FatalAgent(payload map[string]any, code int) {
+	// "ok" first, like the success envelope, so a caller can branch on the line's start.
+	b, err := compactJSON(payload)
+	if err != nil || len(b) < 2 {
+		b = []byte(`{"error":{"code":"cli_error","message":"could not encode the error"}}`)
+	}
+	fmt.Println(`{"ok":false,` + string(b[1:]))
+	os.Exit(code)
 }
 
 // startSpinner draws an animated spinner on stderr and returns a stop function

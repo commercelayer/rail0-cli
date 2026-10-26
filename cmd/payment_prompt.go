@@ -7,7 +7,6 @@ import (
 	"os"
 
 	"github.com/charmbracelet/huh"
-	"github.com/charmbracelet/x/term"
 	rail0 "github.com/commercelayer/rail0-go"
 )
 
@@ -73,8 +72,8 @@ func pickPaymentID(ctx context.Context, client *rail0.Client, args []string, op,
 	if len(args) > 0 {
 		return args[0], nil
 	}
-	if !term.IsTerminal(os.Stdin.Fd()) {
-		return "", fmt.Errorf("a payment id (rail0_id or UUID) is required")
+	if !interactive() {
+		return "", newUsageError("usage_error", "a payment id (rail0_id or UUID) is required")
 	}
 	signer, err := addressFromKey(signingKey)
 	if err != nil {
@@ -151,11 +150,11 @@ func promptValue(label, desc string, optional bool) (string, error) {
 // was learning about a typo from the gateway after a session round-trip and a payment
 // fetch. (#61)
 func promptValidated(label, desc string, optional bool, check func(string) error) (string, error) {
-	if !term.IsTerminal(os.Stdin.Fd()) {
+	if !interactive() {
 		if optional {
 			return "", nil
 		}
-		return "", fmt.Errorf("%s is required", label)
+		return "", newUsageError("usage_error", "%s is required", label)
 	}
 	var v string
 	in := huh.NewInput().Title(label).Description(desc).Value(&v)

@@ -6,7 +6,6 @@ import (
 	"os"
 	"strings"
 
-	"github.com/charmbracelet/x/term"
 	"github.com/spf13/cobra"
 )
 
@@ -26,8 +25,9 @@ func confirmDestructive(prompt string) error {
 	if assumeYes {
 		return nil
 	}
-	if !term.IsTerminal(os.Stdin.Fd()) {
-		return fmt.Errorf("refusing to run without confirmation in a non-interactive shell; pass --yes to proceed")
+	if !interactive() {
+		return newUsageError("confirmation_required",
+			"refusing to run without confirmation in a non-interactive shell; pass --yes to proceed")
 	}
 	fmt.Fprintf(os.Stderr, "%s [y/N]: ", prompt)
 	line, _ := bufio.NewReader(os.Stdin).ReadString('\n')

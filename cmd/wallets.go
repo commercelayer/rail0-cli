@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"strings"
 
 	rail0 "github.com/commercelayer/rail0-go"
@@ -215,7 +214,7 @@ one already registered to any account is refused (409).`,
 		// stderr, and not under --quiet: the result on stdout stays exactly what it was,
 		// for a script parsing it.
 		if !ui.IsQuiet() {
-			fmt.Fprintln(os.Stderr, walletCreatedHint(addr))
+			ui.Notice("hint", map[string]any{"address": addr}, walletCreatedHint(addr))
 		}
 		return nil
 	},

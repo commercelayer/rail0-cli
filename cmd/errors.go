@@ -334,10 +334,21 @@ const ExitCodeAborted = 130
 // re-running the identical command later is the correct response. (#49)
 const ExitCodeRateLimited = 10
 
+// ExitCodeUsage is the status for a malformed command line — an unknown flag or command,
+// a wrong number of arguments, a required value or --yes missing where nobody can be
+// asked. 2 is the shell convention for misuse, and it tells a script "fix the call"
+// rather than "the operation failed".
+const ExitCodeUsage = 2
+
+// ExitCodeInFlight is the status for a --wait (or 'payments wait') that ran out of time.
+// The operation may still settle on-chain, so this must read neither as a failure (1)
+// nor as "nothing happened, safe to retry" (9): check the payment, never repeat it.
+const ExitCodeInFlight = 11
+
 // exitCode maps an error to a distinct process exit status so scripts can branch
-// on the class of failure: 3 auth, 4 forbidden, 5 not-found, 6 conflict,
-// 7 rejected (422), 8 upstream (5xx), 9 network, 10 rate-limited,
-// 130 user-cancelled, 1 otherwise (including a --wait that gave up).
+// on the class of failure: 2 usage, 3 auth, 4 forbidden, 5 not-found, 6 conflict,
+// 7 rejected (400/422), 8 upstream (5xx), 9 network, 10 rate-limited,
+// 11 in flight (a --wait that gave up), 130 user-cancelled, 1 otherwise.
 func exitCode(err error) int {
 	// Checked before the API/transport classification: a cancellation is not a
 	// failure of the request, and may not even have made one.
@@ -347,7 +358,10 @@ func exitCode(err error) int {
 	// Not a network failure, whatever read error the message quotes: the operation
 	// may be in flight, so this must never read as "safe to retry" (9).
 	if errors.Is(err, ErrWaitGaveUp) {
-		return 1
+		return ExitCodeInFlight
+	}
+	if isUsageError(err) {
+		return ExitCodeUsage
 	}
 
 	var apiErr *rail0.APIError
@@ -363,7 +377,7 @@ func exitCode(err error) int {
 			return 5
 		case apiErr.Status == 409:
 			return 6
-		case apiErr.Status == 422:
+		case apiErr.Status == 400 || apiErr.Status == 422:
 			return 7
 		case apiErr.Status == 429:
 			return ExitCodeRateLimited

@@ -37,7 +37,7 @@ rotate is reported rather than silently honoured. Keys are scoped to the payment
 - [Signing modes](#signing-modes) — who signs what, and when
 - [Commands](#commands) — the full reference, including [repairing a webhook](#repairing-a-webhook-that-stopped-delivering)
 - [Full flow examples](#full-flow-examples) — authorize/capture, charge, refund
-- [Output modes](#output-modes)
+- [Output modes](#output-modes) — including [agent mode (`--agent`)](#agent-mode---agent)
 
 ---
 
@@ -399,11 +399,14 @@ config file. Precedence is: **flag  >  env var  >  config file  >  built-in defa
 | `--json`     | —                    | Force plain (uncolored) JSON output (useful in scripts) |
 | `--pretty`   | —                    | Key-value/table view instead of JSON (terminal only) |
 | `--quiet` / `-q` | —                | Print only the result's id/hash, one per line — no JSON parser needed |
+| `--agent`    | `RAIL0_AGENT=1`      | Agent mode: one JSON envelope on stdout, JSON events on stderr, never a prompt — see [agent mode](#agent-mode---agent) |
 | — | `RAIL0_HTTP_TIMEOUT` | Per-request HTTP timeout in seconds (default 30). Distinct from the wait commands' `--timeout`, which is the polling deadline |
 
 `--json`, `--pretty` and `--quiet` select one output mode each. Combined, they do not
 error: one wins silently in the order **`--quiet`  >  `--pretty`  >  `--json`** — so
 `rail0 aliases --json --pretty` shows the pretty view, and `-q` beats either.
+`--agent` is the exception: it overrides any stored `output` default, and combined with
+`--quiet` or `--pretty` it is refused (exit `2`).
 
 #### If the config file goes bad
 
@@ -454,11 +457,26 @@ The one exception is a response carrying a **one-time secret**: `webhooks create
 once and the id can be looked up again with `webhooks list`:
 `secret=$(rail0 webhooks rotate-secret <id> -q)`.
 
-Exit codes distinguish the failure class: `0` success, `3` unauthorized, `4`
-forbidden, `5` not found, `6` conflict, `7` rejected (422), `8` gateway error
-(5xx), `9` network, `10` rate-limited (429), `130` cancelled by the user, `1`
-otherwise — including a `--wait` that ran out of time, even when its last poll hit a
-network error: the operation may still be in flight, so it never exits `9`.
+Exit codes distinguish the failure class:
+
+| Code | Meaning |
+|---|---|
+| `0` | success |
+| `1` | any other failure |
+| `2` | usage: unknown command or flag, wrong arguments, a required value or `--yes` missing where nobody can be asked, a command not offered in agent mode |
+| `3` | unauthorized (401) |
+| `4` | forbidden (403) |
+| `5` | not found (404) |
+| `6` | conflict (409) |
+| `7` | rejected by the gateway (400, 422) |
+| `8` | gateway error (5xx) |
+| `9` | network: no response |
+| `10` | rate-limited (429) |
+| `11` | in flight: a `--wait` ran out of time — even when its last poll hit a network error. The operation may still settle: check it, never repeat it |
+| `130` | cancelled by the user |
+
+`2` and `11` are new in this release: before, both exited `1`, and a 400 exited `1`
+instead of `7`.
 
 `10` is the one class where re-running the identical command later is the correct
 response, which is why it is not folded into the generic failure.
@@ -1814,4 +1832,44 @@ RAIL0_ID=$(rail0 payments create -F @buyer -T @merchant -t USDC -a 10.50 -c 5042
 
 # Check payment status in a script
 STATUS=$(rail0 payments get <rail0Id> --json | jq -r .status)
+```
+
+### Agent mode (`--agent`)
+
+For a program driving the CLI — an AI agent above all. Turn it on with `--agent` on each
+call, or once with `RAIL0_AGENT=1` in the agent's environment.
+
+- **stdout: exactly one line of JSON per command.** On success
+  `{"ok":true,"data":…}`, where `data` is what `--json` prints (`null` for a command
+  with no body). On failure:
+
+  ```json
+  {"ok":false,
+   "error":{"code":"not_capturable","message":"request rejected (HTTP 422): …",
+            "exit_code":7,"http_status":422,"hint":"the payment must be 'authorized' …",
+            "retryable":false,"in_flight":false},
+   "next_steps":["…"]}
+  ```
+
+  `code` is the gateway's machine code when the gateway answered, else one of the CLI's:
+  `usage_error`, `flag_conflict`, `confirmation_required`, `unavailable_in_agent_mode`,
+  `interactive_only`, `aborted`, `wait_timeout`, `network_error`, `cli_error`.
+  `retryable` is true only when the identical command is safe to run again (a 429 — see
+  `retry_after_s` — or a gateway code saying nothing was submitted). `in_flight` true
+  means an on-chain operation may still be running: run `next_steps`, do not repeat it.
+  `reason` carries the gateway's sub-cause when there is one.
+- **stderr: JSON Lines events only**, e.g. `{"event":"signed_in","address":"0x…","stored":true,"message":"Signed in as 0x…"}`,
+  `{"event":"progress","message":"waiting… 30s elapsed of 10m0s"}`,
+  `{"event":"dispute_reason","kind":"open","reason":null}`. `--debug` traces are JSON too.
+- **Never a prompt, a spinner, colour or an update offer.** A value a terminal would
+  ask for is a usage error naming the flag. Commands that move funds or delete things
+  still need `--yes`: agent mode is not consent.
+- **Not available:** `keys generate` (the private key would land in the agent's
+  context — generate it in a terminal and give the agent only an alias) and `init`.
+- Cannot be combined with `--quiet` or `--pretty` (exit `2`); `--json` is implied.
+
+```sh
+export RAIL0_AGENT=1
+rail0 payments get "$ID" | jq -e '.ok' >/dev/null || echo "failed"
+rail0 payments capture "$ID" -a 10 -p @merchant-key --yes --wait   # exit 11 = still in flight
 ```

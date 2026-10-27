@@ -63,7 +63,8 @@ func resetAccountFlags(t *testing.T) {
 	t.Helper()
 	reset := func() {
 		accountID, accountUpdateName, accountUpdateEmail, accountUpdatePriorityTip = "", "", "", true
-		for _, n := range []string{"name", "email", "priority-tip"} {
+		accountUpdateAuthorizationWindow, accountUpdateRefundWindow = "", ""
+		for _, n := range []string{"name", "email", "priority-tip", "authorization-window", "refund-window"} {
 			accountUpdateCmd.Flags().Lookup(n).Changed = false
 		}
 	}
@@ -145,6 +146,38 @@ func TestAccountUpdateSendsPriorityTipFalse(t *testing.T) {
 	}
 }
 
+// A window flag is sent as whole seconds, 'default' as null, and only when given.
+func TestAccountUpdateSendsPaymentWindows(t *testing.T) {
+	g := newRecordingGateway(t)
+	resetAccountFlags(t)
+	g.respond = func(*http.Request) any { return map[string]any{"id": "acc-1"} }
+
+	_ = accountUpdateCmd.Flags().Set("authorization-window", "36h")
+	_ = accountUpdateCmd.Flags().Set("refund-window", "default")
+	run(t, accountUpdateCmd)
+	body := g.last(t, http.MethodPatch, "/accounts/acc-1").body
+	if body["authorization_ttl"] != float64(129600) {
+		t.Errorf("authorization_ttl = %v, want 129600", body["authorization_ttl"])
+	}
+	if v, ok := body["refund_ttl"]; !ok || v != nil {
+		t.Errorf("refund_ttl = %v (present %v), want null", v, ok)
+	}
+	if len(body) != 2 {
+		t.Errorf("body = %v, want the two windows alone", body)
+	}
+
+	resetAccountFlags(t)
+	_ = accountUpdateCmd.Flags().Set("refund-window", "60d")
+	run(t, accountUpdateCmd)
+	body = g.last(t, http.MethodPatch, "/accounts/acc-1").body
+	if body["refund_ttl"] != float64(60*86400) {
+		t.Errorf("refund_ttl = %v, want 60 days", body["refund_ttl"])
+	}
+	if _, ok := body["authorization_ttl"]; ok {
+		t.Errorf("authorization_ttl was not passed and must not be sent: %v", body)
+	}
+}
+
 // Nothing to change, or a flag passed blank, is refused before any request — the
 // gateway would answer 400, and a blank value would otherwise be dropped silently by
 // the SDK's omitempty.
@@ -156,7 +189,9 @@ func TestAccountUpdateRefusesLocally(t *testing.T) {
 		flags map[string]string
 		want  string
 	}{
-		{"no flags", nil, "--name, --email and/or --priority-tip"},
+		{"no flags", nil, "--refund-window"},
+		{"bad window", map[string]string{"refund-window": "a month"}, "--refund-window"},
+		{"zero window", map[string]string{"authorization-window": "0d"}, "above zero"},
 		{"blank name", map[string]string{"name": "  "}, "--name cannot be empty"},
 		{"blank email beside a name", map[string]string{"name": "Acme", "email": ""}, "--email cannot be empty"},
 	} {

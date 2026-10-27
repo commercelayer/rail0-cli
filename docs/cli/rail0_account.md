@@ -51,5 +51,5 @@ rail0 account [flags]
 
 * [rail0](rail0.md)	 - CLI for the RAIL0 stablecoin payment protocol
 * [rail0 account get](rail0_account_get.md)	 - Show the account's profile (the same as 'rail0 account')
-* [rail0 account update](rail0_account_update.md)	 - Change the account's name, email and/or priority tip
+* [rail0 account update](rail0_account_update.md)	 - Change the account's name, email, priority tip and/or payment windows
 

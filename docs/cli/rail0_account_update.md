@@ -6,7 +6,7 @@ Change the account's name, email, priority tip and/or payment windows
 
 Change the account's display name, contact email, priority-tip setting
 and/or payment windows. At least one of --name / --email / --priority-tip /
---authorization-window / --refund-window is required.
+--auth-ttl / --refund-ttl is required.
 
 Name and email are unique across accounts: a value another account already holds
 is refused with 409. A deactivated account, or a session signed in with a
@@ -21,7 +21,7 @@ priority fee; '--priority-tip=false' uses the chain's minimum tip instead (0 on
 most chains, 25 gwei on Polygon PoS/Amoy) — cheaper, slower to confirm under load.
 The buyer's dispute and close-dispute never read it.
 
---authorization-window and --refund-window set the deadlines the account's NEW
+--auth-ttl and --refund-ttl set the deadlines the account's NEW
 payments are created with: how long an authorization can be captured, and how
 long a payment can be refunded or disputed. A duration in days or hours ('2d',
 '36h'), or 'default' to go back to the gateway default. The bounds are on the
@@ -43,19 +43,19 @@ rail0 account update [flags]
   rail0 account update --name "Acme Store" --email ops@acme.example
   rail0 account update --priority-tip=false   # minimum tip on the account's transactions
   rail0 account update --priority-tip         # back to the suggested priority fee
-  rail0 account update --authorization-window 2d --refund-window 60d
-  rail0 account update --refund-window default # back to the gateway default
+  rail0 account update --auth-ttl 2d --refund-ttl 60d
+  rail0 account update --refund-ttl default # back to the gateway default
 ```
 
 ### Options
 
 ```
-      --authorization-window string   Capture window of new payments: days or hours (2d, 36h), or 'default'
-      --email string                  New contact email (unique across accounts)
-  -h, --help                          help for update
-      --name string                   New display name (unique across accounts)
-      --priority-tip                  Tip the network's suggested priority fee on the account's own transactions; --priority-tip=false uses the chain's minimum tip (default true)
-      --refund-window string          Refund and dispute window of new payments: days or hours (60d), or 'default'
+      --auth-ttl string     Capture window of new payments: days or hours (2d, 36h), or 'default'
+      --email string        New contact email (unique across accounts)
+  -h, --help                help for update
+      --name string         New display name (unique across accounts)
+      --priority-tip        Tip the network's suggested priority fee on the account's own transactions; --priority-tip=false uses the chain's minimum tip (default true)
+      --refund-ttl string   Refund and dispute window of new payments: days or hours (60d), or 'default'
 ```
 
 ### Options inherited from parent commands

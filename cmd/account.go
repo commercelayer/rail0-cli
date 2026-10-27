@@ -28,8 +28,8 @@ var accountID string
 var accountUpdateName string
 var accountUpdateEmail string
 var accountUpdatePriorityTip bool
-var accountUpdateAuthorizationWindow string
-var accountUpdateRefundWindow string
+var accountUpdateAuthTTL string
+var accountUpdateRefundTTL string
 
 var accountCmd = &cobra.Command{
 	Use:   "account",
@@ -83,7 +83,7 @@ var accountUpdateCmd = &cobra.Command{
 	Short: "Change the account's name, email, priority tip and/or payment windows",
 	Long: `Change the account's display name, contact email, priority-tip setting
 and/or payment windows. At least one of --name / --email / --priority-tip /
---authorization-window / --refund-window is required.
+--auth-ttl / --refund-ttl is required.
 
 Name and email are unique across accounts: a value another account already holds
 is refused with 409. A deactivated account, or a session signed in with a
@@ -98,7 +98,7 @@ priority fee; '--priority-tip=false' uses the chain's minimum tip instead (0 on
 most chains, 25 gwei on Polygon PoS/Amoy) — cheaper, slower to confirm under load.
 The buyer's dispute and close-dispute never read it.
 
---authorization-window and --refund-window set the deadlines the account's NEW
+--auth-ttl and --refund-ttl set the deadlines the account's NEW
 payments are created with: how long an authorization can be captured, and how
 long a payment can be refunded or disputed. A duration in days or hours ('2d',
 '36h'), or 'default' to go back to the gateway default. The bounds are on the
@@ -112,8 +112,8 @@ reverses it.`,
   rail0 account update --name "Acme Store" --email ops@acme.example
   rail0 account update --priority-tip=false   # minimum tip on the account's transactions
   rail0 account update --priority-tip         # back to the suggested priority fee
-  rail0 account update --authorization-window 2d --refund-window 60d
-  rail0 account update --refund-window default # back to the gateway default`,
+  rail0 account update --auth-ttl 2d --refund-ttl 60d
+  rail0 account update --refund-ttl default # back to the gateway default`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, _ []string) error {
 		req, err := accountUpdateRequest(cmd)
@@ -166,8 +166,8 @@ func accountUpdateRequest(cmd *cobra.Command) (rail0.UpdateAccountRequest, error
 		val  string
 		dst  **rail0.WindowSetting
 	}{
-		{"authorization-window", accountUpdateAuthorizationWindow, &req.AuthorizationTTL},
-		{"refund-window", accountUpdateRefundWindow, &req.RefundTTL},
+		{"auth-ttl", accountUpdateAuthTTL, &req.AuthorizationTTL},
+		{"refund-ttl", accountUpdateRefundTTL, &req.RefundTTL},
 	} {
 		if !cmd.Flags().Changed(f.name) {
 			continue
@@ -181,7 +181,7 @@ func accountUpdateRequest(cmd *cobra.Command) (rail0.UpdateAccountRequest, error
 	if req.Name == "" && req.Email == "" && req.PriorityTip == nil &&
 		req.AuthorizationTTL == nil && req.RefundTTL == nil {
 		return req, errors.New("nothing to update: pass --name, --email, --priority-tip, " +
-			"--authorization-window and/or --refund-window")
+			"--auth-ttl and/or --refund-ttl")
 	}
 	return req, nil
 }
@@ -229,9 +229,9 @@ func init() {
 	accountUpdateCmd.Flags().StringVar(&accountUpdateEmail, "email", "", "New contact email (unique across accounts)")
 	accountUpdateCmd.Flags().BoolVar(&accountUpdatePriorityTip, "priority-tip", true,
 		"Tip the network's suggested priority fee on the account's own transactions; --priority-tip=false uses the chain's minimum tip")
-	accountUpdateCmd.Flags().StringVar(&accountUpdateAuthorizationWindow, "authorization-window", "",
+	accountUpdateCmd.Flags().StringVar(&accountUpdateAuthTTL, "auth-ttl", "",
 		"Capture window of new payments: days or hours (2d, 36h), or 'default'")
-	accountUpdateCmd.Flags().StringVar(&accountUpdateRefundWindow, "refund-window", "",
+	accountUpdateCmd.Flags().StringVar(&accountUpdateRefundTTL, "refund-ttl", "",
 		"Refund and dispute window of new payments: days or hours (60d), or 'default'")
 
 	accountCmd.AddCommand(accountGetCmd, accountUpdateCmd)

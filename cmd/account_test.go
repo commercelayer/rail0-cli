@@ -63,8 +63,8 @@ func resetAccountFlags(t *testing.T) {
 	t.Helper()
 	reset := func() {
 		accountID, accountUpdateName, accountUpdateEmail, accountUpdatePriorityTip = "", "", "", true
-		accountUpdateAuthorizationWindow, accountUpdateRefundWindow = "", ""
-		for _, n := range []string{"name", "email", "priority-tip", "authorization-window", "refund-window"} {
+		accountUpdateAuthTTL, accountUpdateRefundTTL = "", ""
+		for _, n := range []string{"name", "email", "priority-tip", "auth-ttl", "refund-ttl"} {
 			accountUpdateCmd.Flags().Lookup(n).Changed = false
 		}
 	}
@@ -152,8 +152,8 @@ func TestAccountUpdateSendsPaymentWindows(t *testing.T) {
 	resetAccountFlags(t)
 	g.respond = func(*http.Request) any { return map[string]any{"id": "acc-1"} }
 
-	_ = accountUpdateCmd.Flags().Set("authorization-window", "36h")
-	_ = accountUpdateCmd.Flags().Set("refund-window", "default")
+	_ = accountUpdateCmd.Flags().Set("auth-ttl", "36h")
+	_ = accountUpdateCmd.Flags().Set("refund-ttl", "default")
 	run(t, accountUpdateCmd)
 	body := g.last(t, http.MethodPatch, "/accounts/acc-1").body
 	if body["authorization_ttl"] != float64(129600) {
@@ -167,7 +167,7 @@ func TestAccountUpdateSendsPaymentWindows(t *testing.T) {
 	}
 
 	resetAccountFlags(t)
-	_ = accountUpdateCmd.Flags().Set("refund-window", "60d")
+	_ = accountUpdateCmd.Flags().Set("refund-ttl", "60d")
 	run(t, accountUpdateCmd)
 	body = g.last(t, http.MethodPatch, "/accounts/acc-1").body
 	if body["refund_ttl"] != float64(60*86400) {
@@ -189,9 +189,9 @@ func TestAccountUpdateRefusesLocally(t *testing.T) {
 		flags map[string]string
 		want  string
 	}{
-		{"no flags", nil, "--refund-window"},
-		{"bad window", map[string]string{"refund-window": "a month"}, "--refund-window"},
-		{"zero window", map[string]string{"authorization-window": "0d"}, "above zero"},
+		{"no flags", nil, "--refund-ttl"},
+		{"bad window", map[string]string{"refund-ttl": "a month"}, "--refund-ttl"},
+		{"zero window", map[string]string{"auth-ttl": "0d"}, "above zero"},
 		{"blank name", map[string]string{"name": "  "}, "--name cannot be empty"},
 		{"blank email beside a name", map[string]string{"name": "Acme", "email": ""}, "--email cannot be empty"},
 	} {

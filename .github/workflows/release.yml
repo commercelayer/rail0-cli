@@ -325,27 +325,24 @@ jobs:
           webhook-type: incoming-webhook
           payload: |
             {
-            "text": "New release rail0 CLI v${{ needs.plan.outputs.version }}.",
+            "text": "rail0 CLI ${{ needs.plan.outputs.version }} released",
             "blocks": [
+              {
+              "type": "header",
+              "text": { "type": "plain_text", "text": ":keyboard: rail0 CLI ${{ needs.plan.outputs.version }} released", "emoji": true }
+              },
               {
               "type": "section",
               "text": {
                 "type": "mrkdwn",
-                "text": "New release for <${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ needs.plan.outputs.tag }}|`rail0 CLI`>\n*<${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ needs.plan.outputs.tag }}|release notes>*"
+                "text": "binaries on <${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ needs.plan.outputs.tag }}|GitHub Releases> · <${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ needs.plan.outputs.tag }}|release notes>"
               }
-              },
-              {
-              "type": "section",
-              "fields": [
-                { "type": "mrkdwn", "text": "*Package:*\nrail0 CLI" },
-                { "type": "mrkdwn", "text": "*Version:*\n${{ needs.plan.outputs.version }}" }
-              ]
               },
               {
               "type": "context",
               "elements": [
                 { "type": "image", "image_url": "${{ github.event.sender.avatar_url }}", "alt_text": "${{ github.event.sender.login }}" },
-                { "type": "mrkdwn", "text": "*${{ github.event.sender.login }}* has triggered this release." }
+                { "type": "mrkdwn", "text": "triggered by *${{ github.event.sender.login }}*" }
               ]
               }
             ]

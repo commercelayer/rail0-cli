@@ -47,7 +47,7 @@ func tokenDir() (string, error) {
 //
 // The file name is a digest rather than the URL itself: a base URL contains
 // characters that are awkward or unsafe in a path (scheme separators, ports,
-// sub-paths), and the digest keeps one flat, predictable directory. Normalised
+// sub-paths), and the digest keeps one flat, predictable directory. Normalized
 // first, so "https://api.rail0.xyz" and "https://api.rail0.xyz/" are one session.
 func tokenFilePath(baseURL string) (string, error) {
 	dir, err := tokenDir()

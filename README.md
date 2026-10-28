@@ -997,13 +997,15 @@ rail0 account get --account 019e748b-… # another account (admin only)
 
 #### `account update`
 
-Change the display name, contact email and/or priority-tip setting. At least one of `--name` / `--email` / `--priority-tip` is required, and a name or email may not be blank — both are refused locally, before any request.
+Change the display name, contact email, priority-tip setting and/or payment windows. At least one of `--name` / `--email` / `--priority-tip` / `--auth-ttl` / `--refund-ttl` is required, and a name or email may not be blank — both are refused locally, before any request.
 
 ```sh
 rail0 account update --name "Acme Store"
 rail0 account update --name "Acme Store" --email ops@acme.example
 rail0 account update --priority-tip=false   # minimum tip on the account's own transactions
 rail0 account update --priority-tip         # back to the network's suggested priority fee
+rail0 account update --auth-ttl 2d --refund-ttl 60d
+rail0 account update --refund-ttl default # back to the gateway default
 ```
 
 | Flag | Short | Description |
@@ -1011,11 +1013,15 @@ rail0 account update --priority-tip         # back to the network's suggested pr
 | `--name` | — | New display name (unique across accounts) |
 | `--email` | — | New contact email (unique across accounts) |
 | `--priority-tip` | — | Tip the network's suggested priority fee on the account's own transactions (the default); `--priority-tip=false` uses the chain's minimum tip |
+| `--auth-ttl` | — | Capture window of new payments: days or hours (`2d`, `36h`), or `default` |
+| `--refund-ttl` | — | Refund and dispute window of new payments: days or hours (`60d`), or `default` |
 | `--account` | — | Account id; defaults to the logged-in session account (another account's needs an admin session) |
 
-Name and email are **unique across accounts**: one another account already holds is refused with `409`, and the CLI says it is the name or email. A deactivated account, or a session signed in with a deactivated wallet, cannot change them (`403 account_deactivated` / `wallet_deactivated`) — a revoked key must not be able to redirect the contact email. The email is the **owner's** to change: an admin updating another account with `--account` may change its name and priority tip, but `--email` answers `403 forbidden` (before the account exists, the email is corrected on its onboarding request in the console). No confirmation is asked: the change is not destructive, and another `account update` reverses it.
+Name and email are **unique across accounts**: one another account already holds is refused with `409`, and the CLI says it is the name or email. A deactivated account, or a session signed in with a deactivated wallet, cannot change them (`403 account_deactivated` / `wallet_deactivated`) — a revoked key must not be able to redirect the contact email. An admin may update another account with `--account`; the gateway audits an operator's change with the values it replaced. No confirmation is asked: the change is not destructive, and another `account update` reverses it.
 
 `--priority-tip` is the fee setting of the account's **own** transactions — authorize, capture, void, release, refund. On, the default, they tip the network's suggested priority fee; off, they pay the chain's minimum tip (0 on most chains, 25 gwei on Polygon PoS/Amoy): cheaper, and slower to confirm when the chain is busy. The buyer's dispute and close-dispute never read it. The flag is sent only when given, so `account update --name X` leaves the setting alone.
+
+`--auth-ttl` and `--refund-ttl` set the deadlines the account's **new** payments are created with: how long an authorization can be captured, and how long a payment can be refunded or disputed. Each takes days or hours (`2d`, `36h`), or `default` to go back to the gateway default; a malformed or zero value is refused locally. The bounds are on the profile (`payment_windows` in `rail0 account`): outside them, or with the refund window less than a day past the authorization, the gateway answers `422 invalid_payment_windows`. Existing payments keep their signed deadlines.
 
 ---
 
@@ -1315,6 +1321,7 @@ rail0 webhooks enable <webhook_id>
 rail0 webhooks disable <webhook_id>
 rail0 webhooks rotate-secret <webhook_id>
 rail0 webhooks reset-circuit <webhook_id>
+rail0 webhooks test <webhook_id>          # signed webhooks.test event now; shows what the endpoint answered
 rail0 webhooks event-callbacks <webhook_id> --status failed
 rail0 webhooks redeliver <webhook_id> <callback_id>
 rail0 webhooks delete <webhook_id>
@@ -1495,14 +1502,20 @@ rail0 payments get 0xabc123…
 
 #### `payments update <rail0Id>`
 
-Change a payment's description — the one field editable after create. Either party (payer or payee) can do it, in any status, closed ones included. The description lives only on the gateway (it is in nothing signed on-chain), so no signing key is needed, no money moves and no webhook is sent. Max 255 characters. Requires login.
+Change a payment's off-chain fields, in any status, closed ones included. They live only on the gateway (in nothing signed on-chain), so no signing key is needed, no money moves and no webhook is sent. Requires login.
+
+- `--description`/`-d` (either party, max 255 characters), or `--clear` to remove it — not both.
+- `--note` — the **payee's** internal note (max 2000 characters), never shown to the payer.
+- `--reference` / `--reference-origin` — the payment's identifier in your own system and which system (a lowercase slug, e.g. `commercelayer`). Clearing the reference clears its origin.
+
+The last three are the payee's (the payer gets `403 not_the_payee`); pass one as `""` to clear it. Only the flags given are sent, and at least one is required.
 
 ```sh
-rail0 payments update 0xabc123… -d "order #42"   # set it
-rail0 payments update 0xabc123… --clear          # remove it
+rail0 payments update 0xabc123… -d "spring collection"   # set the description
+rail0 payments update 0xabc123… --clear                  # remove it
+rail0 payments update 0xabc123… --note "refund agreed by email"
+rail0 payments update 0xabc123… --reference ORD-1042 --reference-origin commercelayer
 ```
-
-Pass exactly one of `--description`/`-d` or `--clear`.
 
 There is no `failed` payment **status**: `failed` belongs to a **transaction**. A
 payment whose transaction reverts keeps the status it already held — the gateway
@@ -1516,7 +1529,7 @@ own status.
 #### `payments list`
 
 List payments for the authenticated wallet (requires login). Filter with `--status`,
-`--mode`, `--payer` / `--payee`, `--token`, `--chain-id`, `--disputed`, `--operation`,
+`--mode`, `--payer` / `--payee`, `--token`, `--chain-id`, `--disputed`, `--operation`, `--reference` / `--reference-origin`,
 `--rail0-id`, `--min-amount` / `--max-amount`, and `--created-from` / `--created-to`
 (ISO-8601); sort with `--sort`.
 
@@ -1890,6 +1903,15 @@ binaries. Never push a `v*` tag by hand.
    requires an older rail0-go than the latest tag (or a pseudo-version) it says so and
    offers the bump; the `replace … => ../rail0-go` line is never touched. `--dry-run`
    prints all of it and writes nothing.
+
+   **Or on a feature branch**, to release a change in the same review: run it on a clean
+   branch that is pushed, contains `origin/main` and has an open pull request into `main`.
+   The bump is committed and pushed on that branch (`chore(release): vX.Y.Z`), the pull
+   request's own title counts toward the version and gets a line in the notes, and the
+   notes go into its description between `<!-- release:start -->` markers — the text above
+   them is kept. Re-run it after new commits or a merge of `main`: it refreshes the version
+   and the notes instead of bumping twice. One approval then covers the change and its
+   release.
 2. Review the pull request (edit the notes in its body if needed), approve and merge it.
    The approval must come from a reviewer **other than the pull request's author**, on its
    final commit: release.yml checks it before publishing anything and stops otherwise —

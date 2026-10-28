@@ -33,17 +33,19 @@ rail0 payments create [flags]
 ### Options
 
 ```
-  -a, --amount string            Amount as a decimal in token units (e.g. '1.00' for 1 USDC); the gateway converts to base units
-  -c, --chain-id int             EVM chain ID as listed in GET /blockchains (e.g. 5042002)
-  -C, --charge                   Create with mode=charge (immediate transfer, no escrow); default is authorize (escrow then capture)
-  -d, --description string       Optional reconciliation note (e.g. order id / invoice); prompted when omitted on a terminal
-  -F, --from string              Payer wallet address (from) (0x-prefixed, funds are pulled from here)
-  -h, --help                     help for create
-      --idempotency-key string   Replay-safety key (default: a fresh one per invocation). Reuse it to retry the SAME create without minting a second payment
-  -f, --payment-file string      Path to a JSON file with the full request body, "mode" included; the other request flags (-F -T -t -a -c -C -d) and stored defaults are then ignored
-  -p, --private-key string       Payer's secp256k1 private key (0x-prefixed hex); creates the payment and signs locally
-  -T, --to string                Payee wallet address (to) (0x-prefixed, address from 'wallets')
-  -t, --token string             Token symbol as listed in GET /tokens (e.g. USDC)
+  -a, --amount string             Amount as a decimal in token units (e.g. '1.00' for 1 USDC); the gateway converts to base units
+  -c, --chain-id int              EVM chain ID as listed in GET /blockchains (e.g. 5042002)
+  -C, --charge                    Create with mode=charge (immediate transfer, no escrow); default is authorize (escrow then capture)
+  -d, --description string        Optional reconciliation note (e.g. order id / invoice); prompted when omitted on a terminal
+  -F, --from string               Payer wallet address (from) (0x-prefixed, funds are pulled from here)
+  -h, --help                      help for create
+      --idempotency-key string    Replay-safety key (default: a fresh one per invocation). Reuse it to retry the SAME create without minting a second payment
+  -f, --payment-file string       Path to a JSON file with the full request body, "mode" included; the other request flags (-F -T -t -a -c -C -d) and stored defaults are then ignored
+  -p, --private-key string        Payer's secp256k1 private key (0x-prefixed hex); creates the payment and signs locally
+      --reference string          Optional: the payment's identifier in the merchant's own system (max 128 characters)
+      --reference-origin string   Optional: which system the reference comes from, a lowercase slug (e.g. commercelayer); needs --reference
+  -T, --to string                 Payee wallet address (to) (0x-prefixed, address from 'wallets')
+  -t, --token string              Token symbol as listed in GET /tokens (e.g. USDC)
 ```
 
 ### Options inherited from parent commands

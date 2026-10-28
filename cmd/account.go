@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
+	"time"
 
 	rail0 "github.com/commercelayer/rail0-go"
 	"github.com/rail0/cli/internal/ui"
@@ -12,7 +14,7 @@ import (
 )
 
 // accountCmd reads and edits the account PROFILE — the account row itself (name,
-// email, priority-tip fee setting), as opposed to `wallets`, which manages the
+// email, priority-tip fee setting, payment windows), as opposed to `wallets`, which manages the
 // addresses under it. Like
 // `wallets`, the account id comes from the session (the JWT's account_id claim, the
 // one `auth status` prints); --account names another one, which the gateway answers
@@ -26,6 +28,8 @@ var accountID string
 var accountUpdateName string
 var accountUpdateEmail string
 var accountUpdatePriorityTip bool
+var accountUpdateAuthTTL string
+var accountUpdateRefundTTL string
 
 var accountCmd = &cobra.Command{
 	Use:   "account",
@@ -76,18 +80,17 @@ func runAccountGet(_ *cobra.Command, _ []string) error {
 
 var accountUpdateCmd = &cobra.Command{
 	Use:   "update",
-	Short: "Change the account's name, email and/or priority tip",
-	Long: `Change the account's display name, contact email and/or priority-tip
-setting. At least one of --name / --email / --priority-tip is required.
+	Short: "Change the account's name, email, priority tip and/or payment windows",
+	Long: `Change the account's display name, contact email, priority-tip setting
+and/or payment windows. At least one of --name / --email / --priority-tip /
+--auth-ttl / --refund-ttl is required.
 
 Name and email are unique across accounts: a value another account already holds
 is refused with 409. A deactivated account, or a session signed in with a
 deactivated wallet, cannot change them (403) — a revoked key must not be able to
 redirect the contact email, which is where the merchant's operational
-notifications go. The email is the owner's to change: an admin updating another
-account with --account may change its name and priority tip, but --email answers
-403 forbidden (before the account exists, it is corrected on its onboarding
-request in the console).
+notifications go. An admin may update another account with --account; the
+gateway audits an operator's change with the values it replaced.
 
 --priority-tip is the fee setting of the account's OWN transactions (authorize,
 capture, void, release, refund). On, the default, they tip the network's suggested
@@ -95,12 +98,22 @@ priority fee; '--priority-tip=false' uses the chain's minimum tip instead (0 on
 most chains, 25 gwei on Polygon PoS/Amoy) — cheaper, slower to confirm under load.
 The buyer's dispute and close-dispute never read it.
 
+--auth-ttl and --refund-ttl set the deadlines the account's NEW
+payments are created with: how long an authorization can be captured, and how
+long a payment can be refunded or disputed. A duration in days or hours ('2d',
+'36h'), or 'default' to go back to the gateway default. The bounds are on the
+profile ('rail0 account', payment_windows); outside them, or with the refund
+window less than a day past the authorization, the gateway answers 422
+invalid_payment_windows. Existing payments keep their signed deadlines.
+
 No confirmation is asked: the change is not destructive and 'account update'
 reverses it.`,
 	Example: `  rail0 account update --name "Acme Store"
   rail0 account update --name "Acme Store" --email ops@acme.example
   rail0 account update --priority-tip=false   # minimum tip on the account's transactions
-  rail0 account update --priority-tip         # back to the suggested priority fee`,
+  rail0 account update --priority-tip         # back to the suggested priority fee
+  rail0 account update --auth-ttl 2d --refund-ttl 60d
+  rail0 account update --refund-ttl default # back to the gateway default`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, _ []string) error {
 		req, err := accountUpdateRequest(cmd)
@@ -148,10 +161,56 @@ func accountUpdateRequest(cmd *cobra.Command) (rail0.UpdateAccountRequest, error
 		v := accountUpdatePriorityTip
 		req.PriorityTip = &v
 	}
-	if req.Name == "" && req.Email == "" && req.PriorityTip == nil {
-		return req, errors.New("nothing to update: pass --name, --email and/or --priority-tip")
+	for _, f := range []struct {
+		name string
+		val  string
+		dst  **rail0.WindowSetting
+	}{
+		{"auth-ttl", accountUpdateAuthTTL, &req.AuthorizationTTL},
+		{"refund-ttl", accountUpdateRefundTTL, &req.RefundTTL},
+	} {
+		if !cmd.Flags().Changed(f.name) {
+			continue
+		}
+		w, err := parseWindow(f.val)
+		if err != nil {
+			return req, fmt.Errorf("--%s: %w", f.name, err)
+		}
+		*f.dst = w
+	}
+	if req.Name == "" && req.Email == "" && req.PriorityTip == nil &&
+		req.AuthorizationTTL == nil && req.RefundTTL == nil {
+		return req, errors.New("nothing to update: pass --name, --email, --priority-tip, " +
+			"--auth-ttl and/or --refund-ttl")
 	}
 	return req, nil
+}
+
+// parseWindow reads a payment window flag: 'default', a number of days ('30d'), or a
+// Go duration in hours ('36h', '1h30m'). The gateway takes whole seconds, so anything
+// finer than a second, or not above zero, is refused here rather than rounded.
+func parseWindow(s string) (*rail0.WindowSetting, error) {
+	s = strings.TrimSpace(s)
+	if strings.EqualFold(s, "default") {
+		return rail0.WindowDefault(), nil
+	}
+	var d time.Duration
+	if days, ok := strings.CutSuffix(s, "d"); ok {
+		n, err := strconv.Atoi(days)
+		if err != nil {
+			return nil, fmt.Errorf("%q is not a whole number of days", s)
+		}
+		d = time.Duration(n) * 24 * time.Hour
+	} else {
+		var err error
+		if d, err = time.ParseDuration(s); err != nil {
+			return nil, fmt.Errorf("%q is not a duration (e.g. 2d, 36h) or 'default'", s)
+		}
+	}
+	if d <= 0 || d%time.Second != 0 {
+		return nil, fmt.Errorf("%q must be a whole number of seconds above zero", s)
+	}
+	return rail0.WindowSeconds(int(d / time.Second)), nil
 }
 
 // accountConflictHint is what a 409 on `account update` means. The gateway's
@@ -170,6 +229,10 @@ func init() {
 	accountUpdateCmd.Flags().StringVar(&accountUpdateEmail, "email", "", "New contact email (unique across accounts)")
 	accountUpdateCmd.Flags().BoolVar(&accountUpdatePriorityTip, "priority-tip", true,
 		"Tip the network's suggested priority fee on the account's own transactions; --priority-tip=false uses the chain's minimum tip")
+	accountUpdateCmd.Flags().StringVar(&accountUpdateAuthTTL, "auth-ttl", "",
+		"Capture window of new payments: days or hours (2d, 36h), or 'default'")
+	accountUpdateCmd.Flags().StringVar(&accountUpdateRefundTTL, "refund-ttl", "",
+		"Refund and dispute window of new payments: days or hours (60d), or 'default'")
 
 	accountCmd.AddCommand(accountGetCmd, accountUpdateCmd)
 }

@@ -8,7 +8,7 @@ Returns all payments where your wallet is payer or payee.
 Requires authentication — run 'rail0 auth login -p 0xKey…' first.
 
 Filter with --status, --mode, --payer, --payee, --token, --chain-id, --disputed,
---operation, --rail0-id, --min-amount / --max-amount, and --created-from /
+--operation, --rail0-id, --reference / --reference-origin, --min-amount / --max-amount, and --created-from /
 --created-to (ISO-8601). --operation keeps payments carrying at least one
 transaction of that operation — '--operation dispute' finds every payment ever
 disputed, which --disputed (an OPEN dispute) does not.
@@ -70,6 +70,8 @@ rail0 payments list [flags]
       --payer string               Filter by payer address
       --per-page int               Results per page
       --rail0-id string            Filter by the logical on-chain payment id (0x…)
+      --reference string           Filter by the payment's identifier in the merchant's own system (exact)
+      --reference-origin string    Filter by the system the reference comes from
       --scope string               mine (default): your wallet's payments; all: every payment on the gateway (admin only)
       --sort string                Sort fields (e.g. -created_at,amount)
       --status strings             Filter by payment status; repeat or comma-separate for any of several (e.g. authorized,partially_captured)

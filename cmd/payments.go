@@ -97,34 +97,40 @@ transaction ('payments transactions') and in last_error_code / last_error_messag
 
 var paymentsUpdateDescription string
 var paymentsUpdateClear bool
+var paymentsUpdateNote string
+var paymentsUpdateReference string
+var paymentsUpdateReferenceOrigin string
 
 var paymentsUpdateCmd = &cobra.Command{
 	Use:   "update <rail0Id>",
-	Short: "Change a payment's description",
-	Long: `Change the description of a payment — the one field that can be edited after
-create. Either party (payer or payee) may do it, in any status, closed ones
-included.
+	Short: "Change a payment's description, internal note or reference",
+	Long: `Change the off-chain fields of a payment, in any status, closed ones included.
+They live only on the gateway — in nothing signed or hashed on-chain — so this
+moves no money, needs no signing key and sends no webhook.
 
-The description lives only on the gateway: it is in nothing signed or hashed
-on-chain, so this moves no money, needs no signing key and sends no webhook.
-At most 255 characters.
+  --description / --clear   either party; at most 255 characters. --clear
+                            removes it (not both).
+  --note                    the PAYEE's internal note, at most 2000 characters;
+                            never shown to the payer.
+  --reference               the payment's identifier in your own system (e.g.
+                            an order number there), at most 128 characters.
+  --reference-origin        which system that is: a lowercase slug, e.g.
+                            commercelayer.
 
-Pass the new text with --description, or --clear to remove it (exactly one).
+The last three are the payee's: the payer gets 403 not_the_payee. Pass one
+as "" to clear it; clearing the reference clears its origin too. Only the
+flags given are sent, and at least one is required.
 
 Requires login — run 'rail0 auth login -p 0xKey…' first.`,
-	Example: `  rail0 payments update 0xabc123… -d "order #42"
-  rail0 payments update 0xabc123… --clear`,
+	Example: `  rail0 payments update 0xabc123… -d "spring collection"
+  rail0 payments update 0xabc123… --clear
+  rail0 payments update 0xabc123… --note "refund agreed by email"
+  rail0 payments update 0xabc123… --reference ORD-1042 --reference-origin commercelayer`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		// Exactly one of the two: an omitted --description must not silently clear the
-		// field, so clearing is its own explicit flag.
-		set := cmd.Flags().Changed("description")
-		if set == paymentsUpdateClear {
-			return fmt.Errorf("pass exactly one of --description or --clear")
-		}
-		req := rail0.UpdatePaymentRequest{} // nil Description → JSON null → cleared
-		if set {
-			req.Description = &paymentsUpdateDescription
+		req, err := paymentsUpdateRequest(cmd)
+		if err != nil {
+			return err
 		}
 		return ui.RunAPI(func() (any, error) {
 			ctx := context.Background()
@@ -135,6 +141,41 @@ Requires login — run 'rail0 auth login -p 0xKey…' first.`,
 			return humanize(ctx, p), nil
 		})
 	},
+}
+
+// paymentsUpdateRequest builds the PATCH body from the flags given: a flag not passed
+// is not sent (the SDK omits nil fields), so an omitted --description never clears
+// the description — clearing it is --clear, and the other three clear with "".
+func paymentsUpdateRequest(cmd *cobra.Command) (rail0.UpdatePaymentRequest, error) {
+	var req rail0.UpdatePaymentRequest
+	setDesc := cmd.Flags().Changed("description")
+	if setDesc && paymentsUpdateClear {
+		return req, fmt.Errorf("pass --description or --clear, not both")
+	}
+	if setDesc {
+		req.Description = &paymentsUpdateDescription
+	}
+	if paymentsUpdateClear {
+		empty := ""
+		req.Description = &empty
+	}
+	for _, f := range []struct {
+		name string
+		val  *string
+		dst  **string
+	}{
+		{"note", &paymentsUpdateNote, &req.MerchantNote},
+		{"reference", &paymentsUpdateReference, &req.Reference},
+		{"reference-origin", &paymentsUpdateReferenceOrigin, &req.ReferenceOrigin},
+	} {
+		if cmd.Flags().Changed(f.name) {
+			*f.dst = f.val
+		}
+	}
+	if req.Description == nil && req.MerchantNote == nil && req.Reference == nil && req.ReferenceOrigin == nil {
+		return req, fmt.Errorf("nothing to update: pass --description, --clear, --note, --reference and/or --reference-origin")
+	}
+	return req, nil
 }
 
 // ── payments list ────────────────────────────────────────────────────────────
@@ -154,6 +195,8 @@ var (
 	paymentsListCreatedTo   string
 	paymentsListOperation   string
 	paymentsListRail0ID     string
+	paymentsListReference   string
+	paymentsListRefOrigin   string
 	paymentsListPage        int
 	paymentsListPerPage     int
 	paymentsListAll         bool
@@ -171,7 +214,7 @@ var paymentsListCmd = &cobra.Command{
 Requires authentication — run 'rail0 auth login -p 0xKey…' first.
 
 Filter with --status, --mode, --payer, --payee, --token, --chain-id, --disputed,
---operation, --rail0-id, --min-amount / --max-amount, and --created-from /
+--operation, --rail0-id, --reference / --reference-origin, --min-amount / --max-amount, and --created-from /
 --created-to (ISO-8601). --operation keeps payments carrying at least one
 transaction of that operation — '--operation dispute' finds every payment ever
 disputed, which --disputed (an OPEN dispute) does not.
@@ -221,25 +264,27 @@ carrying a last_error_code, or --has-error=false for the clean ones) and
 			return err
 		}
 		p := rail0.ListPaymentsParams{
-			Scope:          scope.Scope,
-			AccountID:      scope.AccountID,
-			HasError:       scope.HasError,
-			ExpiringWithin: scope.ExpiringWithin,
-			Sort:           paymentsListSort,
-			Statuses:       statuses,
-			Mode:           paymentsListMode,
-			Payer:          paymentsListPayer,
-			Payee:          paymentsListPayee,
-			Token:          paymentsListToken,
-			ChainID:        paymentsListChainID,
-			MinAmount:      minAmount,
-			MaxAmount:      maxAmount,
-			CreatedFrom:    paymentsListCreatedFrom,
-			CreatedTo:      paymentsListCreatedTo,
-			Operation:      paymentsListOperation,
-			Rail0ID:        paymentsListRail0ID,
-			Page:           paymentsListPage,
-			PerPage:        paymentsListPerPage,
+			Scope:           scope.Scope,
+			AccountID:       scope.AccountID,
+			HasError:        scope.HasError,
+			ExpiringWithin:  scope.ExpiringWithin,
+			Sort:            paymentsListSort,
+			Statuses:        statuses,
+			Mode:            paymentsListMode,
+			Payer:           paymentsListPayer,
+			Payee:           paymentsListPayee,
+			Token:           paymentsListToken,
+			ChainID:         paymentsListChainID,
+			MinAmount:       minAmount,
+			MaxAmount:       maxAmount,
+			CreatedFrom:     paymentsListCreatedFrom,
+			CreatedTo:       paymentsListCreatedTo,
+			Operation:       paymentsListOperation,
+			Rail0ID:         paymentsListRail0ID,
+			Reference:       paymentsListReference,
+			ReferenceOrigin: paymentsListRefOrigin,
+			Page:            paymentsListPage,
+			PerPage:         paymentsListPerPage,
 		}
 		// Only send disputed when the flag was explicitly set (tri-state).
 		if cmd.Flags().Changed("disputed") {
@@ -1529,6 +1574,9 @@ func init() {
 	paymentsUpdateCmd.Flags().StringVarP(&paymentsUpdateDescription, "description", "d", "",
 		"New description (max 255 characters)")
 	paymentsUpdateCmd.Flags().BoolVar(&paymentsUpdateClear, "clear", false, "Remove the description")
+	paymentsUpdateCmd.Flags().StringVar(&paymentsUpdateNote, "note", "", "The payee's internal note, never shown to the payer (\"\" clears it)")
+	paymentsUpdateCmd.Flags().StringVar(&paymentsUpdateReference, "reference", "", "The payment's identifier in your own system (\"\" clears it and its origin)")
+	paymentsUpdateCmd.Flags().StringVar(&paymentsUpdateReferenceOrigin, "reference-origin", "", "Which system the reference comes from: a lowercase slug, e.g. commercelayer")
 	paymentsUpdateCmd.MarkFlagsMutuallyExclusive("description", "clear")
 	paymentsCmd.AddCommand(paymentsUpdateCmd)
 
@@ -1552,6 +1600,8 @@ func init() {
 	paymentsListCmd.Flags().StringVar(&paymentsListOperation, "operation", "",
 		"Only payments with at least one transaction of this operation (e.g. dispute, refund)")
 	paymentsListCmd.Flags().StringVar(&paymentsListRail0ID, "rail0-id", "", "Filter by the logical on-chain payment id (0x…)")
+	paymentsListCmd.Flags().StringVar(&paymentsListReference, "reference", "", "Filter by the payment's identifier in the merchant's own system (exact)")
+	paymentsListCmd.Flags().StringVar(&paymentsListRefOrigin, "reference-origin", "", "Filter by the system the reference comes from")
 	_ = paymentsListCmd.RegisterFlagCompletionFunc("operation", fixedCompletions(transactionOperations...))
 	paymentsListCmd.Flags().IntVar(&paymentsListPage, "page", 0, "Page number (1-based)")
 	paymentsListCmd.Flags().IntVar(&paymentsListPerPage, "per-page", 0, "Results per page")

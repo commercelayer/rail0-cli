@@ -236,6 +236,32 @@ func TestWebhooksRedeliverPostsToTheCallbackRoute(t *testing.T) {
 	}
 }
 
+// webhooks test POSTs to the webhook's test route and prints the endpoint's answer.
+func TestWebhooksTestPostsToTheTestRoute(t *testing.T) {
+	isolate(t)
+	isolateTokenStore(t)
+	var method, path string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		method, path = r.Method, r.URL.Path
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"delivered":false,"response_code":"401","response_message":"bad signature","duration_ms":12}`))
+	}))
+	defer srv.Close()
+	t.Setenv("RAIL0_BASE_URL", srv.URL)
+
+	out := captureStdout(t, func() {
+		if err := webhooksTestCmd.RunE(webhooksTestCmd, []string{"whk_1"}); err != nil {
+			t.Fatalf("webhooks test: %v", err)
+		}
+	})
+	if method != http.MethodPost || path != "/webhooks/whk_1/test" {
+		t.Errorf("request = %s %s, want POST /webhooks/whk_1/test", method, path)
+	}
+	if !strings.Contains(out, "401") || !strings.Contains(out, "bad signature") {
+		t.Errorf("output %q does not show the endpoint's answer", out)
+	}
+}
+
 // Both ids are required: a missing callback id is a usage error, not a request.
 func TestWebhooksRedeliverNeedsBothIDs(t *testing.T) {
 	if err := webhooksRedeliverCmd.Args(webhooksRedeliverCmd, []string{"whk_1"}); err == nil {

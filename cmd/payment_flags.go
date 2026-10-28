@@ -130,6 +130,9 @@ type createPaymentFlags struct {
 	chainID     int    // numeric chain id
 	charge      bool   // -C/--charge: create with mode=charge instead of the default authorize
 	description string // optional, human-readable note (e.g. what's being paid for)
+	// The payment's identifier in the merchant's own system, and which system (optional).
+	reference       string
+	referenceOrigin string
 
 	// The values applyConfiguredDefaults filled in from the stored settings, as
 	// "chain-id 5042002 (env (RAIL0_CHAIN_ID))"-style notes, so the command can say
@@ -155,6 +158,10 @@ func (f *createPaymentFlags) addTo(cmd *cobra.Command) {
 		"Create with mode=charge (immediate transfer, no escrow); default is authorize (escrow then capture)")
 	cmd.Flags().StringVarP(&f.description, "description", "d", "",
 		"Optional reconciliation note (e.g. order id / invoice); prompted when omitted on a terminal")
+	cmd.Flags().StringVar(&f.reference, "reference", "",
+		"Optional: the payment's identifier in the merchant's own system (max 128 characters)")
+	cmd.Flags().StringVar(&f.referenceOrigin, "reference-origin", "",
+		"Optional: which system the reference comes from, a lowercase slug (e.g. commercelayer); needs --reference")
 
 	// The address flags accept an @alias, so they complete to the address book —
 	// which is the whole reason to keep one. (#110)
@@ -573,13 +580,15 @@ func (f *createPaymentFlags) resolve() (rail0.CreatePaymentRequest, error) {
 	}
 
 	return rail0.CreatePaymentRequest{
-		Payer:       payer,
-		Payee:       payee,
-		Token:       tokenAddress,
-		Amount:      f.amount,
-		ChainID:     f.chainID,
-		Mode:        mode,
-		Description: f.description,
+		Payer:           payer,
+		Payee:           payee,
+		Token:           tokenAddress,
+		Amount:          f.amount,
+		ChainID:         f.chainID,
+		Mode:            mode,
+		Description:     f.description,
+		Reference:       f.reference,
+		ReferenceOrigin: f.referenceOrigin,
 	}, nil
 }
 

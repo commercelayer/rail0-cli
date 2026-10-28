@@ -386,7 +386,7 @@ func TestEnvSwitchRefusesWhileTheBaseURLFlagIsSet(t *testing.T) {
 	// The same URL, spelled with a trailing slash and upper case, names the target.
 	baseURL = "HTTPS://rail0-gateway-staging.fly.dev/"
 	if err := switchEnv("staging", false); err != nil {
-		t.Errorf("an override naming the target (normalised) must be allowed: %v", err)
+		t.Errorf("an override naming the target (normalized) must be allowed: %v", err)
 	}
 }
 

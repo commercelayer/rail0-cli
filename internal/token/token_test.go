@@ -81,7 +81,7 @@ func TestTokensAreScopedPerGateway(t *testing.T) {
 
 // A trailing slash or different casing in the base URL is the same gateway — the
 // two forms must not become two sessions.
-func TestBaseURLIsNormalised(t *testing.T) {
+func TestBaseURLIsNormalized(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("HOME", dir)
 	t.Setenv("XDG_CACHE_HOME", dir)

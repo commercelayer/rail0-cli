@@ -1,0 +1,62 @@
+.nh
+.TH "RAIL0" "1" "Aug 2026" "rail0 CLI" ""
+
+.SH NAME
+rail0-webhooks-test - Send a test event to the webhook's endpoint and show what it answered
+
+
+.SH SYNOPSIS
+\fBrail0 webhooks test  [flags]\fP
+
+
+.SH DESCRIPTION
+Send one test event to the webhook's callback URL now, and print what the
+endpoint did: delivered (a 2xx), the status code and the start of its response
+body — or, when no response came, why (a refused address, TLS, a timeout).
+
+.PP
+The event has topic "webhooks.test", "test": true and no payment, and is signed
+and delivered exactly like a real one, so it checks reachability, TLS and your
+signature verification without waiting for a real payment. It is not logged in
+\&'event-callbacks', does not count toward the circuit breaker, and works on a
+disabled webhook too — test the endpoint before re-enabling it.
+
+
+.SH OPTIONS
+\fB-h\fP, \fB--help\fP[=false]
+	help for test
+
+
+.SH OPTIONS INHERITED FROM PARENT COMMANDS
+\fB--agent\fP[=false]
+	Agent mode: one JSON envelope on stdout, JSON events on stderr, no prompts (env: RAIL0_AGENT=1)
+
+.PP
+\fB--base-url\fP=""
+	RAIL0 gateway base URL (env: RAIL0_BASE_URL)
+
+.PP
+\fB--debug\fP[=false]
+	Print HTTP request/response details to stderr
+
+.PP
+\fB--json\fP[=false]
+	Force plain (uncolored) JSON output (useful in scripts)
+
+.PP
+\fB--pretty\fP[=false]
+	Use the key-value/table view instead of JSON (terminal only)
+
+.PP
+\fB-q\fP, \fB--quiet\fP[=false]
+	Print only the result's id/hash, one per line (useful in scripts)
+
+
+.SH EXAMPLE
+.EX
+  rail0 webhooks test whk_abc123
+.EE
+
+
+.SH SEE ALSO
+\fBrail0-webhooks(1)\fP

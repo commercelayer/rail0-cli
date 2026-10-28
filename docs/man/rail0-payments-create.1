@@ -64,6 +64,14 @@ chain/token defaults: set "mode": "charge" in the file rather than passing -C.
 	Payer's secp256k1 private key (0x-prefixed hex); creates the payment and signs locally
 
 .PP
+\fB--reference\fP=""
+	Optional: the payment's identifier in the merchant's own system (max 128 characters)
+
+.PP
+\fB--reference-origin\fP=""
+	Optional: which system the reference comes from, a lowercase slug (e.g. commercelayer); needs --reference
+
+.PP
 \fB-T\fP, \fB--to\fP=""
 	Payee wallet address (to) (0x-prefixed, address from 'wallets')
 

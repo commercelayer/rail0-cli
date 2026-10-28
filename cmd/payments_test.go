@@ -230,13 +230,37 @@ func TestPaymentsUpdateSendsTheDescription(t *testing.T) {
 }
 
 // --clear is the explicit way to remove it: the gateway reads null as "clear".
-func TestPaymentsUpdateClearSendsNull(t *testing.T) {
+// --clear sends the description blank, which the gateway reads as "clear it" — and
+// only the description: the fields not flagged stay off the wire.
+func TestPaymentsUpdateClearSendsABlankDescription(t *testing.T) {
 	body, err := runPaymentsUpdate(t, map[string]string{"clear": "true"})
 	if err != nil {
 		t.Fatalf("payments update --clear: %v", err)
 	}
-	if strings.TrimSpace(body) != `{"description":null}` {
+	if strings.TrimSpace(body) != `{"description":""}` {
 		t.Errorf("body = %s", body)
+	}
+}
+
+// The payee's fields are sent alone when only they are flagged; the description is
+// left untouched rather than cleared.
+func TestPaymentsUpdateSendsTheNoteAndReferenceAlone(t *testing.T) {
+	body, err := runPaymentsUpdate(t, map[string]string{
+		"note": "refund agreed by email", "reference": "ORD-1042", "reference-origin": "commercelayer",
+	})
+	if err != nil {
+		t.Fatalf("payments update: %v", err)
+	}
+	want := `{"merchant_note":"refund agreed by email","reference":"ORD-1042","reference_origin":"commercelayer"}`
+	if strings.TrimSpace(body) != want {
+		t.Errorf("body = %s, want %s", body, want)
+	}
+}
+
+func TestPaymentsUpdateRefusesDescriptionAndClearTogether(t *testing.T) {
+	body, err := runPaymentsUpdate(t, map[string]string{"description": "x", "clear": "true"})
+	if err == nil || body != "" {
+		t.Errorf("want a local refusal and nothing sent, got err=%v body=%s", err, body)
 	}
 }
 

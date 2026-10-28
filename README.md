@@ -1321,6 +1321,7 @@ rail0 webhooks enable <webhook_id>
 rail0 webhooks disable <webhook_id>
 rail0 webhooks rotate-secret <webhook_id>
 rail0 webhooks reset-circuit <webhook_id>
+rail0 webhooks test <webhook_id>          # signed webhooks.test event now; shows what the endpoint answered
 rail0 webhooks event-callbacks <webhook_id> --status failed
 rail0 webhooks redeliver <webhook_id> <callback_id>
 rail0 webhooks delete <webhook_id>
@@ -1501,14 +1502,20 @@ rail0 payments get 0xabc123…
 
 #### `payments update <rail0Id>`
 
-Change a payment's description — the one field editable after create. Either party (payer or payee) can do it, in any status, closed ones included. The description lives only on the gateway (it is in nothing signed on-chain), so no signing key is needed, no money moves and no webhook is sent. Max 255 characters. Requires login.
+Change a payment's off-chain fields, in any status, closed ones included. They live only on the gateway (in nothing signed on-chain), so no signing key is needed, no money moves and no webhook is sent. Requires login.
+
+- `--description`/`-d` (either party, max 255 characters), or `--clear` to remove it — not both.
+- `--note` — the **payee's** internal note (max 2000 characters), never shown to the payer.
+- `--reference` / `--reference-origin` — the payment's identifier in your own system and which system (a lowercase slug, e.g. `commercelayer`). Clearing the reference clears its origin.
+
+The last three are the payee's (the payer gets `403 not_the_payee`); pass one as `""` to clear it. Only the flags given are sent, and at least one is required.
 
 ```sh
-rail0 payments update 0xabc123… -d "order #42"   # set it
-rail0 payments update 0xabc123… --clear          # remove it
+rail0 payments update 0xabc123… -d "spring collection"   # set the description
+rail0 payments update 0xabc123… --clear                  # remove it
+rail0 payments update 0xabc123… --note "refund agreed by email"
+rail0 payments update 0xabc123… --reference ORD-1042 --reference-origin commercelayer
 ```
-
-Pass exactly one of `--description`/`-d` or `--clear`.
 
 There is no `failed` payment **status**: `failed` belongs to a **transaction**. A
 payment whose transaction reverts keeps the status it already held — the gateway
@@ -1522,7 +1529,7 @@ own status.
 #### `payments list`
 
 List payments for the authenticated wallet (requires login). Filter with `--status`,
-`--mode`, `--payer` / `--payee`, `--token`, `--chain-id`, `--disputed`, `--operation`,
+`--mode`, `--payer` / `--payee`, `--token`, `--chain-id`, `--disputed`, `--operation`, `--reference` / `--reference-origin`,
 `--rail0-id`, `--min-amount` / `--max-amount`, and `--created-from` / `--created-to`
 (ISO-8601); sort with `--sort`.
 

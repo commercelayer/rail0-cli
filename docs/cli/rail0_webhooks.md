@@ -85,5 +85,6 @@ Topics (-t/--topic completes them):
 * [rail0 webhooks redeliver](rail0_webhooks_redeliver.md)	 - Replay one recorded delivery attempt's exact payload
 * [rail0 webhooks reset-circuit](rail0_webhooks_reset-circuit.md)	 - Reset the delivery circuit breaker and re-enable the webhook
 * [rail0 webhooks rotate-secret](rail0_webhooks_rotate-secret.md)	 - Generate a new shared secret (returned once on the response)
+* [rail0 webhooks test](rail0_webhooks_test.md)	 - Send a test event to the webhook's endpoint and show what it answered
 * [rail0 webhooks update](rail0_webhooks_update.md)	 - Update a webhook's name, callback URL, or topics
 

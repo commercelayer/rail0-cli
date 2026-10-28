@@ -15,7 +15,7 @@ Requires authentication — run 'rail0 auth login -p 0xKey…' first.
 
 .PP
 Filter with --status, --mode, --payer, --payee, --token, --chain-id, --disputed,
---operation, --rail0-id, --min-amount / --max-amount, and --created-from /
+--operation, --rail0-id, --reference / --reference-origin, --min-amount / --max-amount, and --created-from /
 --created-to (ISO-8601). --operation keeps payments carrying at least one
 transaction of that operation — '--operation dispute' finds every payment ever
 disputed, which --disputed (an OPEN dispute) does not.
@@ -113,6 +113,14 @@ carrying a last_error_code, or --has-error=false for the clean ones) and
 .PP
 \fB--rail0-id\fP=""
 	Filter by the logical on-chain payment id (0x…)
+
+.PP
+\fB--reference\fP=""
+	Filter by the payment's identifier in the merchant's own system (exact)
+
+.PP
+\fB--reference-origin\fP=""
+	Filter by the system the reference comes from
 
 .PP
 \fB--scope\fP=""

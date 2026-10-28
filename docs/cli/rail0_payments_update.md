@@ -1,18 +1,25 @@
 ## rail0 payments update
 
-Change a payment's description
+Change a payment's description, internal note or reference
 
 ### Synopsis
 
-Change the description of a payment — the one field that can be edited after
-create. Either party (payer or payee) may do it, in any status, closed ones
-included.
+Change the off-chain fields of a payment, in any status, closed ones included.
+They live only on the gateway — in nothing signed or hashed on-chain — so this
+moves no money, needs no signing key and sends no webhook.
 
-The description lives only on the gateway: it is in nothing signed or hashed
-on-chain, so this moves no money, needs no signing key and sends no webhook.
-At most 255 characters.
+  --description / --clear   either party; at most 255 characters. --clear
+                            removes it (not both).
+  --note                    the PAYEE's internal note, at most 2000 characters;
+                            never shown to the payer.
+  --reference               the payment's identifier in your own system (e.g.
+                            an order number there), at most 128 characters.
+  --reference-origin        which system that is: a lowercase slug, e.g.
+                            commercelayer.
 
-Pass the new text with --description, or --clear to remove it (exactly one).
+The last three are the payee's: the payer gets 403 not_the_payee. Pass one
+as "" to clear it; clearing the reference clears its origin too. Only the
+flags given are sent, and at least one is required.
 
 Requires login — run 'rail0 auth login -p 0xKey…' first.
 
@@ -23,16 +30,21 @@ rail0 payments update <rail0Id> [flags]
 ### Examples
 
 ```
-  rail0 payments update 0xabc123… -d "order #42"
+  rail0 payments update 0xabc123… -d "spring collection"
   rail0 payments update 0xabc123… --clear
+  rail0 payments update 0xabc123… --note "refund agreed by email"
+  rail0 payments update 0xabc123… --reference ORD-1042 --reference-origin commercelayer
 ```
 
 ### Options
 
 ```
-      --clear                Remove the description
-  -d, --description string   New description (max 255 characters)
-  -h, --help                 help for update
+      --clear                     Remove the description
+  -d, --description string        New description (max 255 characters)
+  -h, --help                      help for update
+      --note string               The payee's internal note, never shown to the payer ("" clears it)
+      --reference string          The payment's identifier in your own system ("" clears it and its origin)
+      --reference-origin string   Which system the reference comes from: a lowercase slug, e.g. commercelayer
 ```
 
 ### Options inherited from parent commands

@@ -322,6 +322,27 @@ still failing just spends another 10 events reopening it. 'event-callbacks
 	},
 }
 
+var webhooksTestCmd = &cobra.Command{
+	Use:   "test <webhook_id>",
+	Short: "Send a test event to the webhook's endpoint and show what it answered",
+	Long: `Send one test event to the webhook's callback URL now, and print what the
+endpoint did: delivered (a 2xx), the status code and the start of its response
+body — or, when no response came, why (a refused address, TLS, a timeout).
+
+The event has topic "webhooks.test", "test": true and no payment, and is signed
+and delivered exactly like a real one, so it checks reachability, TLS and your
+signature verification without waiting for a real payment. It is not logged in
+'event-callbacks', does not count toward the circuit breaker, and works on a
+disabled webhook too — test the endpoint before re-enabling it.`,
+	Example: `  rail0 webhooks test whk_abc123`,
+	Args:    cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return ui.RunAPI(func() (any, error) {
+			return newClient().Webhooks.Test(context.Background(), args[0])
+		})
+	},
+}
+
 // ── webhooks event-callbacks ──────────────────────────────────────────────────────
 
 var webhooksEventsStatus string
@@ -518,6 +539,7 @@ func init() {
 	addYesFlag(webhooksRotateSecretCmd)
 	webhooksCmd.AddCommand(webhooksRotateSecretCmd)
 	webhooksCmd.AddCommand(webhooksResetCircuitCmd)
+	webhooksCmd.AddCommand(webhooksTestCmd)
 
 	webhooksEventCallbacksCmd.Flags().StringVar(&webhooksEventsStatus, "status", "", "Filter by delivery status ('delivered', 'failed')")
 	webhooksEventCallbacksCmd.Flags().StringVar(&webhooksEventsTopic, "topic", "", "Filter by event topic (e.g. payments.captured)")

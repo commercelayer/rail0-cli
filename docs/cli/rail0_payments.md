@@ -60,7 +60,7 @@ Charge (one-shot) flow — no escrow, funds move straight through:
 * [rail0 payments sign](rail0_payments_sign.md)	 - Deposit the payer signature on an already-created payment
 * [rail0 payments transaction](rail0_payments_transaction.md)	 - Fetch one of a payment's transactions
 * [rail0 payments transactions](rail0_payments_transactions.md)	 - List on-chain transactions for a payment
-* [rail0 payments update](rail0_payments_update.md)	 - Change a payment's description
+* [rail0 payments update](rail0_payments_update.md)	 - Change a payment's description, internal note or reference
 * [rail0 payments void](rail0_payments_void.md)	 - Void a payment (prepare, sign, and broadcast)
 * [rail0 payments wait](rail0_payments_wait.md)	 - Block until a payment settles (or reaches a given status)
 

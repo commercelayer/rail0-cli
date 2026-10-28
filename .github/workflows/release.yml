@@ -325,18 +325,21 @@ jobs:
           webhook-type: incoming-webhook
           payload: |
             {
-            "text": "rail0 CLI ${{ needs.plan.outputs.version }} released",
+            "text": "New release for rail0 CLI (${{ needs.plan.outputs.tag }})",
             "blocks": [
-              {
-              "type": "header",
-              "text": { "type": "plain_text", "text": ":keyboard: rail0 CLI ${{ needs.plan.outputs.version }} released", "emoji": true }
-              },
               {
               "type": "section",
               "text": {
                 "type": "mrkdwn",
-                "text": "binaries on <${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ needs.plan.outputs.tag }}|GitHub Releases> · <${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ needs.plan.outputs.tag }}|release notes>"
+                "text": ":keyboard: New release for <${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ needs.plan.outputs.tag }}|rail0 CLI>\n<${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ needs.plan.outputs.tag }}|release notes>"
               }
+              },
+              {
+              "type": "section",
+              "fields": [
+                { "type": "mrkdwn", "text": "*Project:*\n<${{ github.server_url }}/${{ github.repository }}|${{ github.event.repository.name }}>" },
+                { "type": "mrkdwn", "text": "*Version:*\n${{ needs.plan.outputs.tag }}" }
+              ]
               },
               {
               "type": "context",

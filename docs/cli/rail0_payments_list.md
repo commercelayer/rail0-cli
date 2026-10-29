@@ -31,6 +31,10 @@ carrying a last_error_code, or --has-error=false for the clean ones) and
 --expiring-within (authorized payments whose hold lapses within that duration,
 '24h' or '90m', up to 90 days).
 
+--csv writes the result as CSV instead of JSON (one page, or every page with --all):
+the admin's export columns plus the two deadlines, amounts both in base units and as
+decimals.
+
 ```
 rail0 payments list [flags]
 ```
@@ -43,6 +47,7 @@ rail0 payments list [flags]
   rail0 payments list --status authorized --mode charge
   rail0 payments list --status authorized,partially_captured
   rail0 payments list --chain-id 5042002 --disputed
+  rail0 payments list --all --csv > payments.csv          # every matching payment, as CSV
   rail0 payments list --chain-id 5042002 --token 0x3600… --min-amount 1.00 --created-from 2026-01-01T00:00:00Z
   rail0 payments list --scope all --has-error                # admin: every payment with an error, any account
   rail0 payments list --scope all --expiring-within 24h      # admin: holds lapsing within a day
@@ -57,6 +62,7 @@ rail0 payments list [flags]
       --chain-id int               Filter by EVM chain ID
       --created-from string        Only payments created at/after this ISO-8601 time
       --created-to string          Only payments created at/before this ISO-8601 time
+      --csv                        Write the payments as CSV instead of JSON (with --all: every page)
       --disputed                   Filter by whether an open dispute exists
       --expiring-within duration   With --scope all: authorized payments whose hold lapses within this duration (e.g. 24h; max 90 days)
       --has-error                  With --scope all: payments carrying a last_error_code (--has-error=false: none)

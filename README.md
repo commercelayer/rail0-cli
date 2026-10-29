@@ -556,6 +556,7 @@ rail0 config path                              # config file location
 | `base-url` | `--base-url` | `RAIL0_BASE_URL` | `https://api.rail0.xyz` |
 | `chain-id` | `--chain-id` / `-c` | `RAIL0_CHAIN_ID` | the matching flag must be passed |
 | `token` | `--token` / `-t` | `RAIL0_TOKEN_SYMBOL` | the matching flag must be passed |
+| `admin-url` | — (the page `rail0 open` opens) | `RAIL0_ADMIN_URL` | the current environment's (development, staging) |
 | `output` | `--json` / `--pretty` / `--quiet` | `RAIL0_OUTPUT` | `auto` |
 | `http-timeout` | — (per-request timeout, seconds) | `RAIL0_HTTP_TIMEOUT` | `30` |
 
@@ -587,13 +588,13 @@ exported JWT arrive as a payment token symbol.
 
 Switch a whole bundle of settings at once instead of setting each key by hand:
 
-| Environment | base-url | chain-id | token |
-| --- | --- | --- | --- |
-| `development` | `http://localhost:9292` | `5042002` | `USDC` |
-| `staging` | `https://rail0-gateway-staging.fly.dev` | `5042002` | `USDC` |
-| `production` | `https://api.rail0.xyz` | — | — |
+| Environment | base-url | admin-url | chain-id | token |
+| --- | --- | --- | --- | --- |
+| `development` | `http://localhost:9292` | `http://localhost:3000` | `5042002` | `USDC` |
+| `staging` | `https://rail0-gateway-staging.fly.dev` | `https://rail0-admin-staging.fly.dev` | `5042002` | `USDC` |
+| `production` | `https://api.rail0.xyz` | — | — | — |
 
-Production carries no chain or token, and that is not an omission: the two other
+Production carries no admin URL, chain or token, and that is not an omission: the two other
 environments serve testnets, so Arc Testnet (4 confirmations, the quickest active one)
 is a safe default there, while the production chain set is a deployment decision —
 inventing one here would send a real payment to a chain nobody chose.
@@ -1355,6 +1356,24 @@ rail0 health
 
 ---
 
+### Open in the admin (`open`)
+
+Opens the rail0 admin app in the browser: its home page, or — given a payment's
+`rail0_id` (`0x…`) or UUID — that payment's page. `--console` opens the operator
+console's page for it instead (it needs an admin session in the browser); `--print`
+only prints the URL, as the command also does with no terminal or with `--agent`.
+
+The address is the `admin-url` setting (`RAIL0_ADMIN_URL`), or else the one the current
+environment declares — development and staging have one, production does not: there,
+set it with `rail0 config set admin-url https://…`.
+
+```sh
+rail0 open                        # the admin's home page
+rail0 open 0xabc123…              # that payment's page
+rail0 open 0xabc123… --console    # the console's page for it (operators)
+rail0 open 0xabc123… --print      # just the URL
+```
+
 ### Disputes
 
 > **Operations go through the gateway.** The gateway mirrors only the operations it prepared. A dispute, close-dispute, capture, void, refund or release sent to the RAIL0 contract directly — not with these commands — happens on-chain, but `rail0 payments get` keeps showing the previous status and balances and no webhook is sent; a merchant is not told about a dispute its buyer opened that way. The gateway records it for its operators as a sync error (`external_operation`).
@@ -1557,6 +1576,19 @@ rail0 payments list --status authorized,partially_captured
 rail0 payments list --chain-id 5042002 --disputed
 rail0 payments list --chain-id 5042002 --token 0x3600… --min-amount 1.00
 rail0 payments list --operation refund --created-from 2026-09-01T00:00:00Z
+```
+
+**`--csv`.** Writes the result as CSV instead of JSON — one page, or every page with
+`--all` — with the admin export's columns plus the two deadlines: amounts in base units
+and as decimals (`amount_human`, empty when the scale is unknown), `reference` /
+`reference_origin`, the payee's `merchant_note` (empty on rows where you are the payer),
+`authorization_expiry` / `refund_expiry` as RFC 3339. Free text that a spreadsheet would
+run as a formula (`=`, `+`, `-`, `@`) is prefixed with `'`. It cannot be combined with
+`--agent`, `--quiet` or `--pretty`.
+
+```sh
+rail0 payments list --all --csv > payments.csv
+rail0 payments list --created-from 2026-10-01T00:00:00Z --all --csv > october.csv
 ```
 
 **`--scope all` (admin).** The operator's list: every payment on the gateway, with the

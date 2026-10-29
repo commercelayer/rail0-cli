@@ -146,12 +146,12 @@ func init() {
 		&cobra.Group{ID: groupCatalog, Title: "Network catalog:"},
 		&cobra.Group{ID: groupLocal, Title: "Local configuration:"},
 	)
-	assignGroup(groupPayments, paymentsCmd)
+	assignGroup(groupPayments, paymentsCmd, openCmd)
 	assignGroup(groupAccount, authCmd, tokenCmd, accountCmd, walletsCmd, paymentMethodsCmd, webhooksCmd, analyticsCmd, disputesCmd)
 	assignGroup(groupCatalog, chainsCmd, tokensCmd, healthCmd)
 	assignGroup(groupLocal, initCmd, configCmd, envCmd, aliasesCmd, keysCmd)
 
-	rootCmd.AddCommand(paymentsCmd, accountCmd, walletsCmd, paymentMethodsCmd, webhooksCmd, chainsCmd, tokensCmd, authCmd, healthCmd, aliasesCmd, keysCmd, configCmd, envCmd, disputesCmd, analyticsCmd)
+	rootCmd.AddCommand(paymentsCmd, accountCmd, walletsCmd, paymentMethodsCmd, webhooksCmd, chainsCmd, tokensCmd, authCmd, healthCmd, aliasesCmd, keysCmd, configCmd, envCmd, disputesCmd, analyticsCmd, openCmd)
 }
 
 // Help groups. `completion`, `help`, `update` and `version` deliberately have none:

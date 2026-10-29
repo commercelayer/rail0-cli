@@ -1,0 +1,75 @@
+.nh
+.TH "RAIL0" "1" "Aug 2026" "rail0 CLI" ""
+
+.SH NAME
+rail0-open - Open the admin app in the browser, on a payment's page when given its id
+
+
+.SH SYNOPSIS
+\fBrail0 open [rail0Id|uuid] [flags]\fP
+
+
+.SH DESCRIPTION
+Open the rail0 admin app in the browser: its home page, or — given a payment's
+rail0_id (0x…) or UUID — that payment's page.
+
+.PP
+--console opens the operator console's page for the payment instead of the merchant's
+(it needs an admin session in the browser). --print only prints the URL, as it does
+when there is no terminal or with --agent, so a script can pass it on.
+
+.PP
+The admin's address is the admin-url setting (RAIL0_ADMIN_URL), or else the one the
+current environment declares: development and staging have one, production does not
+— there, set it with 'rail0 config set admin-url https://…'.
+
+
+.SH OPTIONS
+\fB--console\fP[=false]
+	Open the operator console's page for the payment (admin session)
+
+.PP
+\fB-h\fP, \fB--help\fP[=false]
+	help for open
+
+.PP
+\fB--print\fP[=false]
+	Only print the URL; do not open a browser
+
+
+.SH OPTIONS INHERITED FROM PARENT COMMANDS
+\fB--agent\fP[=false]
+	Agent mode: one JSON envelope on stdout, JSON events on stderr, no prompts (env: RAIL0_AGENT=1)
+
+.PP
+\fB--base-url\fP=""
+	RAIL0 gateway base URL (env: RAIL0_BASE_URL)
+
+.PP
+\fB--debug\fP[=false]
+	Print HTTP request/response details to stderr
+
+.PP
+\fB--json\fP[=false]
+	Force plain (uncolored) JSON output (useful in scripts)
+
+.PP
+\fB--pretty\fP[=false]
+	Use the key-value/table view instead of JSON (terminal only)
+
+.PP
+\fB-q\fP, \fB--quiet\fP[=false]
+	Print only the result's id/hash, one per line (useful in scripts)
+
+
+.SH EXAMPLE
+.EX
+  rail0 open                          # the admin's home page
+  rail0 open 0xabc123…                # that payment's page
+  rail0 open 0xabc123… --console      # the console's page for it (operators)
+  rail0 open 0xabc123… --print        # just the URL
+.EE
+
+
+.SH SEE ALSO
+\fBrail0(1)\fP

@@ -200,6 +200,7 @@ var (
 	paymentsListPage        int
 	paymentsListPerPage     int
 	paymentsListAll         bool
+	paymentsListCSV         bool
 	// The operator's scope (admin only) and the three filters that exist only there.
 	paymentsListScope          string
 	paymentsListAccount        string
@@ -235,12 +236,17 @@ your own). Three filters exist only there and are refused without it: --account
 (payments whose payee is one of that account's wallets), --has-error (payments
 carrying a last_error_code, or --has-error=false for the clean ones) and
 --expiring-within (authorized payments whose hold lapses within that duration,
-'24h' or '90m', up to 90 days).`,
+'24h' or '90m', up to 90 days).
+
+--csv writes the result as CSV instead of JSON (one page, or every page with --all):
+the admin's export columns plus the two deadlines, amounts both in base units and as
+decimals.`,
 	Example: `  rail0 payments list
   rail0 payments list --sort -created_at
   rail0 payments list --status authorized --mode charge
   rail0 payments list --status authorized,partially_captured
   rail0 payments list --chain-id 5042002 --disputed
+  rail0 payments list --all --csv > payments.csv          # every matching payment, as CSV
   rail0 payments list --chain-id 5042002 --token 0x3600… --min-amount 1.00 --created-from 2026-01-01T00:00:00Z
   rail0 payments list --scope all --has-error                # admin: every payment with an error, any account
   rail0 payments list --scope all --expiring-within 24h      # admin: holds lapsing within a day
@@ -289,6 +295,9 @@ carrying a last_error_code, or --has-error=false for the clean ones) and
 		// Only send disputed when the flag was explicitly set (tri-state).
 		if cmd.Flags().Changed("disputed") {
 			p.Disputed = &paymentsListDisputed
+		}
+		if paymentsListCSV {
+			return listPaymentsCSV(ctx, p)
 		}
 		return ui.RunAPI(func() (any, error) {
 			client := newReadClient()
@@ -355,10 +364,45 @@ func paymentsListScopeParams(cmd *cobra.Command) (rail0.ListPaymentsParams, erro
 	return p, nil
 }
 
+// listPaymentsCSV is `payments list --csv`: the same query, written as CSV on stdout
+// instead of JSON — one page, or every page with --all. It refuses the output modes it
+// would contradict before any request: --agent promises one JSON envelope, --quiet bare
+// ids, --pretty a table.
+func listPaymentsCSV(ctx context.Context, p rail0.ListPaymentsParams) error {
+	if agentMode() || quietOut || prettyOut {
+		return errors.New("--csv writes CSV; it cannot be combined with --agent, --quiet or --pretty")
+	}
+	client := newReadClient()
+	var payments []rail0.Payment
+	if paymentsListAll {
+		all, err := fetchAllPaymentsRaw(ctx, client, p)
+		if err != nil {
+			return err
+		}
+		payments = all
+	} else {
+		resp, err := client.Payments.List(ctx, p)
+		if err != nil {
+			return err
+		}
+		payments = resp.Data
+	}
+	return writePaymentsCSV(ctx, os.Stdout, payments)
+}
+
 // fetchAllPayments pages through the entire result set (used by `list --all`),
-// concatenating each page until every row is collected. PerPage defaults to 100
-// so it isn't limited to the API's small default page size.
+// concatenating each page until every row is collected, humanized.
 func fetchAllPayments(ctx context.Context, client *rail0.Client, p rail0.ListPaymentsParams) (any, error) {
+	all, err := fetchAllPaymentsRaw(ctx, client, p)
+	if err != nil {
+		return nil, err
+	}
+	return humanizeAll(ctx, all), nil
+}
+
+// fetchAllPaymentsRaw is fetchAllPayments without the humanizing, for the CSV. PerPage
+// defaults to 100 so it isn't limited to the API's small default page size.
+func fetchAllPaymentsRaw(ctx context.Context, client *rail0.Client, p rail0.ListPaymentsParams) ([]rail0.Payment, error) {
 	if p.PerPage == 0 {
 		p.PerPage = 100
 	}
@@ -383,7 +427,7 @@ func fetchAllPayments(ctx context.Context, client *rail0.Client, p rail0.ListPay
 			break
 		}
 	}
-	return humanizeAll(ctx, all), nil
+	return all, nil
 }
 
 // ── payments transactions ─────────────────────────────────────────────────────
@@ -1600,6 +1644,7 @@ func init() {
 	paymentsListCmd.Flags().StringVar(&paymentsListOperation, "operation", "",
 		"Only payments with at least one transaction of this operation (e.g. dispute, refund)")
 	paymentsListCmd.Flags().StringVar(&paymentsListRail0ID, "rail0-id", "", "Filter by the logical on-chain payment id (0x…)")
+	paymentsListCmd.Flags().BoolVar(&paymentsListCSV, "csv", false, "Write the payments as CSV instead of JSON (with --all: every page)")
 	paymentsListCmd.Flags().StringVar(&paymentsListReference, "reference", "", "Filter by the payment's identifier in the merchant's own system (exact)")
 	paymentsListCmd.Flags().StringVar(&paymentsListRefOrigin, "reference-origin", "", "Filter by the system the reference comes from")
 	_ = paymentsListCmd.RegisterFlagCompletionFunc("operation", fixedCompletions(transactionOperations...))

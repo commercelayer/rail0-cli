@@ -84,7 +84,7 @@ func TestConfigCommandTree(t *testing.T) {
 // and a stored payer/payee/key would make the two parties and the signer of a
 // fund-moving command resolve from a file instead of from the command line.
 func TestConfigKeysAreExactlyTheNonSensitiveDefaults(t *testing.T) {
-	want := []string{"base-url", "chain-id", "http-timeout", "output", "token"}
+	want := []string{"admin-url", "base-url", "chain-id", "http-timeout", "output", "token"}
 	got := make([]string, 0, len(configKeys))
 	for name := range configKeys {
 		got = append(got, name)

@@ -34,14 +34,16 @@ type environment struct {
 // a real payment to a chain nobody chose.
 var environments = []environment{
 	{name: "development", settings: map[string]string{
-		"base-url": "http://localhost:9292",
-		"chain-id": "5042002",
-		"token":    "USDC",
+		"base-url":  "http://localhost:9292",
+		"admin-url": "http://localhost:3000",
+		"chain-id":  "5042002",
+		"token":     "USDC",
 	}},
 	{name: "staging", settings: map[string]string{
-		"base-url": "https://rail0-gateway-staging.fly.dev",
-		"chain-id": "5042002",
-		"token":    "USDC",
+		"base-url":  "https://rail0-gateway-staging.fly.dev",
+		"admin-url": "https://rail0-admin-staging.fly.dev",
+		"chain-id":  "5042002",
+		"token":     "USDC",
 	}},
 	{name: "production", settings: map[string]string{"base-url": config.DefaultBaseURL}},
 }
@@ -176,8 +178,9 @@ Run bare to list the selectable environments, with the current one marked; add
 it writes that environment's settings to the config file, so every command uses
 them.
 
-The bundle is base-url plus, on development and staging, chain-id and token — so
-a switch moves the default chain and token as well as the gateway. 'env <name>
+The bundle is base-url plus, on development and staging, admin-url, chain-id and
+token — so a switch moves the admin app, the default chain and the token as well as
+the gateway. 'env <name>
 --details' prints what it ended up with.
 
 After a switch the environment-managed settings are exactly the target's: a key

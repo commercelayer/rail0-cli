@@ -72,6 +72,13 @@ var configKeys = map[string]configKey{
 		whenUnset: func() string { return "" },
 		validate:  validateTokenSymbol,
 	},
+	"admin-url": {
+		name:      "admin-url",
+		env:       "RAIL0_ADMIN_URL",
+		desc:      "Admin app URL that 'rail0 open' opens",
+		whenUnset: func() string { return "" },
+		validate:  validateAdminURL,
+	},
 	"output": {
 		name:      "output",
 		env:       "RAIL0_OUTPUT",

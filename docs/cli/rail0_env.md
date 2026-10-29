@@ -11,8 +11,9 @@ Run bare to list the selectable environments, with the current one marked; add
 it writes that environment's settings to the config file, so every command uses
 them.
 
-The bundle is base-url plus, on development and staging, chain-id and token — so
-a switch moves the default chain and token as well as the gateway. 'env <name>
+The bundle is base-url plus, on development and staging, admin-url, chain-id and
+token — so a switch moves the admin app, the default chain and the token as well as
+the gateway. 'env <name>
 --details' prints what it ended up with.
 
 After a switch the environment-managed settings are exactly the target's: a key

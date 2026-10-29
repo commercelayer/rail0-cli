@@ -66,6 +66,16 @@ type releaseServer struct {
 	archiveName string
 	archive     []byte
 	sums        string
+	// private makes it answer as GitHub does for a private repository: 404 to an
+	// anonymous caller, the release and its assets (through the API, as octet-stream)
+	// only with the token, and no public download links.
+	private bool
+	token   string
+}
+
+// authorized is the private repository's gate: the bearer token, or nothing.
+func (rs *releaseServer) authorized(r *http.Request) bool {
+	return !rs.private || r.Header.Get("Authorization") == "Bearer "+rs.token
 }
 
 func newReleaseServer(t *testing.T, u *Updater, version string, archive []byte) *releaseServer {
@@ -74,21 +84,48 @@ func newReleaseServer(t *testing.T, u *Updater, version string, archive []byte) 
 	sum := sha256.Sum256(archive)
 	rs.sums = fmt.Sprintf("%s  %s\n%s  rail0_%s_other_arch.tar.gz\n", hex.EncodeToString(sum[:]), rs.archiveName, strings.Repeat("0", 64), version)
 	mux := http.NewServeMux()
-	mux.HandleFunc("/repos/commercelayer/rail0-cli/releases/latest", func(w http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc("/repos/commercelayer/rail0-cli/releases/latest", func(w http.ResponseWriter, r *http.Request) {
+		if !rs.authorized(r) {
+			http.NotFound(w, r)
+			return
+		}
 		base := rs.URL
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"tag_name": "v" + version,
 			"assets": []map[string]any{
-				{"name": rs.archiveName, "browser_download_url": base + "/dl/archive", "size": len(rs.archive)},
-				{"name": "checksums.txt", "browser_download_url": base + "/dl/sums", "size": len(rs.sums)},
+				{"name": rs.archiveName, "browser_download_url": base + "/dl/archive", "url": base + "/api/assets/1", "size": len(rs.archive)},
+				{"name": "checksums.txt", "browser_download_url": base + "/dl/sums", "url": base + "/api/assets/2", "size": len(rs.sums)},
 			},
 		})
 	})
-	mux.HandleFunc("/dl/archive", func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Length", fmt.Sprint(len(rs.archive)))
-		_, _ = w.Write(rs.archive)
-	})
-	mux.HandleFunc("/dl/sums", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(rs.sums)) })
+	public := func(body func() []byte) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			if rs.private {
+				http.NotFound(w, r)
+				return
+			}
+			w.Header().Set("Content-Length", fmt.Sprint(len(body())))
+			_, _ = w.Write(body())
+		}
+	}
+	// The API serves an asset's bytes only when asked for octet-stream (else its JSON
+	// description), and only to the token on a private repository.
+	api := func(body func() []byte) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			if !rs.authorized(r) || r.Header.Get("Accept") != "application/octet-stream" {
+				http.NotFound(w, r)
+				return
+			}
+			w.Header().Set("Content-Length", fmt.Sprint(len(body())))
+			_, _ = w.Write(body())
+		}
+	}
+	archiveBody := func() []byte { return rs.archive }
+	sumsBody := func() []byte { return []byte(rs.sums) }
+	mux.HandleFunc("/dl/archive", public(archiveBody))
+	mux.HandleFunc("/dl/sums", public(sumsBody))
+	mux.HandleFunc("/api/assets/1", api(archiveBody))
+	mux.HandleFunc("/api/assets/2", api(sumsBody))
 	rs.Server = httptest.NewServer(mux)
 	t.Cleanup(rs.Close)
 	u.APIBase = rs.URL
@@ -236,15 +273,77 @@ func TestInstallExtractsTheWindowsZip(t *testing.T) {
 }
 
 // Until the repository is public GitHub answers an anonymous caller with 404; the
-// error must say so rather than look like a network fault.
+// error must say so — and how to get past it — rather than look like a network fault.
 func TestLatestExplainsAMissingRelease(t *testing.T) {
 	srv := httptest.NewServer(http.NotFoundHandler())
 	defer srv.Close()
 	u := newTestUpdater()
 	u.APIBase = srv.URL
 
-	if _, err := u.Latest(context.Background()); err == nil || !strings.Contains(err.Error(), "no published rail0 release") {
+	_, err := u.Latest(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "no published rail0 release") || !strings.Contains(err.Error(), "GITHUB_TOKEN") {
 		t.Fatalf("err = %v", err)
+	}
+
+	u.Token = "stale"
+	if _, err := u.Latest(context.Background()); err == nil || !strings.Contains(err.Error(), "GitHub token in use") {
+		t.Fatalf("with a token: err = %v", err)
+	}
+}
+
+// A private repository: the release and its assets are readable only through the API
+// with the token, the assets as octet-stream — the route the update now takes when it
+// has a token. Anonymous, the same server is a 404.
+func TestInstallFromAPrivateRepositoryWithAToken(t *testing.T) {
+	u := newTestUpdater()
+	rs := newReleaseServer(t, u, "1.7.0", tarGz(t, map[string][]byte{"rail0": []byte("PRIVATE BUILD")}))
+	rs.private, rs.token = true, "ghp_test"
+	exe := installedBinary(t, "OLD BINARY")
+
+	if _, err := u.Latest(context.Background()); err == nil {
+		t.Fatal("an anonymous caller must not see a private release")
+	}
+
+	u.Token = "ghp_test"
+	rel, err := u.Latest(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := u.Install(context.Background(), rel, exe, nil); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := os.ReadFile(exe); string(got) != "PRIVATE BUILD" {
+		t.Errorf("binary is %q, want the private release's", got)
+	}
+}
+
+// The token goes to the GitHub API's host and nowhere else.
+func TestTokenIsSentOnlyToTheAPI(t *testing.T) {
+	u := newTestUpdater()
+	u.APIBase, u.Token = "https://api.github.com", "ghp_test"
+	for target, want := range map[string]string{
+		"https://api.github.com/repos/x/y/releases/assets/1": "Bearer ghp_test",
+		"https://objects.githubusercontent.com/x":            "",
+		"http://api.github.com/repos/x/y/releases/latest":    "",
+		"https://mirror.example.com/rail0.tar.gz":            "",
+	} {
+		req, _ := http.NewRequest(http.MethodGet, target, nil)
+		u.authorize(req)
+		if got := req.Header.Get("Authorization"); got != want {
+			t.Errorf("%s: Authorization %q, want %q", target, got, want)
+		}
+	}
+}
+
+func TestGitHubTokenPrefersTheEnvironment(t *testing.T) {
+	t.Setenv("GITHUB_TOKEN", " from-env ")
+	t.Setenv("GH_TOKEN", "other")
+	if got := GitHubToken(context.Background()); got != "from-env" {
+		t.Errorf("GitHubToken() = %q, want GITHUB_TOKEN's value", got)
+	}
+	t.Setenv("GITHUB_TOKEN", "")
+	if got := GitHubToken(context.Background()); got != "other" {
+		t.Errorf("GitHubToken() = %q, want GH_TOKEN's value", got)
 	}
 }
 

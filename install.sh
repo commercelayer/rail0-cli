@@ -14,11 +14,18 @@
 #   RAIL0_RELEASES_URL  the releases base URL (default: the GitHub repository's); for a
 #                       mirror, or for testing against a local copy of a release
 #
+# While the repository is private, its releases (and this script's raw URL) answer 404
+# to an anonymous curl. With the GitHub CLI signed in to an account that can read the
+# repository, the script falls back to `gh release download`, and runs as
+#
+#   gh api repos/commercelayer/rail0-cli/contents/install.sh -H 'Accept: application/vnd.github.raw' | sh
+#
 # POSIX sh on purpose: it runs piped into `sh` on any macOS or Linux, including minimal
 # containers without bash. Windows: download the .zip from the releases page instead.
 set -eu
 
-RELEASES_URL="${RAIL0_RELEASES_URL:-https://github.com/commercelayer/rail0-cli/releases}"
+REPO=commercelayer/rail0-cli
+RELEASES_URL="${RAIL0_RELEASES_URL:-https://github.com/$REPO/releases}"
 INSTALL_DIR="${RAIL0_INSTALL_DIR:-$HOME/.local/bin}"
 
 say() { printf '%s\n' "$*"; }
@@ -53,18 +60,31 @@ else
   fail "neither sha256sum nor shasum was found; cannot verify the download"
 fi
 
-# The latest version, read from where GitHub redirects /releases/latest (…/tag/vX.Y.Z)
-# rather than from the API, which rate-limits anonymous callers.
-version="${RAIL0_VERSION:-}"
-if [ -z "$version" ]; then
-  latest_url=$(curl -fsSLI -o /dev/null -w '%{url_effective}' "$RELEASES_URL/latest") ||
-    fail "could not reach $RELEASES_URL (is the repository public, and are you online?)"
-  version="${latest_url##*/}"
-  case "$version" in
-    v[0-9]*) ;;
-    *) fail "no published release found at $RELEASES_URL" ;;
-  esac
+# Anonymous by default; through the GitHub CLI when the releases are not public (a
+# private repository answers 404) and gh is signed in. Only for the default releases
+# URL: a mirror is whatever RAIL0_RELEASES_URL says, and gh knows nothing of it.
+use_gh=0
+if [ -z "${RAIL0_RELEASES_URL:-}" ] && ! curl -fsSLI -o /dev/null "$RELEASES_URL/latest" 2>/dev/null &&
+  command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
+  use_gh=1
+  say "The releases are not public; downloading through the GitHub CLI (gh)."
 fi
+
+# The latest version, read from where GitHub redirects /releases/latest (…/tag/vX.Y.Z)
+# rather than from the API, which rate-limits anonymous callers — or from gh.
+version="${RAIL0_VERSION:-}"
+if [ -z "$version" ] && [ "$use_gh" = 1 ]; then
+  version=$(gh release view -R "$REPO" --json tagName -q .tagName) ||
+    fail "gh could not read the latest release of $REPO (does your account have access?)"
+elif [ -z "$version" ]; then
+  latest_url=$(curl -fsSLI -o /dev/null -w '%{url_effective}' "$RELEASES_URL/latest") ||
+    fail "could not reach $RELEASES_URL (is the repository public, and are you online? A private one needs 'gh auth login')"
+  version="${latest_url##*/}"
+fi
+case "$version" in
+  v[0-9]* | [0-9]*) ;;
+  *) fail "no published release found at $RELEASES_URL" ;;
+esac
 version="${version#v}"
 
 archive="rail0_${version}_${os}_${arch}.tar.gz"
@@ -74,10 +94,15 @@ tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT INT TERM
 
 say "Downloading rail0 $version ($os/$arch)…"
-curl -fsSL -o "$tmp/$archive" "$base/$archive" ||
-  fail "download failed: $base/$archive (is $version a release with a $os/$arch build?)"
-curl -fsSL -o "$tmp/checksums.txt" "$base/checksums.txt" ||
-  fail "could not download checksums.txt for $version; refusing to install unverified"
+if [ "$use_gh" = 1 ]; then
+  gh release download "v$version" -R "$REPO" -D "$tmp" -p "$archive" -p checksums.txt ||
+    fail "gh could not download $archive and checksums.txt for v$version"
+else
+  curl -fsSL -o "$tmp/$archive" "$base/$archive" ||
+    fail "download failed: $base/$archive (is $version a release with a $os/$arch build?)"
+  curl -fsSL -o "$tmp/checksums.txt" "$base/checksums.txt" ||
+    fail "could not download checksums.txt for $version; refusing to install unverified"
+fi
 
 want=$(awk -v f="$archive" '$2 == f { print $1 }' "$tmp/checksums.txt")
 [ -n "$want" ] || fail "checksums.txt lists no checksum for $archive; refusing to install unverified"

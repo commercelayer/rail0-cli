@@ -14,6 +14,11 @@ download verifies. The r0 alias follows, since it is a link to the same file.
 If rail0 lives in a directory you cannot write to (e.g. /usr/local/bin, where
 'make install' puts it), run it with sudo.
 
+While the repository is private, its releases are readable only with a GitHub token
+that has access to it: GITHUB_TOKEN or GH_TOKEN, or else your GitHub CLI login
+('gh auth token'). The token goes to the GitHub API only and is never stored. Under
+sudo, pass it through: 'sudo GITHUB_TOKEN="$(gh auth token)" rail0 update'.
+
 Interactive sessions also check for a new release once a day and offer to install
 it. The check never runs in CI, with --json or --quiet (or a stored 'output' default
 of json or quiet, unless another output flag is passed), when stdin or stderr is not

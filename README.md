@@ -77,6 +77,15 @@ It runs in any POSIX `sh`, including minimal containers. Optional variables:
 - `RAIL0_INSTALL_DIR=/somewhere/bin` changes the destination.
 - `RAIL0_RELEASES_URL` points at a mirror.
 
+While the repository is **private**, the raw URL above and the release downloads answer
+404 to an anonymous `curl`. With the [GitHub CLI](https://cli.github.com) signed in to
+an account that can read the repository, fetch the script through it; the script then
+downloads the release through `gh` too (still checksum-verified):
+
+```sh
+gh api repos/commercelayer/rail0-cli/contents/install.sh -H 'Accept: application/vnd.github.raw' | sh
+```
+
 ### Manual download (any platform, Windows included)
 
 Grab the archive for your platform from
@@ -170,8 +179,16 @@ It is skipped for local builds (`dev` or a `git describe` version), and a failed
 is silent. The last check time lives in the user cache directory, next to the session
 tokens (`update-check.json`).
 
-Both need the releases to be publicly downloadable. While the repository is private,
-`rail0 update` reports that no published release was found.
+While the repository is **private**, its releases are readable only with a GitHub token
+that has access to it. `rail0 update` (and the daily check) uses `GITHUB_TOKEN` or
+`GH_TOKEN` when set, else your GitHub CLI login (`gh auth token`), and downloads the
+assets through the API. The token is sent to `api.github.com` only and never stored.
+Without one it reports that no published release was found and says how to provide it.
+Under `sudo` the environment and your `gh` login are not root's, so pass the token in:
+
+```sh
+sudo GITHUB_TOKEN="$(gh auth token)" rail0 update
+```
 
 ### Guided setup (`rail0 init`)
 

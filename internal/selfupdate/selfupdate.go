@@ -5,6 +5,8 @@
 // checksums.txt with the SHA-256 of every archive. An update is:
 //
 //  1. read the latest release from the GitHub API (prereleases are never "latest");
+//     with a GitHub token when one is available (see GitHubToken), since a private
+//     repository's releases are invisible to an anonymous caller;
 //  2. download this platform's archive, reporting progress;
 //  3. verify its SHA-256 against checksums.txt — a mismatch aborts before anything on
 //     disk changes;
@@ -28,12 +30,15 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // DefaultAPIBase and DefaultRepo locate the releases. Fields on Updater so tests can
@@ -62,8 +67,14 @@ type Release struct {
 // Asset is one downloadable file of a release.
 type Asset struct {
 	Name string
-	URL  string
-	Size int64
+	// URL is the public download link (browser_download_url): it works only while the
+	// repository is public.
+	URL string
+	// APIURL is the asset's API endpoint (`url`), which serves the file to an
+	// authenticated caller with Accept: application/octet-stream — the only way to
+	// download an asset of a private repository.
+	APIURL string
+	Size   int64
 }
 
 // Progress is called while an archive downloads: done bytes so far, and total bytes
@@ -77,6 +88,9 @@ type Updater struct {
 	Repo    string
 	GOOS    string
 	GOARCH  string
+	// Token is a GitHub token sent to the API (never to any other host), "" for
+	// anonymous calls. See GitHubToken.
+	Token string
 }
 
 // New returns an Updater for the published CLI releases on this platform.
@@ -98,25 +112,31 @@ func (u *Updater) Latest(ctx context.Context) (*Release, error) {
 		return nil, err
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
+	u.authorize(req)
 	resp, err := u.Client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("reading the latest release: %w", err)
 	}
 	defer resp.Body.Close()
 	switch {
-	case resp.StatusCode == http.StatusNotFound:
-		// No release published yet — or the repository is not public, which GitHub
-		// also answers with 404 to an anonymous caller.
-		return nil, errors.New("no published rail0 release was found (the release repository may not be public yet)")
+	case resp.StatusCode == http.StatusNotFound && u.Token == "":
+		// No release published yet — or the repository is private, which GitHub also
+		// answers with 404 to an anonymous caller.
+		return nil, errors.New("no published rail0 release was found; if the repository is private, " +
+			"set GITHUB_TOKEN (or sign in with 'gh auth login') so the update can read it")
+	case resp.StatusCode == http.StatusNotFound, resp.StatusCode == http.StatusUnauthorized:
+		return nil, fmt.Errorf("no rail0 release was found with the GitHub token in use (HTTP %d): "+
+			"it may be expired, or lack read access to %s", resp.StatusCode, u.Repo)
 	case resp.StatusCode != http.StatusOK:
 		return nil, fmt.Errorf("reading the latest release: GitHub answered HTTP %d", resp.StatusCode)
 	}
 	var body struct {
 		TagName string `json:"tag_name"`
 		Assets  []struct {
-			Name string `json:"name"`
-			URL  string `json:"browser_download_url"`
-			Size int64  `json:"size"`
+			Name   string `json:"name"`
+			URL    string `json:"browser_download_url"`
+			APIURL string `json:"url"`
+			Size   int64  `json:"size"`
 		} `json:"assets"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
@@ -124,7 +144,7 @@ func (u *Updater) Latest(ctx context.Context) (*Release, error) {
 	}
 	rel := &Release{Version: strings.TrimPrefix(body.TagName, "v"), Assets: map[string]Asset{}}
 	for _, a := range body.Assets {
-		rel.Assets[a.Name] = Asset{Name: a.Name, URL: a.URL, Size: a.Size}
+		rel.Assets[a.Name] = Asset{Name: a.Name, URL: a.URL, APIURL: a.APIURL, Size: a.Size}
 	}
 	return rel, nil
 }
@@ -156,7 +176,7 @@ func (u *Updater) Install(ctx context.Context, rel *Release, exePath string, pro
 	}
 
 	var sumsBuf bytes.Buffer
-	if err := u.download(ctx, sums.URL, &sumsBuf, nil); err != nil {
+	if err := u.download(ctx, sums, &sumsBuf, nil); err != nil {
 		return fmt.Errorf("downloading %s: %w", checksumsName, err)
 	}
 	want, err := checksumFor(sumsBuf.Bytes(), archive.Name)
@@ -172,7 +192,7 @@ func (u *Updater) Install(ctx context.Context, rel *Release, exePath string, pro
 	defer tmp.Close()
 
 	hash := sha256.New()
-	if err := u.download(ctx, archive.URL, io.MultiWriter(tmp, hash), progress); err != nil {
+	if err := u.download(ctx, archive, io.MultiWriter(tmp, hash), progress); err != nil {
 		return fmt.Errorf("downloading %s: %w", archive.Name, err)
 	}
 	if got := hex.EncodeToString(hash.Sum(nil)); got != want {
@@ -186,11 +206,24 @@ func (u *Updater) Install(ctx context.Context, rel *Release, exePath string, pro
 	return Replace(exePath, bin)
 }
 
-// download streams url into w, calling progress as bytes arrive.
-func (u *Updater) download(ctx context.Context, url string, w io.Writer, progress Progress) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+// download streams an asset into w, calling progress as bytes arrive.
+//
+// With a token it reads the asset's API endpoint (the only route to a private
+// repository's file), which answers with a redirect to signed storage; net/http drops
+// the Authorization header on a redirect to another host, so the token stays with
+// GitHub's API. Without one it reads the public download link.
+func (u *Updater) download(ctx context.Context, a Asset, w io.Writer, progress Progress) error {
+	target := a.URL
+	if u.Token != "" && a.APIURL != "" {
+		target = a.APIURL
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
 	if err != nil {
 		return err
+	}
+	if target == a.APIURL {
+		req.Header.Set("Accept", "application/octet-stream")
+		u.authorize(req)
 	}
 	resp, err := u.Client.Do(req)
 	if err != nil {
@@ -207,6 +240,45 @@ func (u *Updater) download(ctx context.Context, url string, w io.Writer, progres
 	}
 	_, err = io.Copy(w, r)
 	return err
+}
+
+// authorize adds the token to a request for the GitHub API — and only for it: a URL
+// on any other host (a mirror, a redirect target, a test server's download link) goes
+// out without it.
+func (u *Updater) authorize(req *http.Request) {
+	if u.Token == "" {
+		return
+	}
+	api, err := url.Parse(u.APIBase)
+	if err != nil || !strings.EqualFold(api.Host, req.URL.Host) || req.URL.Scheme != api.Scheme {
+		return
+	}
+	req.Header.Set("Authorization", "Bearer "+u.Token)
+}
+
+// GitHubToken finds a token that can read the releases of a private repository: the
+// GITHUB_TOKEN or GH_TOKEN environment variable, else the GitHub CLI's own login
+// (`gh auth token`) when gh is installed. "" when there is none — the update then reads
+// the releases anonymously, which works once the repository is public.
+//
+// The token is only ever sent to the GitHub API (see authorize), never stored.
+func GitHubToken(ctx context.Context) string {
+	for _, name := range []string{"GITHUB_TOKEN", "GH_TOKEN"} {
+		if v := strings.TrimSpace(os.Getenv(name)); v != "" {
+			return v
+		}
+	}
+	gh, err := exec.LookPath("gh")
+	if err != nil {
+		return ""
+	}
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, gh, "auth", "token", "--hostname", "github.com").Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
 }
 
 type progressReader struct {

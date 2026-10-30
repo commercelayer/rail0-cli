@@ -75,6 +75,13 @@ func (g *payoutGateway) count(methodPath string) int {
 	return n
 }
 
+// all is every request the fake received, in order.
+func (g *payoutGateway) all() []string {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return append([]string(nil), g.requests...)
+}
+
 func (g *payoutGateway) sent(methodPath string) bool {
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -194,7 +201,7 @@ func payoutTransfer(t *testing.T, from, to, amount string) string {
 // and --yes does not stand in for the attestation.
 func TestDestinationAddRefusesWithoutTheDetailsConfirmation(t *testing.T) {
 	g := newPayoutGateway(t)
-	payoutDestAddChainID, payoutDestAddToken, payoutDestAddAddress = poChain, "USDC", poDeposit
+	payoutDestAddChainID, payoutDestAddToken, payoutDestAddAddress, payoutDestAddMin = poChain, "USDC", poDeposit, "10"
 	t.Cleanup(func() {
 		payoutDestAddChainID, payoutDestAddToken, payoutDestAddAddress, payoutDestAddMin = 0, "", "", ""
 	})
@@ -241,6 +248,224 @@ func TestDestinationAddSendsTheConfirmationAndBaseUnits(t *testing.T) {
 	}
 	if b["token"] != poToken || !strings.EqualFold(fmt.Sprint(b["wallet_id"]), addressForTestKey(t)) {
 		t.Errorf("token/wallet = %v/%v, want the resolved token and the session wallet", b["token"], b["wallet_id"])
+	}
+}
+
+// ── the required minimum ────────────────────────────────────────────────────
+
+// The minimum deposit is a required, explicit answer. Without a terminal, add with
+// neither --min-amount nor --no-minimum, with both, or with a negative minimum is
+// refused locally — nothing at all reaches the gateway, not even a token lookup.
+func TestDestinationAddRefusesWithoutAnExplicitMinimum(t *testing.T) {
+	for _, c := range []struct {
+		name, min string
+		noMin     bool
+		code      string
+		want      string
+	}{
+		{"neither flag", "", false, "minimum_required", "deposit page"},
+		{"both flags", "10", true, "minimum_conflict", "mutually exclusive"},
+		{"negative", "-1", false, "usage_error", "may not be negative"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			g := newPayoutGateway(t)
+			payoutDestAddChainID, payoutDestAddToken, payoutDestAddAddress = poChain, "USDC", poDeposit
+			payoutDestAddMin, payoutDestAddNoMin = c.min, c.noMin
+			payoutConfirmDetails = true // the minimum is refused regardless
+			t.Cleanup(func() {
+				payoutDestAddChainID, payoutDestAddToken, payoutDestAddAddress, payoutDestAddMin = 0, "", "", ""
+				payoutDestAddNoMin = false
+			})
+
+			err := payoutDestinationsAddCmd.RunE(payoutDestinationsAddCmd, nil)
+			if err == nil || !strings.Contains(err.Error(), c.want) {
+				t.Fatalf("want a refusal containing %q, got %v", c.want, err)
+			}
+			var ue *usageError
+			if !errors.As(err, &ue) || ue.Code != c.code {
+				t.Errorf("want usage error %s, got %#v", c.code, err)
+			}
+			if len(g.all()) > 0 {
+				t.Errorf("requests %v sent before the usage error", g.all())
+			}
+		})
+	}
+}
+
+// --no-minimum sends the flag no_minimum: true and no figure; --min-amount 0 is an
+// ordinary figure, sent as "0" without the flag. The summary says which.
+func TestDestinationAddSendsTheMinimumAnswer(t *testing.T) {
+	for _, c := range []struct {
+		name, min string
+		noMin     bool
+		wantMin   any
+		wantFlag  any
+		summary   string
+	}{
+		{"--no-minimum", "", true, nil, true, "none (no minimum at this venue)"},
+		{"--min-amount 0", "0", false, "0", nil, "minimum deposit  0 USDC"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			g := newPayoutGateway(t)
+			payoutDestAddChainID, payoutDestAddToken, payoutDestAddAddress = poChain, "USDC", poDeposit
+			payoutDestAddMin, payoutDestAddNoMin = c.min, c.noMin
+			payoutConfirmDetails = true
+			t.Cleanup(func() {
+				payoutDestAddChainID, payoutDestAddToken, payoutDestAddAddress, payoutDestAddMin = 0, "", "", ""
+				payoutDestAddNoMin = false
+			})
+
+			var notice string
+			_ = captureStdout(t, func() {
+				notice = captureStderr(t, func() {
+					if err := payoutDestinationsAddCmd.RunE(payoutDestinationsAddCmd, nil); err != nil {
+						t.Fatalf("add: %v", err)
+					}
+				})
+			})
+			b := g.body("POST /payout_destinations")
+			if b == nil || b["min_amount"] != c.wantMin || b["no_minimum"] != c.wantFlag {
+				t.Errorf("body = %v, want min_amount %v and no_minimum %v", b, c.wantMin, c.wantFlag)
+			}
+			if !strings.Contains(notice, c.summary) {
+				t.Errorf("the summary does not state %q:\n%s", c.summary, notice)
+			}
+		})
+	}
+}
+
+// update: --min-amount "" is refused locally (nothing sent); --no-minimum sends the
+// flag and, on a destination that had a figure, needs the details consent; both
+// flags are a conflict.
+func TestDestinationUpdateMinimumAnswer(t *testing.T) {
+	cmd := payoutDestinationsUpdateCmd
+	reset := func() {
+		payoutDestUpdateMin, payoutDestUpdateNoMin = "", false
+		cmd.Flags().Lookup("min-amount").Changed = false
+		cmd.Flags().Lookup("no-minimum").Changed = false
+	}
+	t.Cleanup(reset)
+
+	t.Run(`--min-amount ""`, func(t *testing.T) {
+		g := newPayoutGateway(t)
+		_ = cmd.Flags().Set("min-amount", "")
+		t.Cleanup(reset)
+		payoutConfirmDetails = true
+		err := cmd.RunE(cmd, []string{poDestID})
+		var ue *usageError
+		if !errors.As(err, &ue) || ue.Code != "minimum_required" || !strings.Contains(err.Error(), "--no-minimum") {
+			t.Fatalf("want usage error minimum_required naming --no-minimum, got %v", err)
+		}
+		if len(g.all()) > 0 {
+			t.Errorf("requests %v sent before the usage error", g.all())
+		}
+	})
+
+	t.Run("--no-minimum without consent", func(t *testing.T) {
+		g := newPayoutGateway(t)
+		_ = cmd.Flags().Set("no-minimum", "true")
+		t.Cleanup(reset)
+		err := cmd.RunE(cmd, []string{poDestID})
+		if err == nil || !strings.Contains(err.Error(), "--confirm-details") {
+			t.Fatalf("want a refusal, got %v", err)
+		}
+		if g.sent("PATCH /payout_destinations/" + poDestID) {
+			t.Error("the minimum was removed without the details confirmation")
+		}
+	})
+
+	t.Run("--no-minimum", func(t *testing.T) {
+		g := newPayoutGateway(t)
+		_ = cmd.Flags().Set("no-minimum", "true")
+		t.Cleanup(reset)
+		payoutConfirmDetails = true
+		_ = captureStdout(t, func() {
+			if err := cmd.RunE(cmd, []string{poDestID}); err != nil {
+				t.Fatalf("update: %v", err)
+			}
+		})
+		b := g.body("PATCH /payout_destinations/" + poDestID)
+		if b["no_minimum"] != true || b["min_amount"] != nil || b["confirm_details"] != true {
+			t.Errorf("body = %v, want no_minimum true, no min_amount, confirm_details", b)
+		}
+	})
+
+	t.Run("--no-minimum, already none", func(t *testing.T) {
+		g := newPayoutGateway(t)
+		g.dest["min_amount"], g.dest["no_minimum"] = nil, true
+		_ = cmd.Flags().Set("no-minimum", "true")
+		t.Cleanup(reset)
+		_ = captureStdout(t, func() {
+			if err := cmd.RunE(cmd, []string{poDestID}); err != nil {
+				t.Fatalf("update: %v", err)
+			}
+		})
+		if b := g.body("PATCH /payout_destinations/" + poDestID); b["confirm_details"] != nil {
+			t.Errorf("an unchanged answer sent confirm_details: %v", b)
+		}
+	})
+
+	t.Run("both", func(t *testing.T) {
+		g := newPayoutGateway(t)
+		_ = cmd.Flags().Set("min-amount", "5")
+		_ = cmd.Flags().Set("no-minimum", "true")
+		t.Cleanup(reset)
+		err := cmd.RunE(cmd, []string{poDestID})
+		var ue *usageError
+		if !errors.As(err, &ue) || ue.Code != "minimum_conflict" {
+			t.Fatalf("want usage error minimum_conflict, got %v", err)
+		}
+		if len(g.all()) > 0 {
+			t.Errorf("requests %v sent before the usage error", g.all())
+		}
+	})
+}
+
+// list/get show the minimum as a reader needs it: the figure, "none" when the
+// merchant stated the venue has none, "not set" on a destination that never stated it.
+func TestPayoutDestinationViewMinimum(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		d    rail0.PayoutDestination
+		want string
+	}{
+		{"figure", rail0.PayoutDestination{MinAmount: "10000000", MinAmountFormatted: "10", TokenSymbol: "USDC"}, "10 USDC"},
+		{"zero figure", rail0.PayoutDestination{MinAmount: "0", MinAmountFormatted: "0", TokenSymbol: "USDC"}, "0 USDC"},
+		{"none", rail0.PayoutDestination{NoMinimum: true}, "none"},
+		{"not set", rail0.PayoutDestination{}, "not set"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			b, _ := json.Marshal(viewPayoutDestination(&c.d))
+			var m map[string]any
+			_ = json.Unmarshal(b, &m)
+			if m["minimum"] != c.want {
+				t.Errorf("minimum = %v, want %q (%s)", m["minimum"], c.want, b)
+			}
+		})
+	}
+
+	g := newPayoutGateway(t)
+	g.dest["min_amount"], g.dest["no_minimum"] = nil, true
+	out := captureStdout(t, func() {
+		if err := payoutDestinationsGetCmd.RunE(payoutDestinationsGetCmd, []string{poDestID}); err != nil {
+			t.Fatalf("get: %v", err)
+		}
+	})
+	if !strings.Contains(out, `"minimum"`) || !strings.Contains(out, "none") {
+		t.Errorf("get output does not carry the minimum:\n%s", out)
+	}
+}
+
+// The minimum hints name the flags.
+func TestPayoutMinimumHints(t *testing.T) {
+	if h := hintFor("minimum_required", ""); !strings.Contains(h, "--no-minimum") || !strings.Contains(h, "--min-amount") {
+		t.Errorf("minimum_required hint %q", h)
+	}
+	if h := hintFor("minimum_conflict", ""); !strings.Contains(h, "--no-minimum") {
+		t.Errorf("minimum_conflict hint %q", h)
+	}
+	if hintFor("payout_destination_minimum_unset", "") != "" {
+		t.Error("payout_destination_minimum_unset no longer exists: no hint")
 	}
 }
 

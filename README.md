@@ -1891,6 +1891,13 @@ and need your explicit consent: a y/N prompt (default **no**) on a terminal, or 
 
 `--min-amount` is the venue's minimum deposit. A venue may ignore a deposit below it, and that deposit can be lost for good — so payouts below it are refused (`payout_below_minimum`) and the proof is raised to it. Raising it above the destination's latest proof takes the verification away: the destination needs a new proof.
 
+The minimum is **required**, and stated explicitly: `destinations add` takes `--min-amount <decimal>` (the figure — never negative; `0` is an ordinary figure) **or** `--no-minimum` when the venue has none (sent as `no_minimum: true`, never as a `0`). Passing neither prompts for it on a terminal — an empty answer is not accepted, type `none` if the venue has none — and is a usage error (`minimum_required`) without one or with `--agent`, before any request; passing both is a usage error (`minimum_conflict`). On `update`, `--min-amount ""` is refused locally: `--no-minimum` states the venue has none (and removes a figure), `--min-amount <decimal>` sets a figure (and clears `--no-minimum`); like any change of the minimum, either asks for the details confirmation. Destinations show it in their `minimum` field: the figure, `none` (the merchant stated the venue has none), or `not set` — a destination registered before the minimum was asked; state it with `update`:
+
+```sh
+rail0 payouts destinations update <destination_id> --min-amount 10 --confirm-details
+rail0 payouts destinations update <destination_id> --no-minimum --confirm-details   # the venue has none
+```
+
 `--reserve` is what `send --amount all` leaves in the wallet, so refunds still inside their window can be paid. Unset (or `--reserve ""`), the gateway keeps its suggestion: the refundable balance of the wallet's payments in that token (`suggested_reserve` on the destination).
 
 Both are **decimals in token units** (`10.00`), converted with the token's decimals, like every other amount flag.
@@ -1902,6 +1909,7 @@ rail0 payouts destinations --status verified
 rail0 payouts destinations get <destination_id>
 rail0 payouts destinations update <destination_id> --label "Exchange (main)" --reserve 50
 rail0 payouts destinations update <destination_id> --min-amount 25 --confirm-details
+rail0 payouts destinations update <destination_id> --no-minimum --confirm-details
 rail0 payouts destinations disable <destination_id>     # reversible; any wallet of the account
 rail0 payouts destinations enable <destination_id>      # keeps the verification it had
 rail0 payouts destinations events <destination_id>      # its audit trail and its payouts'

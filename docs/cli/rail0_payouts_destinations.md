@@ -23,10 +23,13 @@ Its lifecycle:
                  becomes "verified" and takes payouts of any amount.
 
 Minimum: a venue may silently ignore a deposit below its minimum, and that deposit
-can be lost for good. Set --min-amount to the venue's minimum: payouts below it are
-refused, and the proof is raised to it. Changing the minimum asks for the details
-confirmation again, and raising it above the latest proof takes the verification
-away (the destination needs a new proof).
+can be lost for good. Every destination states it: --min-amount with the venue's
+minimum, or --no-minimum when the venue has none. Payouts below it are refused, and
+the proof is raised to it. Changing the minimum asks for the details confirmation
+again, and raising it above the latest proof takes the verification away (the
+destination needs a new proof). A destination registered before the minimum was
+asked shows it as "not set" (the "minimum" field of list and get): state it with
+'update'.
 
 Refund reserve: a full-balance payout ('send --amount all') leaves --reserve in the
 wallet, so refunds still inside their window can be paid. Unset, the gateway keeps

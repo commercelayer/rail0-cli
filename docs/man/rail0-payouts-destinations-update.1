@@ -15,13 +15,17 @@ destination's own wallet may.
 
 .PP
 --reserve and --min-amount are decimals in token units, converted with the
-destination token's decimals. An empty value clears the field: --reserve ""
-restores the gateway's suggestion, --min-amount "" removes the minimum.
+destination token's decimals. --reserve "" restores the gateway's suggestion. The
+minimum cannot be blanked: --min-amount "" is refused — to state that the venue has
+no minimum, pass --no-minimum. --min-amount and --no-minimum exclude each other. A
+destination registered before the minimum was asked shows it as "not set": state it
+here.
 
 .PP
-CHANGING the minimum asks for the details confirmation again, exactly like 'add'
-(a y/N prompt on a terminal, or --confirm-details; --yes does not count): the
-minimum is copied from the venue, and a wrong one is how a deposit gets lost.
+CHANGING the minimum (a new figure, or --no-minimum on one that had a figure)
+asks for the details confirmation again, exactly like 'add' (a y/N prompt on a
+terminal, or --confirm-details; --yes does not count): the minimum is copied from
+the venue, and a wrong one is how a deposit gets lost.
 Re-sending the current value asks nothing. Raising it above the destination's
 latest proof takes the verification away: the destination goes back to
 "unverified" and needs a new proof at the new minimum.
@@ -44,7 +48,11 @@ To switch a destination off or on, use 'disable' / 'enable'.
 
 .PP
 \fB--min-amount\fP=""
-	New minimum deposit, decimal in token units ("" removes it); asks for the details confirmation
+	New minimum deposit, decimal in token units; asks for the details confirmation
+
+.PP
+\fB--no-minimum\fP[=false]
+	The venue has no minimum deposit (no_minimum: true; removes a figure); asks for the details confirmation
 
 .PP
 \fB--reserve\fP=""
@@ -81,6 +89,7 @@ To switch a destination off or on, use 'disable' / 'enable'.
   rail0 payouts destinations update <destination_id> --label "Exchange (main)"
   rail0 payouts destinations update <destination_id> --reserve 50
   rail0 payouts destinations update <destination_id> --min-amount 25 --confirm-details
+  rail0 payouts destinations update <destination_id> --no-minimum --confirm-details
 .EE
 
 

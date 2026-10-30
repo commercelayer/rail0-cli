@@ -58,7 +58,12 @@ Topics (-t/--topic completes them):
                                    lapse (inside the gateway's
                                    AUTHORIZATION_EXPIRING_NOTICE window, 24h by
                                    default). The status does not change; a window
-                                   that already closed sends payments.expired.`,
+                                   that already closed sends payments.expired.
+  payouts.confirmed                a payout's transfer was mined with the expected
+                                   ERC-20 Transfer
+  payouts.failed                   a payout failed — its error_code says how
+                                   (reverted, dropped, cancelled, …)
+  payout_destinations.verified     a payout destination was confirmed`,
 }
 
 // webhookTopics is the topic vocabulary, taken from the SDK's constants rather than
@@ -79,6 +84,9 @@ var webhookTopics = []string{
 	rail0.TopicPaymentsFailed,
 	rail0.TopicPaymentsDisputed,
 	rail0.TopicPaymentsDisputeClosed,
+	rail0.TopicPayoutsConfirmed,
+	rail0.TopicPayoutsFailed,
+	rail0.TopicPayoutDestinationsVerified,
 }
 
 // ── webhooks list ──────────────────────────────────────────────────────────────

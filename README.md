@@ -35,7 +35,7 @@ rotate is reported rather than silently honoured. Keys are scoped to the payment
 - [Shell completion](#shell-completion)
 - [Configuration](#configuration) — [defaults](#persisted-defaults-config) · [environments](#environments-env) · [address book](#address-book-aliases) · [signing keys](#signing-keys-os-keychain) · [new wallet](#new-wallet-keys-generate)
 - [Signing modes](#signing-modes) — who signs what, and when
-- [Commands](#commands) — the full reference, including [repairing a webhook](#repairing-a-webhook-that-stopped-delivering)
+- [Commands](#commands) — the full reference, including [repairing a webhook](#repairing-a-webhook-that-stopped-delivering) and [payouts](#payouts)
 - [Full flow examples](#full-flow-examples) — authorize/capture, charge, refund
 - [Output modes](#output-modes) — including [agent mode (`--agent`)](#agent-mode---agent)
 - [Releasing](#releasing) — for maintainers
@@ -1261,6 +1261,9 @@ Manage webhook subscriptions for the authenticated account. A webhook subscribes
 | `payments.failed` | an on-chain attempt failed |
 | `payments.disputed` | a dispute is opened |
 | `payments.dispute_closed` | a dispute is closed |
+| `payouts.confirmed` | a payout's transfer was mined with the expected ERC-20 `Transfer` |
+| `payouts.failed` | a payout failed — its `error_code` says how (`reverted`, `dropped`, `cancelled`, …) |
+| `payout_destinations.verified` | a payout destination was confirmed (`payouts destinations confirm`) |
 
 Every payment payload carries `capturable_amount` and `authorization_expiry`.
 
@@ -1772,6 +1775,92 @@ read of the payment (at most one `GET /blockchains` per process).
 ```sh
 rail0 payments wait <rail0Id> --until captured
 ```
+
+---
+
+### Payouts
+
+Move a merchant wallet's tokens to a deposit address at a venue of your own — an exchange account, Circle Mint, another wallet you control. The gateway builds an unsigned ERC-20 `transfer` from the wallet to a registered **destination**; the CLI checks it is exactly that transfer (the destination's token and chain, its address, the amount, value 0, from your key's wallet) and signs it locally. The gateway never holds funds or keys and never talks to the venue. Every payout command needs a login; reads cover the whole account, writes act for the wallet you sign in with, which must be the destination's. A **deactivated account is read-only**: it cannot prepare, send or change payouts or destinations (`403 account_deactivated`).
+
+#### First payout to a new venue
+
+```sh
+# 1. register the deposit address — you confirm you checked the details at the venue
+rail0 payouts destinations add -c 5042002 -t USDC -A 0xVenueDeposit… \
+  -l "Exchange USDC (Arc)" --min-amount 10
+
+# 2. send the proof: 1 token unit, raised to the minimum
+rail0 payouts send --destination <destination_id> --proof -p @merchant-key
+
+# 3. once the venue shows the proof CREDITED (not just mined)
+rail0 payouts destinations confirm <destination_id>
+
+# 4. pay out — a decimal, or all: the balance minus the refund reserve
+rail0 payouts send --destination <destination_id> --amount 250.00 -p @merchant-key
+```
+
+A destination is bound to **one chain and one token**: an EVM address is the same string on every chain, but a venue credits only the network it issued the address for. Generate the deposit address at the venue with the network set to `--chain-id`.
+
+#### Confirming the details (`--confirm-details`)
+
+`destinations add`, and an `update` that **changes** the minimum, show what will be registered followed by the gateway's details statement (`details_v1`):
+
+> I have checked the address, network, token and minimum deposit on the venue's deposit page and confirm they are correct. Funds sent to a wrong address or network, or below the venue's minimum, may be permanently lost and cannot be recovered by rail0.
+
+and need your explicit consent: a y/N prompt (default **no**) on a terminal, or `--confirm-details` without one or with `--agent`. Without it nothing is sent. `--yes` does **not** count — a script that passes it everywhere must not attest, by accident, to having checked a page nobody looked at. The gateway records the attestation (version, who, when) in the destination's audit trail.
+
+#### Minimum and refund reserve
+
+`--min-amount` is the venue's minimum deposit. A venue may ignore a deposit below it, and that deposit can be lost for good — so payouts below it are refused (`payout_below_minimum`) and the proof is raised to it. Raising it above the destination's latest proof takes the verification away: the destination needs a new proof.
+
+`--reserve` is what `send --amount all` leaves in the wallet, so refunds still inside their window can be paid. Unset (or `--reserve ""`), the gateway keeps its suggestion: the refundable balance of the wallet's payments in that token (`suggested_reserve` on the destination).
+
+Both are **decimals in token units** (`10.00`), converted with the token's decimals, like every other amount flag.
+
+#### `payouts destinations` — list (also `destinations list`)
+
+```sh
+rail0 payouts destinations --status verified
+rail0 payouts destinations get <destination_id>
+rail0 payouts destinations update <destination_id> --label "Exchange (main)" --reserve 50
+rail0 payouts destinations update <destination_id> --min-amount 25 --confirm-details
+rail0 payouts destinations disable <destination_id>     # reversible; any wallet of the account
+rail0 payouts destinations enable <destination_id>      # keeps the verification it had
+rail0 payouts destinations events <destination_id>      # its audit trail and its payouts'
+```
+
+`disable` settles the destination's pending payout first: an unsigned one fails `cancelled`; a **signed** one refuses the switch-off (`409 payout_already_signed`) because its transaction may still be mined. `confirm` asks y/N (`--yes` to skip) — confirm only after you see the deposit at the venue: a transfer can be mined and never credited.
+
+#### `payouts send`
+
+Prepare → verify → sign → submit in one step, with the destination wallet's key (`-p`, `@name`, `RAIL0_PRIVATE_KEY`, or a hidden prompt). Before signing it shows the amount, token, deposit address, network and sending wallet and asks to confirm (y/N); `--yes` skips it and is required without a terminal. With `--amount all` or `--proof` the gateway computes the amount; to see the exact figure first, use `prepare` + `submit`. A payout to a disabled or not-yet-verified destination is refused before the prompt.
+
+The result is the payout, `submitted` with its `transaction_hash` (`-q` prints the hash); it turns `confirmed` once mined. A node refusal (502) leaves it `pending` and signed: `payouts resend <id>`.
+
+#### `payouts prepare` / `payouts submit <payout_id>`
+
+`prepare` builds the payout without signing and prints it — the exact `amount`/`amount_formatted` and `unsigned_transaction`. Then either `submit <id> -p …` (verify against the destination read again, confirm, sign, submit), or sign it with a wallet of your own and report the hash with `report-hash`. Only a pending, **unsigned** payout can be signed; a signed one is `resend`'s.
+
+#### `payouts` — list (also `payouts list`), `get`, `events`
+
+```sh
+rail0 payouts --status submitted,confirmed --purpose payout
+rail0 payouts list --destination <destination_id> --created-from 2026-10-01T00:00:00Z
+rail0 payouts get <payout_id>
+rail0 payouts events <payout_id>
+```
+
+A payout goes `pending` → `submitted` → `confirmed`, or `failed` with an `error_code`: `reverted`, `foreign_transfer`, `dropped`, `submission_timeout`, `cancelled`. One pending payout per destination: a new prepare replaces an unsigned one.
+
+#### `payouts resend` / `cancel` / `report-hash`
+
+```sh
+rail0 payouts resend <payout_id>                  # same signed bytes again: mined once at most
+rail0 payouts cancel <payout_id>                  # an UNSIGNED pending payout; frees the destination
+rail0 payouts report-hash <payout_id> 0x5c50…     # a transfer you broadcast yourself
+```
+
+`report-hash` also brings back a payout that failed `submission_timeout` or `dropped` because the transaction that went out was sped up or replaced.
 
 ---
 

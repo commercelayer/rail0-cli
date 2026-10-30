@@ -7,7 +7,7 @@ require (
 	github.com/charmbracelet/huh v1.0.0
 	github.com/charmbracelet/log v1.0.0
 	github.com/charmbracelet/x/term v0.2.2
-	github.com/commercelayer/rail0-go v1.8.1
+	github.com/commercelayer/rail0-go v1.8.2-0.20261030135203-f353f67bfca7
 	github.com/ethereum/go-ethereum v1.17.9
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10

@@ -53,6 +53,7 @@ Use 'rail0 <command> --help' for detailed usage of any command.
 * [rail0 open](rail0_open.md)	 - Open the admin app in the browser, on a payment's page when given its id
 * [rail0 payment-methods](rail0_payment-methods.md)	 - Discover a merchant's accepted wallets/tokens (public, no login)
 * [rail0 payments](rail0_payments.md)	 - Payment lifecycle operations
+* [rail0 payouts](rail0_payouts.md)	 - Send a wallet's tokens to your own venue (lists when run bare; requires login)
 * [rail0 token](rail0_token.md)	 - Print the stored session token, or suggest logging in
 * [rail0 tokens](rail0_tokens.md)	 - List supported tokens (symbols used in --token)
 * [rail0 update](rail0_update.md)	 - Update rail0 to the latest release

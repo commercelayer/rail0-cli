@@ -25,6 +25,9 @@ Only a pending, unsigned payout can be signed. One already signed is 'resend's:
 its transaction may already be in a mempool, and signing again would risk a second
 transfer.
 
+.PP
+-w/--wait follows the payout until confirmed or failed, as in 'payouts send'.
+
 
 .SH OPTIONS
 \fB-h\fP, \fB--help\fP[=false]
@@ -33,6 +36,14 @@ transfer.
 .PP
 \fB-p\fP, \fB--private-key\fP=""
 	The destination wallet's key: 0x hex, @name for an OS-keychain key ('rail0 keys add'), or RAIL0_PRIVATE_KEY
+
+.PP
+\fB--timeout\fP=15m0s
+	Max time to wait when --wait is set; unset, 10× the chain's measured p90 settlement, kept within 5m–15m
+
+.PP
+\fB-w\fP, \fB--wait\fP[=false]
+	Block until the operation confirms on-chain (or fails)
 
 .PP
 \fB-y\fP, \fB--yes\fP[=false]
@@ -67,6 +78,7 @@ transfer.
 .SH EXAMPLE
 .EX
   rail0 payouts submit <payout_id> -p @merchant-key
+  rail0 payouts submit <payout_id> -p @merchant-key --wait
 .EE
 
 

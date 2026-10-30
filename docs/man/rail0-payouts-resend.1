@@ -17,10 +17,21 @@ mined once at most, and resending is always safe. Nothing is signed again.
 .PP
 422 payout_not_signed when nothing is stored: sign it with 'payouts submit \&'.
 
+.PP
+-w/--wait follows the payout until confirmed or failed, as in 'payouts send'.
+
 
 .SH OPTIONS
 \fB-h\fP, \fB--help\fP[=false]
 	help for resend
+
+.PP
+\fB--timeout\fP=15m0s
+	Max time to wait when --wait is set; unset, 10× the chain's measured p90 settlement, kept within 5m–15m
+
+.PP
+\fB-w\fP, \fB--wait\fP[=false]
+	Block until the operation confirms on-chain (or fails)
 
 
 .SH OPTIONS INHERITED FROM PARENT COMMANDS
@@ -51,6 +62,7 @@ mined once at most, and resending is always safe. Nothing is signed again.
 .SH EXAMPLE
 .EX
   rail0 payouts resend <payout_id>
+  rail0 payouts resend <payout_id> --wait
 .EE
 
 

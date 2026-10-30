@@ -37,6 +37,42 @@ type payoutGateway struct {
 	prepared map[string]any
 	requests []string
 	bodies   map[string]map[string]any // "METHOD path" → last JSON body
+	// polls, once the payout was submitted or resent, is what successive GET
+	// /payouts/{id} answer (the last one repeats): the payout as a --wait sees it.
+	polls     []map[string]any
+	submitted bool
+}
+
+// pollsAfterSubmit makes GET /payouts/{id} answer the submitted payout with each
+// status in turn once a submit or resend went out; extra fields go on the last one.
+func (g *payoutGateway) pollsAfterSubmit(statuses []string, last map[string]any) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	for i, st := range statuses {
+		p := map[string]any{}
+		for k, v := range g.prepared {
+			p[k] = v
+		}
+		p["status"], p["signed"], p["transaction_hash"] = st, true, "0x"+strings.Repeat("ab", 32)
+		if i == len(statuses)-1 {
+			for k, v := range last {
+				p[k] = v
+			}
+		}
+		g.polls = append(g.polls, p)
+	}
+}
+
+func (g *payoutGateway) count(methodPath string) int {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	n := 0
+	for _, r := range g.requests {
+		if r == methodPath {
+			n++
+		}
+	}
+	return n
 }
 
 func (g *payoutGateway) sent(methodPath string) bool {
@@ -85,6 +121,14 @@ func newPayoutGateway(t *testing.T) *payoutGateway {
 		g.requests = append(g.requests, key)
 		g.bodies[key] = body
 		dest, prepared := g.dest, g.prepared
+		if r.Method == http.MethodPost && (r.URL.Path == "/payouts/"+poID+"/submit" || r.URL.Path == "/payouts/"+poID+"/resend") {
+			g.submitted = true
+		} else if r.Method == http.MethodGet && r.URL.Path == "/payouts/"+poID && g.submitted && len(g.polls) > 0 {
+			prepared = g.polls[0]
+			if len(g.polls) > 1 {
+				g.polls = g.polls[1:]
+			}
+		}
 		g.mu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
 		switch {
@@ -101,7 +145,7 @@ func newPayoutGateway(t *testing.T) *payoutGateway {
 			_ = json.NewEncoder(w).Encode(dest)
 		case r.URL.Path == "/payouts/prepare", r.URL.Path == "/payouts/"+poID:
 			_ = json.NewEncoder(w).Encode(prepared)
-		case r.URL.Path == "/payouts/"+poID+"/submit":
+		case r.URL.Path == "/payouts/"+poID+"/submit", r.URL.Path == "/payouts/"+poID+"/resend":
 			w.WriteHeader(http.StatusAccepted)
 			out := map[string]any{}
 			for k, v := range prepared {
@@ -124,6 +168,7 @@ func newPayoutGateway(t *testing.T) *payoutGateway {
 		tokenCatalogAll = previous
 		assumeYes, payoutConfirmDetails = false, false
 		payoutSendDestination, payoutSendAmount, payoutSendProof, payoutSendKey, payoutSubmitKey = "", "", false, "", ""
+		waitFlag, waitTimeout, waitTimeoutExplicit = false, defaultWaitTimeout, false
 	})
 	return g
 }
@@ -475,5 +520,103 @@ func TestPayoutCommandTree(t *testing.T) {
 	}
 	if !strings.Contains(rail0.PayoutDetailsConfirmationText, "permanently lost") {
 		t.Error("unexpected details text")
+	}
+}
+
+// ── --wait ───────────────────────────────────────────────────────────────────
+
+// send --wait follows the payout past the submit: submitted → confirmed, and the
+// result is the confirmed payout rather than the submit's answer.
+func TestPayoutsSendWaitFollowsTheTransferToConfirmed(t *testing.T) {
+	g := newPayoutGateway(t)
+	fastPolls(t)
+	g.pollsAfterSubmit([]string{"submitted", "submitted", "confirmed"}, map[string]any{"block_number": 42})
+	payoutSendDestination, payoutSendAmount, payoutSendKey = poDestID, "25", testKeyHex
+	assumeYes, waitFlag = true, true
+
+	out := captureStdout(t, func() {
+		if err := payoutsSendCmd.RunE(payoutsSendCmd, nil); err != nil {
+			t.Fatalf("send --wait: %v", err)
+		}
+	})
+	if !strings.Contains(out, `"status": "confirmed"`) || !strings.Contains(out, `"block_number": 42`) {
+		t.Errorf("with --wait the result is the confirmed payout, got:\n%s", out)
+	}
+	if n := g.count("GET /payouts/" + poID); n != 3 {
+		t.Errorf("polled %d times, want 3 (until confirmed)", n)
+	}
+}
+
+// A payout that fails while waited on stops the wait at once with the gateway's
+// detail; submission_timeout points at report-hash, the way back.
+func TestPayoutsWaitStopsOnFailed(t *testing.T) {
+	for code, want := range map[string]string{
+		"reverted":           "transfer reverted",
+		"submission_timeout": "payouts report-hash " + poID,
+	} {
+		t.Run(code, func(t *testing.T) {
+			g := newPayoutGateway(t)
+			fastPolls(t)
+			g.pollsAfterSubmit([]string{"submitted", "failed"},
+				map[string]any{"error_code": code, "error_detail": "transfer reverted"})
+			payoutSubmitKey = testKeyHex
+			assumeYes, waitFlag = true, true
+
+			var err error
+			_ = captureStdout(t, func() { err = payoutsSubmitCmd.RunE(payoutsSubmitCmd, []string{poID}) })
+			if err == nil || !strings.Contains(err.Error(), "failed") || !strings.Contains(err.Error(), want) {
+				t.Fatalf("err = %v, want the failure with %q", err, want)
+			}
+			if errors.Is(err, ErrWaitGaveUp) || exitCode(err) != 1 {
+				t.Errorf("a failed payout is a failure (exit 1), not a timeout: exit %d", exitCode(err))
+			}
+		})
+	}
+}
+
+// A wait that runs out says the transfer may still be in flight and exits 11, like a
+// payment wait: never "failed", never "safe to retry".
+func TestPayoutsResendWaitGivesUpInFlight(t *testing.T) {
+	g := newPayoutGateway(t)
+	fastPolls(t)
+	g.pollsAfterSubmit([]string{"submitted"}, nil)
+	waitFlag, waitTimeout, waitTimeoutExplicit = true, 20*time.Millisecond, true
+
+	var err error
+	_ = captureStdout(t, func() { err = payoutsResendCmd.RunE(payoutsResendCmd, []string{poID}) })
+	if !errors.Is(err, ErrWaitGaveUp) || exitCode(err) != ExitCodeInFlight {
+		t.Fatalf("err = %v (exit %d), want a give-up exiting %d", err, exitCode(err), ExitCodeInFlight)
+	}
+	if !strings.Contains(err.Error(), "rail0 payouts get "+poID) {
+		t.Errorf("the give-up must name the check command: %v", err)
+	}
+	if !g.sent("POST /payouts/" + poID + "/resend") {
+		t.Error("resend never went out")
+	}
+}
+
+// Without --wait nothing is polled: the submit's answer is the result, as before.
+func TestPayoutsSendWithoutWaitDoesNotPoll(t *testing.T) {
+	g := newPayoutGateway(t)
+	g.pollsAfterSubmit([]string{"confirmed"}, nil)
+	payoutSendDestination, payoutSendAmount, payoutSendKey = poDestID, "25", testKeyHex
+	assumeYes = true
+	_ = captureStdout(t, func() {
+		if err := payoutsSendCmd.RunE(payoutsSendCmd, nil); err != nil {
+			t.Fatalf("send: %v", err)
+		}
+	})
+	if n := g.count("GET /payouts/" + poID); n != 0 {
+		t.Errorf("polled %d times without --wait", n)
+	}
+}
+
+func TestPayoutSentHintAfterAWait(t *testing.T) {
+	if h := payoutSentHint(&rail0.Payout{ID: poID, Purpose: "payout", Status: "confirmed"}); h != "" {
+		t.Errorf("a confirmed payout needs no next step, got %q", h)
+	}
+	h := payoutSentHint(&rail0.Payout{ID: poID, DestinationID: poDestID, Purpose: "proof", Status: "confirmed"})
+	if !strings.Contains(h, "destinations confirm "+poDestID) || strings.Contains(h, "payouts get") {
+		t.Errorf("a confirmed proof leaves only the venue check: %q", h)
 	}
 }

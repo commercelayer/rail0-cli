@@ -187,13 +187,31 @@ var payoutsResendCmd = &cobra.Command{
 refused it or did not answer. The same bytes, so the same nonce and hash: it can be
 mined once at most, and resending is always safe. Nothing is signed again.
 
-422 payout_not_signed when nothing is stored: sign it with 'payouts submit <id>'.`,
-	Example: `  rail0 payouts resend <payout_id>`,
-	Args:    cobra.ExactArgs(1),
+422 payout_not_signed when nothing is stored: sign it with 'payouts submit <id>'.
+
+-w/--wait follows the payout until confirmed or failed, as in 'payouts send'.`,
+	Example: `  rail0 payouts resend <payout_id>
+  rail0 payouts resend <payout_id> --wait`,
+	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return ui.RunAPIWithMessage("Resending…", func() (any, error) {
-			return newClient().Payouts.Resend(context.Background(), args[0])
+		ctx := context.Background()
+		client := newClient()
+		var sent *rail0.Payout
+		err := ui.RunAPIWithMessage(actionLabel("Resending…"), func() (any, error) {
+			p, err := client.Payouts.Resend(ctx, args[0])
+			if err != nil {
+				return nil, err
+			}
+			sent = p
+			return submittedPayoutThenWait(ctx, client, p, &sent)
 		})
+		if err != nil {
+			return err
+		}
+		if waitFlag {
+			notePayoutSent(sent)
+		}
+		return nil
 	},
 }
 
@@ -247,6 +265,8 @@ payout returns to submitted.`,
 func init() {
 	addPayoutListFlags(payoutsCmd)
 	addPayoutListFlags(payoutsListCmd)
+
+	addWaitFlags(payoutsResendCmd)
 
 	payoutsEventsCmd.Flags().IntVar(&payoutEventsPage, "page", 0, "Page number (1-based)")
 	payoutsEventsCmd.Flags().IntVar(&payoutEventsPerPage, "per-page", 0, "Events per page (max 100)")

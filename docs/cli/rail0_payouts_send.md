@@ -7,7 +7,9 @@ Prepare, verify, sign and submit a payout in one step
 Pay out to a destination: the gateway prepares the ERC-20 transfer, the CLI
 checks it is exactly that transfer, signs it locally with -p and hands it to the
 gateway, which broadcasts it. The result is the payout, "submitted" with its
-transaction hash; it turns "confirmed" once mined ('payouts get <id>').
+transaction hash; it turns "confirmed" once its block is final ('payouts get <id>').
+With -w/--wait the command instead follows it until "confirmed" (the result) or
+"failed" (an error); see --wait below.
 
 --amount is a decimal in token units (250.00), or "all": the wallet's balance minus
 the destination's refund reserve, computed by the gateway. --proof sends the proof
@@ -31,6 +33,12 @@ first), payout_destination_disabled, payout_already_signed (a signed payout is
 pending: 'payouts resend <id>'). A node refusal (502) leaves the payout pending and
 signed: 'payouts resend <id>'.
 
+--wait polls until the payout is confirmed or failed. Confirmed comes at the
+chain's finality, so it can take longer than the first receipt. Without --timeout
+the deadline follows the chain: 10× its measured p90 settlement ('rail0 chains'),
+kept within 5m–15m. A wait that runs out exits 11: the transfer may still be in
+flight — check it with 'payouts get <id>', never send it again.
+
 ```
 rail0 payouts send [flags]
 ```
@@ -38,7 +46,7 @@ rail0 payouts send [flags]
 ### Examples
 
 ```
-  rail0 payouts send --destination <destination_id> --proof -p @merchant-key
+  rail0 payouts send --destination <destination_id> --proof -p @merchant-key --wait
   rail0 payouts send --destination <destination_id> --amount 250.00 -p @merchant-key
   rail0 payouts send --destination <destination_id> --amount all -p @merchant-key --yes
 ```
@@ -51,6 +59,8 @@ rail0 payouts send [flags]
   -h, --help                 help for send
   -p, --private-key string   The destination wallet's key: 0x hex, @name for an OS-keychain key ('rail0 keys add'), or RAIL0_PRIVATE_KEY
       --proof                Send the proof transfer (the gateway sets its amount) instead of a payout
+      --timeout duration     Max time to wait when --wait is set; unset, 10× the chain's measured p90 settlement, kept within 5m–15m (default 15m0s)
+  -w, --wait                 Block until the operation confirms on-chain (or fails)
   -y, --yes                  Skip the confirmation prompt (required to run non-interactively)
 ```
 

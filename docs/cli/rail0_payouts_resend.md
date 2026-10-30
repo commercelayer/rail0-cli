@@ -10,6 +10,8 @@ mined once at most, and resending is always safe. Nothing is signed again.
 
 422 payout_not_signed when nothing is stored: sign it with 'payouts submit <id>'.
 
+-w/--wait follows the payout until confirmed or failed, as in 'payouts send'.
+
 ```
 rail0 payouts resend <payout_id> [flags]
 ```
@@ -18,12 +20,15 @@ rail0 payouts resend <payout_id> [flags]
 
 ```
   rail0 payouts resend <payout_id>
+  rail0 payouts resend <payout_id> --wait
 ```
 
 ### Options
 
 ```
-  -h, --help   help for resend
+  -h, --help               help for resend
+      --timeout duration   Max time to wait when --wait is set; unset, 10× the chain's measured p90 settlement, kept within 5m–15m (default 15m0s)
+  -w, --wait               Block until the operation confirms on-chain (or fails)
 ```
 
 ### Options inherited from parent commands

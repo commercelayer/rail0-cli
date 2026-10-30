@@ -33,7 +33,9 @@ var payoutsSendCmd = &cobra.Command{
 	Long: `Pay out to a destination: the gateway prepares the ERC-20 transfer, the CLI
 checks it is exactly that transfer, signs it locally with -p and hands it to the
 gateway, which broadcasts it. The result is the payout, "submitted" with its
-transaction hash; it turns "confirmed" once mined ('payouts get <id>').
+transaction hash; it turns "confirmed" once its block is final ('payouts get <id>').
+With -w/--wait the command instead follows it until "confirmed" (the result) or
+"failed" (an error); see --wait below.
 
 --amount is a decimal in token units (250.00), or "all": the wallet's balance minus
 the destination's refund reserve, computed by the gateway. --proof sends the proof
@@ -55,8 +57,14 @@ Refused: payout_below_minimum (below the destination's minimum),
 insufficient_balance, payout_destination_unverified (send the proof and confirm
 first), payout_destination_disabled, payout_already_signed (a signed payout is
 pending: 'payouts resend <id>'). A node refusal (502) leaves the payout pending and
-signed: 'payouts resend <id>'.`,
-	Example: `  rail0 payouts send --destination <destination_id> --proof -p @merchant-key
+signed: 'payouts resend <id>'.
+
+--wait polls until the payout is confirmed or failed. Confirmed comes at the
+chain's finality, so it can take longer than the first receipt. Without --timeout
+the deadline follows the chain: 10× its measured p90 settlement ('rail0 chains'),
+kept within 5m–15m. A wait that runs out exits 11: the transfer may still be in
+flight — check it with 'payouts get <id>', never send it again.`,
+	Example: `  rail0 payouts send --destination <destination_id> --proof -p @merchant-key --wait
   rail0 payouts send --destination <destination_id> --amount 250.00 -p @merchant-key
   rail0 payouts send --destination <destination_id> --amount all -p @merchant-key --yes`,
 	Args: cobra.NoArgs,
@@ -103,20 +111,18 @@ signed: 'payouts resend <id>'.`,
 			return err
 		}
 		var sent *rail0.Payout
-		err = ui.RunAPIWithMessage("Sending payout…", func() (any, error) {
+		err = ui.RunAPIWithMessage(actionLabel("Sending payout…"), func() (any, error) {
 			p, err := client.Payouts.PrepareAndSubmit(ctx, req, privKey)
 			if err != nil {
 				return nil, payoutSignError(err)
 			}
 			sent = p
-			return p, nil
+			return submittedPayoutThenWait(ctx, client, p, &sent)
 		})
 		if err != nil {
 			return err
 		}
-		if !ui.IsQuiet() && sent != nil {
-			ui.Notice("hint", map[string]any{"payout_id": sent.ID}, payoutSentHint(sent))
-		}
+		notePayoutSent(sent)
 		return nil
 	},
 }
@@ -206,13 +212,104 @@ func payoutSendPrompt(ctx context.Context, d *rail0.PayoutDestination, req rail0
 }
 
 // payoutSentHint is the next step after a submit: a proof needs the venue check and
-// 'confirm'; a payout only needs watching until it is mined.
+// 'confirm'; a payout only needs watching until it is mined. After a --wait that saw
+// it confirmed, a payout needs nothing more ("") and a proof only the venue check.
 func payoutSentHint(p *rail0.Payout) string {
-	if p.Purpose == rail0.PayoutPurposeProof {
+	confirmed := p.Status == rail0.PayoutStatusConfirmed
+	switch {
+	case p.Purpose == rail0.PayoutPurposeProof && confirmed:
+		return fmt.Sprintf("\nProof confirmed on-chain. Once the venue shows it credited:\n"+
+			"  rail0 payouts destinations confirm %s", p.DestinationID)
+	case p.Purpose == rail0.PayoutPurposeProof:
 		return fmt.Sprintf("\nProof submitted. Once 'rail0 payouts get %s' shows it confirmed AND the venue shows it credited:\n"+
 			"  rail0 payouts destinations confirm %s", p.ID, p.DestinationID)
+	case confirmed:
+		return ""
 	}
-	return fmt.Sprintf("\nSubmitted. Follow it with 'rail0 payouts get %s' (submitted → confirmed).", p.ID)
+	return fmt.Sprintf("\nSubmitted. Follow it with 'rail0 payouts get %s' (submitted → confirmed), or pass --wait.", p.ID)
+}
+
+// notePayoutSent prints payoutSentHint for the payout a send/submit/resend ended with,
+// unless --quiet or there is nothing left to do.
+func notePayoutSent(p *rail0.Payout) {
+	if ui.IsQuiet() || p == nil {
+		return
+	}
+	if h := payoutSentHint(p); h != "" {
+		ui.Notice("hint", map[string]any{"payout_id": p.ID}, h)
+	}
+}
+
+// submittedPayoutThenWait is submitThenWait for a payout: without --wait it returns the
+// payout the gateway answered (submitted), with --wait it follows it to confirmed or
+// failed (waitForPayout). `last` is updated to the latest payout seen, so the caller's
+// hint speaks about the outcome rather than the submit.
+func submittedPayoutThenWait(ctx context.Context, client *rail0.Client, p *rail0.Payout, last **rail0.Payout) (any, error) {
+	if !waitFlag {
+		return p, nil
+	}
+	final, err := waitForPayout(ctx, client, p)
+	if err != nil {
+		return nil, err
+	}
+	*last = final
+	return final, nil
+}
+
+// waitForPayout polls a payout the gateway has just been handed until it is confirmed
+// (returned) or failed (a decision: payoutFailedError), on the same loop and schedule
+// as every payment wait (pollUntil) — transient read errors are retried, Ctrl-C and a
+// deadline say the transfer may still be in flight and name 'payouts get'.
+//
+// The deadline is the payment one for the payout's chain (waitTimeoutFor): a payout
+// becomes confirmed only once the chain calls its block final, which is exactly the
+// settlement the chain's measured p90 describes — so a wait can run past the first
+// receipt. The first read waits one interval, like a payment submit's: the broadcast
+// was just queued and an immediate read could only say "submitted".
+func waitForPayout(ctx context.Context, client *rail0.Client, p *rail0.Payout) (*rail0.Payout, error) {
+	res, err := pollUntil(ctx, waitTimeoutFor(p.ChainID), fmt.Sprintf("rail0 payouts get %s", p.ID), true,
+		func(ctx context.Context) (any, bool, error) {
+			cur, err := client.Payouts.Get(ctx, p.ID)
+			if err != nil {
+				return nil, false, err
+			}
+			switch cur.Status {
+			case rail0.PayoutStatusConfirmed:
+				return cur, true, nil
+			case rail0.PayoutStatusFailed:
+				return nil, false, stopPolling{payoutFailedError(cur)}
+			}
+			return nil, false, nil
+		})
+	if err != nil {
+		return nil, err
+	}
+	return res.(*rail0.Payout), nil
+}
+
+// payoutFailedError renders a failed payout like opFailedError renders a reverted
+// transaction: the gateway's detail (or its code) plus what to do. submission_timeout
+// and dropped are not final — the transfer that did go out may have been sped up or
+// replaced — so their message names report-hash, the way back to submitted.
+func payoutFailedError(p *rail0.Payout) error {
+	reason := p.ErrorDetail
+	if reason == "" {
+		reason = p.ErrorCode
+	}
+	if reason == "" {
+		reason = "failed"
+	}
+	msg := fmt.Sprintf("payout %s failed: %s", p.ID, reason)
+	switch p.ErrorCode {
+	case "submission_timeout", "dropped":
+		msg += fmt.Sprintf(" — not final: if the transfer went out under another hash (sped up or replaced), "+
+			"report it with 'rail0 payouts report-hash %s <hash>'", p.ID)
+	default:
+		if h := hintFor(p.ErrorCode, ""); h != "" {
+			msg += " — " + h
+		}
+	}
+	return errors.New(msg)
 }
 
 // payoutSignError keeps a gateway error as it is (the CLI's error layer words it and
@@ -274,9 +371,12 @@ asks to confirm (y/N); --yes skips it and is required without a terminal.
 
 Only a pending, unsigned payout can be signed. One already signed is 'resend's:
 its transaction may already be in a mempool, and signing again would risk a second
-transfer.`,
-	Example: `  rail0 payouts submit <payout_id> -p @merchant-key`,
-	Args:    cobra.ExactArgs(1),
+transfer.
+
+-w/--wait follows the payout until confirmed or failed, as in 'payouts send'.`,
+	Example: `  rail0 payouts submit <payout_id> -p @merchant-key
+  rail0 payouts submit <payout_id> -p @merchant-key --wait`,
+	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		keyHex, err := signingKeyOrPrompt(payoutSubmitKey)
 		if err != nil {
@@ -309,20 +409,18 @@ transfer.`,
 			return err
 		}
 		var sent *rail0.Payout
-		err = ui.RunAPIWithMessage("Sending payout…", func() (any, error) {
+		err = ui.RunAPIWithMessage(actionLabel("Sending payout…"), func() (any, error) {
 			p, err := client.Payouts.SignAndSubmit(ctx, payout, privKey)
 			if err != nil {
 				return nil, payoutSignError(err)
 			}
 			sent = p
-			return p, nil
+			return submittedPayoutThenWait(ctx, client, p, &sent)
 		})
 		if err != nil {
 			return err
 		}
-		if !ui.IsQuiet() && sent != nil {
-			ui.Notice("hint", map[string]any{"payout_id": sent.ID}, payoutSentHint(sent))
-		}
+		notePayoutSent(sent)
 		return nil
 	},
 }
@@ -377,9 +475,11 @@ func init() {
 	addPayoutAmountFlags(payoutsSendCmd)
 	addPayoutKeyFlags(payoutsSendCmd, &payoutSendKey)
 	addYesFlag(payoutsSendCmd)
+	addWaitFlags(payoutsSendCmd)
 
 	addPayoutAmountFlags(payoutsPrepareCmd)
 
 	addPayoutKeyFlags(payoutsSubmitCmd, &payoutSubmitKey)
 	addYesFlag(payoutsSubmitCmd)
+	addWaitFlags(payoutsSubmitCmd)
 }

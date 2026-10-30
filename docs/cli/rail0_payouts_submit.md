@@ -17,6 +17,8 @@ Only a pending, unsigned payout can be signed. One already signed is 'resend's:
 its transaction may already be in a mempool, and signing again would risk a second
 transfer.
 
+-w/--wait follows the payout until confirmed or failed, as in 'payouts send'.
+
 ```
 rail0 payouts submit <payout_id> [flags]
 ```
@@ -25,6 +27,7 @@ rail0 payouts submit <payout_id> [flags]
 
 ```
   rail0 payouts submit <payout_id> -p @merchant-key
+  rail0 payouts submit <payout_id> -p @merchant-key --wait
 ```
 
 ### Options
@@ -32,6 +35,8 @@ rail0 payouts submit <payout_id> [flags]
 ```
   -h, --help                 help for submit
   -p, --private-key string   The destination wallet's key: 0x hex, @name for an OS-keychain key ('rail0 keys add'), or RAIL0_PRIVATE_KEY
+      --timeout duration     Max time to wait when --wait is set; unset, 10× the chain's measured p90 settlement, kept within 5m–15m (default 15m0s)
+  -w, --wait                 Block until the operation confirms on-chain (or fails)
   -y, --yes                  Skip the confirmation prompt (required to run non-interactively)
 ```
 

@@ -1867,8 +1867,8 @@ Move a merchant wallet's tokens to a deposit address at a venue of your own — 
 rail0 payouts destinations add -c arc -t USDC -A 0xVenueDeposit… \
   -l "Exchange USDC (Arc)" --min-amount 10
 
-# 2. send the proof: 1 token unit, raised to the minimum
-rail0 payouts send --destination <destination_id> --proof -p @merchant-key
+# 2. send the proof: 1 token unit, raised to the minimum (--wait: until confirmed)
+rail0 payouts send --destination <destination_id> --proof -p @merchant-key --wait
 
 # 3. once the venue shows the proof CREDITED (not just mined)
 rail0 payouts destinations confirm <destination_id>
@@ -1913,7 +1913,14 @@ rail0 payouts destinations events <destination_id>      # its audit trail and it
 
 Prepare → verify → sign → submit in one step, with the destination wallet's key (`-p`, `@name`, `RAIL0_PRIVATE_KEY`, or a hidden prompt). Before signing it shows the amount, token, deposit address, network and sending wallet and asks to confirm (y/N); `--yes` skips it and is required without a terminal. With `--amount all` or `--proof` the gateway computes the amount; to see the exact figure first, use `prepare` + `submit`. A payout to a disabled or not-yet-verified destination is refused before the prompt.
 
-The result is the payout, `submitted` with its `transaction_hash` (`-q` prints the hash); it turns `confirmed` once mined. A node refusal (502) leaves it `pending` and signed: `payouts resend <id>`.
+The result is the payout, `submitted` with its `transaction_hash` (`-q` prints the hash); it turns `confirmed` once its block is final. A node refusal (502) leaves it `pending` and signed: `payouts resend <id>`.
+
+**`-w/--wait`** (also on `submit` and `resend`) keeps polling the payout instead, on the same loop as the payment waits: the result is the payout once `confirmed`, and a `failed` one exits `1` with its `error_code`/`error_detail` (for `submission_timeout` and `dropped`, which are not final, the message names `report-hash`). A payout is `confirmed` only at the chain's finality, so the wait can run past the first receipt. `--timeout` follows the [payment actions' convention](#payee--action-commands): unset, 10× the chain's measured p90 settlement kept within `5m`–`15m`. A wait that runs out exits `11` — the transfer may still be in flight: check it with `payouts get <id>`, never send it again. Progress goes to stderr (every ~10s off a terminal); `--json`, `-q` and `--agent` behave as on the payment waits.
+
+```sh
+rail0 payouts send --destination <destination_id> --amount 250.00 -p @merchant-key --yes --wait
+rail0 payouts submit <payout_id> -p @merchant-key --wait --timeout 10m
+```
 
 #### `payouts prepare` / `payouts submit <payout_id>`
 
@@ -1933,7 +1940,7 @@ A payout goes `pending` → `submitted` → `confirmed`, or `failed` with an `er
 #### `payouts resend` / `cancel` / `report-hash`
 
 ```sh
-rail0 payouts resend <payout_id>                  # same signed bytes again: mined once at most
+rail0 payouts resend <payout_id>                  # same signed bytes again: mined once at most (--wait to follow it)
 rail0 payouts cancel <payout_id>                  # an UNSIGNED pending payout; frees the destination
 rail0 payouts report-hash <payout_id> 0x5c50…     # a transfer you broadcast yourself
 ```

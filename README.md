@@ -30,7 +30,7 @@ rotate is reported rather than silently honoured. Keys are scoped to the payment
 ## Contents
 
 - [Requirements](#requirements)
-- [Installation](#installation) — [install script](#install-script-macos-and-linux--recommended) · [manual download](#manual-download-any-platform-windows-included) · [from source](#build-from-source-contributors) · [`rail0 update`](#updating-rail0-update) · [`rail0 init`](#guided-setup-rail0-init)
+- [Installation](#installation) — [Homebrew](#homebrew-macos-and-linux--recommended) · [install script](#install-script-macos-and-linux) · [manual download](#manual-download-any-platform-windows-included) · [from source](#build-from-source-contributors) · [`rail0 update`](#updating-rail0-update) · [`rail0 init`](#guided-setup-rail0-init)
 - [**Your first payment**](#your-first-payment) — the guided path
 - [Shell completion](#shell-completion)
 - [Configuration](#configuration) — [defaults](#persisted-defaults-config) · [environments](#environments-env) · [address book](#address-book-aliases) · [signing keys](#signing-keys-os-keychain) · [new wallet](#new-wallet-keys-generate)
@@ -52,11 +52,22 @@ rotate is reported rather than silently honoured. Keys are scoped to the payment
 
 ## Installation
 
-Three ways to install a release, all the same static binary with nothing else to set
+Four ways to install a release, all the same static binary with nothing else to set
 up. Every release (see [Releasing](#releasing)) publishes them for macOS and Linux
 (amd64 and arm64) and Windows (amd64).
 
-### Install script (macOS and Linux) — recommended
+### Homebrew (macOS and Linux) — recommended
+
+```sh
+brew install commercelayer/tap/rail0
+```
+
+Installs `rail0`, the short alias `r0`, the shell completions and the man page
+(`man rail0`). Upgrade with `brew upgrade rail0`. A Homebrew install never replaces
+itself: `rail0 update` and the daily check point you to `brew upgrade` instead, so
+Homebrew keeps track of the installed version.
+
+### Install script (macOS and Linux)
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/commercelayer/rail0-cli/main/install.sh | sh
@@ -160,6 +171,11 @@ stderr is not a terminal, or with `RAIL0_NO_UPDATE_CHECK=1`.
 It is skipped for local builds (`dev` or a `git describe` version), and a failed lookup
 is silent. The last check time lives in the user cache directory, next to the session
 tokens (`update-check.json`).
+
+Installed with **Homebrew**, rail0 does neither: the check and `rail0 update` tell you
+to run `brew upgrade rail0`. Replacing the file behind Homebrew's back would leave it
+believing the old version is installed, and the next `brew upgrade` would put that
+version back.
 
 ### Guided setup (`rail0 init`)
 
@@ -1954,3 +1970,15 @@ One-time settings (repository admins):
 - branch protection on `main`: required `ci` check, "Include administrators";
 - the Slack channel: `release.yml` posts through the `PIPELINE_SLACK_CHANNEL_WEBHOOK_URL`
   secret, named in one place (the `announce` job).
+
+### Homebrew formula
+
+`packaging/homebrew/rail0.rb` is the homebrew-core formula (`brew install rail0`, no
+tap): built from source with the Go toolchain, stamped
+`selfupdate.Packager=Homebrew` so the binary never replaces itself or checks for
+updates, with the `r0` alias, shell completions, the man pages and a `test do` block.
+It is submitted to Homebrew/homebrew-core once the repository meets Homebrew's
+notability bar; Homebrew's bots then bump it on each release. `bin/brew-formula-test`
+builds it from the working tree in a throwaway local tap and runs `brew install
+--build-from-source`, `brew test`, `brew audit --strict` and `brew style` (needs
+Homebrew; commit first, it archives `HEAD`).

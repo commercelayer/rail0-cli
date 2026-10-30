@@ -45,7 +45,7 @@ rotate is reported rather than silently honoured. Keys are scoped to the payment
 ## Requirements
 
 - Go ≥ 1.26 (matches the `go` directive in `go.mod`)
-- The [rail0-go](https://github.com/commercelayer/rail0-go) SDK cloned as a sibling directory (used via a `replace` directive in `go.mod`)
+- Nothing else to clone: the [rail0-go](https://github.com/commercelayer/rail0-go) SDK comes from the Go module proxy at the version `go.mod` requires
 - Access to a RAIL0 gateway instance (for the commands that call it — building/`rail0 --help` need no gateway)
 
 ---
@@ -95,29 +95,13 @@ cp completions/_rail0 "${fpath[1]}/"              # zsh; see `rail0 completion -
 
 Whichever way you install, continue with [`rail0 init`](#guided-setup-rail0-init).
 
-> **All three need the releases to be publicly downloadable.** While
-> `commercelayer/rail0-cli` is private, they work only for accounts with access to it.
->
-> **Building from source is not an option for external users**, which is why the release
-> binaries matter: the build needs the `rail0-go` SDK as a sibling checkout (`replace`
-> directive in `go.mod`), and that repository is private.
-
 ### Build from source (contributors)
 
-Clone this repo and the `rail0-go` SDK **as siblings**, then build. rail0-cli imports the SDK through `replace github.com/commercelayer/rail0-go =>
-../rail0-go` (see `go.mod`), so `rail0-go` must sit next to `rail0-cli`.
-
-Both repositories must be present as siblings:
-
-```
-parent-directory/
-├── rail0-cli/   ← this repo
-└── rail0-go/    ← Go SDK (replace directive points here)
-```
+Clone this repo and build. The `rail0-go` SDK is an ordinary module dependency, fetched
+at the version `go.mod` requires.
 
 ```sh
 git clone https://github.com/commercelayer/rail0-cli
-git clone https://github.com/commercelayer/rail0-go
 cd rail0-cli
 make install            # installs `rail0` + the short `r0` alias into /usr/local/bin
 ```
@@ -126,7 +110,14 @@ make install            # installs `rail0` + the short `r0` alias into /usr/loca
 **`r0`** (a symlink), so the two are interchangeable — `r0 wallets` is the same
 as `rail0 wallets`. Override the location with `make install PREFIX=$HOME/go/bin`.
 
-`bin/build` does the same without `make` (build + install `rail0` + `r0`):
+To build against a local `rail0-go` checkout (an SDK change not released yet), use a Go
+workspace instead of editing `go.mod`; `go.work` is git-ignored:
+
+```sh
+go work init . ../rail0-go
+```
+
+`bin/build` does the same as `make install` without `make` (build + install `rail0` + `r0`):
 
 ```sh
 bin/build                       # into /usr/local/bin
@@ -169,9 +160,6 @@ stderr is not a terminal, or with `RAIL0_NO_UPDATE_CHECK=1`.
 It is skipped for local builds (`dev` or a `git describe` version), and a failed lookup
 is silent. The last check time lives in the user cache directory, next to the session
 tokens (`update-check.json`).
-
-Both need the releases to be publicly downloadable. While the repository is private,
-`rail0 update` reports that no published release was found.
 
 ### Guided setup (`rail0 init`)
 
@@ -1933,7 +1921,7 @@ binaries. Never push a `v*` tag by hand.
    It then bumps `VERSION`, writes the release notes from the pull
    requests merged since the last tag, and opens `chore(release): vX.Y.Z`. If `go.mod`
    requires an older rail0-go than the latest tag (or a pseudo-version) it says so and
-   offers the bump; the `replace … => ../rail0-go` line is never touched. `--dry-run`
+   offers the bump. `--dry-run`
    prints all of it and writes nothing.
 
    **Or on a feature branch**, to release a change in the same review: run it on a clean
@@ -1951,7 +1939,7 @@ binaries. Never push a `v*` tag by hand.
    an admin merge that bypassed the review, a direct push to `main` or a resume of an
    unapproved release publishes nothing.
 3. `.github/workflows/release.yml` runs on that push to `main`: CI again on the release
-   commit (against the rail0-go tag `go.mod` requires), the tag `vX.Y.Z` = `VERSION`,
+   commit (with the rail0-go tag `go.mod` requires), the tag `vX.Y.Z` = `VERSION`,
    GoReleaser (binaries, archives, `checksums.txt`, notes from the pull request) into a
    draft release, published once complete, then a Slack message.
 

@@ -5,8 +5,7 @@
 #
 # The CLI is pure Go (no cgo), so every target is a single static binary that
 # runs on the user's machine with no toolchain, no libc, nothing to install.
-# Validate locally with `goreleaser check` and `goreleaser build --snapshot --clean`
-# (needs the sibling ../rail0-go, per the replace directive in go.mod).
+# Validate locally with `goreleaser check` and `goreleaser build --snapshot --clean`.
 version: 2
 
 project_name: rail0
@@ -62,9 +61,8 @@ archives:
       - goos: windows
         formats:
           - zip
-    # An external user cannot build from source (the SDK sibling is private), so the
-    # archive has to be self-sufficient: shell completions and man pages travel with
-    # the binary instead of living only in the repo. (#105)
+    # The archive is self-sufficient: shell completions and man pages travel with the
+    # binary instead of living only in the repo, so an install needs no checkout. (#105)
     files:
       - src: .release/completions/*
         dst: completions

@@ -1,3 +1,5 @@
 rail0
 dist/
 .release/
+go.work
+go.work.sum

@@ -22,8 +22,8 @@ would produce a number that looks addable and is not.
 
 
 .SH OPTIONS
-\fB--chain-id\fP=0
-	Filter by EVM chain ID
+\fB--chain\fP=
+	Filter by chain: a slug (arc, base, …) or a chain id; the environment's gateway decides testnet vs mainnet
 
 .PP
 \fB--from\fP=""
@@ -81,7 +81,7 @@ would produce a number that looks addable and is not.
 
 .SH EXAMPLE
 .EX
-  rail0 analytics summary --chain-id 5042002
+  rail0 analytics summary --chain arc
 .EE
 
 

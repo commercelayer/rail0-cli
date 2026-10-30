@@ -182,7 +182,7 @@ Set up. From here:
 
   rail0 aliases add merchant 0x…      # name the addresses once, then use @merchant
   rail0 payment-methods -A @merchant  # what that merchant accepts (public, no login)
-  rail0 payments create -F @me -T @merchant -t USDC -a 1.00 -c 5042002 -p %s
+  rail0 payments create -F @me -T @merchant -t USDC -a 1.00 -c arc -p %s
   rail0 payments list                 # your payments, as payer or payee
 
 'rail0 <command> --help' has the detail; 'rail0 env current -d' shows what this wrote.

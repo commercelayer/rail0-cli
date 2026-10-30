@@ -2,7 +2,7 @@
 .TH "RAIL0" "1" "Aug 2026" "rail0 CLI" ""
 
 .SH NAME
-rail0-chains - List supported blockchains (chain IDs used in --chain-id)
+rail0-chains - List supported blockchains (the slugs and chain IDs --chain takes)
 
 
 .SH SYNOPSIS
@@ -11,6 +11,12 @@ rail0-chains - List supported blockchains (chain IDs used in --chain-id)
 
 .SH DESCRIPTION
 List the blockchains supported by the environment.
+
+.PP
+Each chain has a slug (arc, base, …) shared by its testnet and its mainnet: a
+gateway serves one network class, so --chain  on any command picks the
+chain of the environment you are pointed at ('rail0 env'). public_rpc_urls are
+keyless RPC endpoints for reading the chain directly ('rail0 keys balance').
 
 .PP
 Filter with --symbol (the chain's native symbol, e.g. ETH / USDC / CELO) and/or

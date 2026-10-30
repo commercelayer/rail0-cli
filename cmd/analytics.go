@@ -40,7 +40,7 @@ var analyticsCmd = &cobra.Command{
   timeseries  — order counts bucketed by day, week or month
   breakdown   — the same counts grouped by token, chain, mode, status or operation
 
-All three take the same filters (--mode, --status, --token, --chain-id, --from,
+All three take the same filters (--mode, --status, --token, --chain, --from,
 --to, --payee). By default the figures cover the whole account — every wallet it
 owns; --payee restricts them to ONE of the account's wallets (a 0x address or an
 @alias). A wallet the account does not own is refused with 403.
@@ -86,7 +86,7 @@ siblings warn about: each figure has a single unit behind it and is safe to read
 directly. 'timeseries' and 'breakdown' return null volumes instead wherever a
 row would span more than one token, since summing different tokens' base units
 would produce a number that looks addable and is not.`,
-	Example: `  rail0 analytics summary --chain-id 5042002`,
+	Example: `  rail0 analytics summary --chain arc`,
 	Args:    cobra.NoArgs,
 	RunE: func(_ *cobra.Command, _ []string) error {
 		filters, err := analyticsFiltersFromFlags()
@@ -112,7 +112,7 @@ Each row carries a volume only when a SINGLE token and chain are filtered: summi
 different tokens' base units would be meaningless, so the gateway returns null
 instead of a number that looks addable.`,
 	Example: `  rail0 analytics timeseries
-  rail0 analytics timeseries --interval month --chain-id 5042002 --token 0x3600…`,
+  rail0 analytics timeseries --interval month --chain arc --token 0x3600…`,
 	Args: cobra.NoArgs,
 	RunE: func(_ *cobra.Command, _ []string) error {
 		filters, err := analyticsFiltersFromFlags()
@@ -239,7 +239,7 @@ func init() {
 		c.Flags().StringVar(&analyticsMode, "mode", "", "Filter by mode: authorize or charge")
 		c.Flags().StringVar(&analyticsStatus, "status", "", "Filter by payment status (e.g. captured)")
 		c.Flags().StringVar(&analyticsToken, "token", "", "Filter by token address (0x…)")
-		c.Flags().IntVar(&analyticsChainID, "chain-id", 0, "Filter by EVM chain ID")
+		addChainFlag(c, &analyticsChainID, "", "Filter by chain")
 		c.Flags().StringVar(&analyticsFrom, "from", "", "Only payments created at/after this ISO-8601 time")
 		c.Flags().StringVar(&analyticsTo, "to", "", "Only payments created at/before this ISO-8601 time")
 		c.Flags().StringVar(&analyticsPayee, "payee", "", "Restrict to one of your account's wallets (0x address or @alias); default: the whole account")

@@ -3,6 +3,7 @@ package cmd
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -249,8 +250,8 @@ func TestEnvSwitchClearsSettingsTheTargetDoesNotDefine(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	if cfg.Settings["chain-id"] == "" || cfg.Settings["token"] == "" {
-		t.Fatalf("development must have written chain-id and token, got %v", cfg.Settings)
+	if cfg.Settings["chain"] != "arc" || cfg.Settings["token"] == "" {
+		t.Fatalf("development must have written chain arc and token, got %v", cfg.Settings)
 	}
 
 	if err := switchEnv("production", false); err != nil {
@@ -260,7 +261,7 @@ func TestEnvSwitchClearsSettingsTheTargetDoesNotDefine(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	for _, key := range []string{"chain-id", "token"} {
+	for _, key := range []string{"chain", "chain-id", "token"} {
 		if v, ok := cfg.Settings[key]; ok && v != "" {
 			t.Errorf("%s survived the switch to production as %q", key, v)
 		}
@@ -318,11 +319,37 @@ func TestEnvSwitchDeclinedChangesNothing(t *testing.T) {
 	if cfg.Settings["base-url"] != "http://localhost:9292" {
 		t.Errorf("the declined switch moved base-url to %q", cfg.Settings["base-url"])
 	}
-	if cfg.Settings["chain-id"] != "5042002" {
-		t.Errorf("the declined switch cleared chain-id (%q)", cfg.Settings["chain-id"])
+	if cfg.Settings["chain"] != "arc" {
+		t.Errorf("the declined switch cleared chain (%q)", cfg.Settings["chain"])
 	}
 	if token.Load(baseURL) == "" {
 		t.Error("the declined switch revoked the session it was going to leave")
+	}
+}
+
+// A config written before slugs holds chain-id. Switching to an environment that
+// declares chain restates it as chain — silently, since nothing is lost — while
+// switching to production (no chain) treats the legacy key as stale like any other.
+func TestEnvSwitchReplacesTheLegacyChainID(t *testing.T) {
+	isolate(t)
+	if err := (&config.Config{Settings: map[string]string{
+		"base-url": "http://localhost:9292", "chain-id": "5042002", "token": "USDC",
+	}}).Save(); err != nil {
+		t.Fatal(err)
+	}
+	cfg, _ := config.Load()
+	if stale := staleAfterSwitch(cfg, environments[1]); len(stale) > 0 {
+		t.Errorf("development -> staging must not prompt for the superseded chain-id, got %v", stale)
+	}
+	if stale := staleAfterSwitch(cfg, environments[2]); !slices.Contains(stale, "chain-id") {
+		t.Errorf("-> production must list chain-id as stale, got %v", stale)
+	}
+	if err := switchEnv("staging", false); err != nil {
+		t.Fatalf("switch staging: %v", err)
+	}
+	cfg, _ = config.Load()
+	if _, ok := cfg.Settings["chain-id"]; ok || cfg.Settings["chain"] != "arc" {
+		t.Errorf("after the switch: chain-id %q, chain %q; want only chain arc", cfg.Settings["chain-id"], cfg.Settings["chain"])
 	}
 }
 

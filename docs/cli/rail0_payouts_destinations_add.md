@@ -6,15 +6,15 @@ Register a payout destination (asks you to confirm the details)
 
 Register a deposit address as a payout destination of the session's wallet.
 
-Before running it, open the venue's deposit page with the NETWORK set to --chain-id
+Before running it, open the venue's deposit page with the NETWORK set to --chain
 and the asset set to --token, and copy the address and the minimum deposit from
 there. The command shows what it will register and the details statement, and you
 must accept it: a y/N prompt (default no) on a terminal, or --confirm-details when
 there is no terminal or with --agent. Without it nothing is sent. --yes does not
 accept it for you.
 
---token is a symbol (USDC) resolved on --chain-id, or the token's 0x address;
---chain-id and --token fall back to the configured defaults ('rail0 config').
+--token is a symbol (USDC) resolved on --chain, or the token's 0x address;
+--chain and --token fall back to the configured defaults ('rail0 config').
 --min-amount and --reserve are decimals in token units (10.00), converted with the
 token's decimals. --wallet defaults to the wallet you are signed in with, and must
 be it.
@@ -34,18 +34,18 @@ rail0 payouts destinations add [flags]
 ### Examples
 
 ```
-  rail0 payouts destinations add -c 5042002 -t USDC -A 0xVenueDeposit… \
+  rail0 payouts destinations add -c arc -t USDC -A 0xVenueDeposit… \
     -l "Exchange USDC (Arc)" --min-amount 10
 
   # non-interactive: accept the statement explicitly
-  rail0 payouts destinations add -c 5042002 -t USDC -A 0xVenueDeposit… --confirm-details
+  rail0 payouts destinations add -c arc -t USDC -A 0xVenueDeposit… --confirm-details
 ```
 
 ### Options
 
 ```
   -A, --address string      The venue's deposit address (0x…, or @alias)
-  -c, --chain-id int        Chain the deposit address was issued for (default: 'rail0 config' chain-id)
+  -c, --chain chain         Chain the deposit address was issued for (default: 'rail0 config' chain): a slug (arc, base, …) or a chain id; the environment's gateway decides testnet vs mainnet
       --confirm-details     Accept the details statement without a prompt (needed without a TTY or with --agent); --yes does NOT imply it
   -h, --help                help for add
       --kind string         Informational: exchange, circle_mint, self_custody, provider (default exchange)

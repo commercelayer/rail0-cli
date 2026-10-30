@@ -18,13 +18,13 @@ rail0 analytics timeseries [flags]
 
 ```
   rail0 analytics timeseries
-  rail0 analytics timeseries --interval month --chain-id 5042002 --token 0x3600…
+  rail0 analytics timeseries --interval month --chain arc --token 0x3600…
 ```
 
 ### Options
 
 ```
-      --chain-id int      Filter by EVM chain ID
+      --chain chain       Filter by chain: a slug (arc, base, …) or a chain id; the environment's gateway decides testnet vs mainnet
       --from string       Only payments created at/after this ISO-8601 time
   -h, --help              help for timeseries
       --interval string   Bucket width: day (default), week or month

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strconv"
 	"strings"
 
 	rail0 "github.com/commercelayer/rail0-go"
@@ -74,7 +73,7 @@ Every wallet of the account can READ every destination and disable one; only the
 destination's own wallet may change or re-enable it. A deactivated account is
 read-only: every change is refused (403 account_deactivated).`,
 	Example: `  rail0 payouts destinations
-  rail0 payouts destinations add -c 5042002 -t USDC -A 0xVenueDeposit… -l "Exchange" --min-amount 10
+  rail0 payouts destinations add -c arc -t USDC -A 0xVenueDeposit… -l "Exchange" --min-amount 10
   rail0 payouts destinations confirm <destination_id>
   rail0 payouts destinations events <destination_id>`,
 	Args: cobra.NoArgs,
@@ -153,15 +152,15 @@ var payoutDestinationsAddCmd = &cobra.Command{
 	Short: "Register a payout destination (asks you to confirm the details)",
 	Long: `Register a deposit address as a payout destination of the session's wallet.
 
-Before running it, open the venue's deposit page with the NETWORK set to --chain-id
+Before running it, open the venue's deposit page with the NETWORK set to --chain
 and the asset set to --token, and copy the address and the minimum deposit from
 there. The command shows what it will register and the details statement, and you
 must accept it: a y/N prompt (default no) on a terminal, or --confirm-details when
 there is no terminal or with --agent. Without it nothing is sent. --yes does not
 accept it for you.
 
---token is a symbol (USDC) resolved on --chain-id, or the token's 0x address;
---chain-id and --token fall back to the configured defaults ('rail0 config').
+--token is a symbol (USDC) resolved on --chain, or the token's 0x address;
+--chain and --token fall back to the configured defaults ('rail0 config').
 --min-amount and --reserve are decimals in token units (10.00), converted with the
 token's decimals. --wallet defaults to the wallet you are signed in with, and must
 be it.
@@ -173,11 +172,11 @@ credited, 'rail0 payouts destinations confirm <id>'.
 Refused (422): the zero address, the wallet itself, a contract the gateway knows on
 that chain, or no confirmation; 409 when the wallet already has this address for
 this token and chain.`,
-	Example: `  rail0 payouts destinations add -c 5042002 -t USDC -A 0xVenueDeposit… \
+	Example: `  rail0 payouts destinations add -c arc -t USDC -A 0xVenueDeposit… \
     -l "Exchange USDC (Arc)" --min-amount 10
 
   # non-interactive: accept the statement explicitly
-  rail0 payouts destinations add -c 5042002 -t USDC -A 0xVenueDeposit… --confirm-details`,
+  rail0 payouts destinations add -c arc -t USDC -A 0xVenueDeposit… --confirm-details`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := context.Background()
@@ -190,11 +189,14 @@ this token and chain.`,
 		}
 		chainID := payoutDestAddChainID
 		if chainID == 0 {
-			if n, err := strconv.Atoi(configuredDefault("chain-id")); err == nil && n != 0 {
-				chainID = n
-			} else {
-				return errors.New("--chain-id is required (or set a default with 'rail0 config set chain-id <id>')")
+			id, _, ok, err := configuredChainID(ctx)
+			if err != nil {
+				return err
 			}
+			if !ok {
+				return errChainRequired()
+			}
+			chainID = id
 		}
 		tokenArg := payoutDestAddToken
 		if tokenArg == "" {
@@ -467,7 +469,7 @@ func init() {
 
 	f := payoutDestinationsAddCmd.Flags()
 	f.StringVar(&payoutDestAddWallet, "wallet", "", "Wallet that will send to it, id or address (default: the signed-in wallet)")
-	f.IntVarP(&payoutDestAddChainID, "chain-id", "c", 0, "Chain the deposit address was issued for (default: 'rail0 config' chain-id)")
+	addChainFlag(payoutDestinationsAddCmd, &payoutDestAddChainID, "c", "Chain the deposit address was issued for (default: 'rail0 config' chain)")
 	f.StringVarP(&payoutDestAddToken, "token", "t", "", "Token symbol (USDC) or 0x address on that chain (default: 'rail0 config' token)")
 	f.StringVarP(&payoutDestAddAddress, "address", "A", "", "The venue's deposit address (0x…, or @alias)")
 	f.StringVarP(&payoutDestAddLabel, "label", "l", "", "Human-readable label")

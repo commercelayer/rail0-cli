@@ -40,7 +40,12 @@ var rootCmd = &cobra.Command{
 				"--agent prints one JSON envelope per command; it cannot be combined with --quiet or --pretty")
 		}
 		maybeOfferUpdate(cmd)
-		return checkBaseURL(cmd)
+		if err := checkBaseURL(cmd); err != nil {
+			return err
+		}
+		// After checkBaseURL: a --chain slug is resolved against the gateway the
+		// command talks to (see chainRef).
+		return resolveChainFlags(cmd)
 	},
 	Long: `rail0 is a command-line interface for the RAIL0 stablecoin payment gateway.
 

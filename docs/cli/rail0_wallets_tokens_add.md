@@ -7,9 +7,9 @@ Accept a token on a wallet (re-enables a disabled holding)
 Accept a token, on one chain, on a wallet (by id, 0x address or @alias).
 
 An upsert: a holding that was disabled is re-enabled rather than duplicated.
---token is a symbol (USDC) resolved on --chain-id, or the token's 0x address.
+--token is a symbol (USDC) resolved on --chain, or the token's 0x address.
 --default makes it the wallet's default method, demoting the previous one;
---chain-id falls back to the configured default ('rail0 config set chain-id').
+--chain falls back to the configured default ('rail0 config set chain').
 
 ```
 rail0 wallets tokens add <wallet> [flags]
@@ -18,14 +18,14 @@ rail0 wallets tokens add <wallet> [flags]
 ### Examples
 
 ```
-  rail0 wallets tokens add 0xABCD… --chain-id 84532 --token USDC
-  rail0 wallets tokens add 0xABCD… --chain-id 84532 --token 0x036C… --default
+  rail0 wallets tokens add 0xABCD… --chain base --token USDC
+  rail0 wallets tokens add 0xABCD… --chain base --token 0x036C… --default
 ```
 
 ### Options
 
 ```
-      --chain-id int   Chain of the token (default: the configured chain-id)
+      --chain chain    Chain of the token (default: the configured chain): a slug (arc, base, …) or a chain id; the environment's gateway decides testnet vs mainnet
       --default        Make it the wallet's default payment method
   -h, --help           help for add
   -t, --token string   Token symbol (e.g. USDC) or 0x address (default: the configured token)

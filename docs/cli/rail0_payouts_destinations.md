@@ -44,7 +44,7 @@ rail0 payouts destinations [flags]
 
 ```
   rail0 payouts destinations
-  rail0 payouts destinations add -c 5042002 -t USDC -A 0xVenueDeposit… -l "Exchange" --min-amount 10
+  rail0 payouts destinations add -c arc -t USDC -A 0xVenueDeposit… -l "Exchange" --min-amount 10
   rail0 payouts destinations confirm <destination_id>
   rail0 payouts destinations events <destination_id>
 ```

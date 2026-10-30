@@ -32,8 +32,8 @@ chain/token defaults: set "mode": "charge" in the file rather than passing -C.
 	Amount as a decimal in token units (e.g. '1.00' for 1 USDC); the gateway converts to base units
 
 .PP
-\fB-c\fP, \fB--chain-id\fP=0
-	EVM chain ID as listed in GET /blockchains (e.g. 5042002)
+\fB-c\fP, \fB--chain\fP=
+	Chain of the payment, as listed by 'rail0 chains': a slug (arc, base, …) or a chain id; the environment's gateway decides testnet vs mainnet
 
 .PP
 \fB-C\fP, \fB--charge\fP[=false]
@@ -108,7 +108,7 @@ chain/token defaults: set "mode": "charge" in the file rather than passing -C.
 .SH EXAMPLE
 .EX
   rail0 payments create \\
-    -F @buyer -T @merchant -t USDC -a 10.50 -c 5042002 \\
+    -F @buyer -T @merchant -t USDC -a 10.50 -c arc \\
     -p @buyer-key
 .EE
 

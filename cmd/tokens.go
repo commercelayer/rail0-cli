@@ -25,7 +25,7 @@ forever, so they stay listed and resolvable); each row carries an "active" flag.
 Only an active token can be used for a NEW payment — pass --active to list just
 those, or --active=false to see only the retired ones.`,
 	Example: `  rail0 tokens
-  rail0 tokens --chain-id 5042002
+  rail0 tokens --chain arc
   rail0 tokens --symbol USDC
   rail0 tokens --active           # only what a new payment can use`,
 	Args: cobra.NoArgs,
@@ -43,8 +43,7 @@ those, or --active=false to see only the retired ones.`,
 }
 
 func init() {
-	tokensCmd.Flags().IntVarP(&tokensChainID, "chain-id", "c", 0,
-		"Filter by EVM chain ID (e.g. 5042002)")
+	addChainFlag(tokensCmd, &tokensChainID, "c", "Filter by chain")
 	tokensCmd.Flags().StringVarP(&tokensSymbol, "symbol", "s", "",
 		"Filter by token symbol (case-insensitive, e.g. USDC)")
 	tokensCmd.Flags().BoolVar(&tokensActive, "active", false,

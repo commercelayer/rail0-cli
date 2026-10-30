@@ -21,8 +21,13 @@ var (
 var chainsCmd = &cobra.Command{
 	Use:     "chains",
 	Aliases: []string{"blockchains"},
-	Short:   "List supported blockchains (chain IDs used in --chain-id)",
+	Short:   "List supported blockchains (the slugs and chain IDs --chain takes)",
 	Long: `List the blockchains supported by the environment.
+
+Each chain has a slug (arc, base, …) shared by its testnet and its mainnet: a
+gateway serves one network class, so --chain <slug> on any command picks the
+chain of the environment you are pointed at ('rail0 env'). public_rpc_urls are
+keyless RPC endpoints for reading the chain directly ('rail0 keys balance').
 
 Filter with --symbol (the chain's native symbol, e.g. ETH / USDC / CELO) and/or
 --network-type (testnet | mainnet). Both match case-insensitively; combine them
@@ -85,6 +90,7 @@ func settlementLabel(st rail0.BlockchainSettlement) string {
 var (
 	chainCatalogOnce sync.Once
 	chainCatalogList []rail0.Blockchain
+	chainCatalogErr  error
 )
 
 // chainCatalog returns the environment's active blockchains (GET /blockchains),
@@ -94,14 +100,24 @@ var (
 // empty slice, so callers degrade to the bare chain id instead of retrying (and
 // stalling) against an unreachable gateway on every label.
 func chainCatalog() []rail0.Blockchain {
+	chains, _ := loadChainCatalog(context.Background())
+	return chains
+}
+
+// loadChainCatalog is chainCatalog with the fetch error, for the callers that must not
+// degrade silently: resolving a --chain slug, where an unreachable gateway has to be
+// reported as such rather than as "unknown slug". Same single fetch per process — the
+// error is cached too, so a down gateway is not retried for every flag and label.
+func loadChainCatalog(ctx context.Context) ([]rail0.Blockchain, error) {
 	chainCatalogOnce.Do(func() {
-		chains, err := newReadClient().Chains.List(context.Background())
+		chains, err := newReadClient().Chains.List(ctx)
 		if err != nil {
+			chainCatalogErr = err
 			return
 		}
 		chainCatalogList = chains
 	})
-	return chainCatalogList
+	return chainCatalogList, chainCatalogErr
 }
 
 // chainLabel renders a chain id for humans, e.g. "Base Sepolia (84532)", using

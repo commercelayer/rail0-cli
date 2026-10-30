@@ -7,39 +7,24 @@
 # tokens` had gained a whole Long description and an `--active` flag that never reached
 # docs/cli or docs/man. (#68)
 #
-# rail0-cli depends on rail0-go through `replace github.com/commercelayer/rail0-go =>
-# ../rail0-go` (go.mod). rail0-go is PRIVATE and the default GITHUB_TOKEN only grants
-# access to this repo, so the sibling checkout needs the same dedicated token the
-# release workflow uses:
-#
-#   Secret RAIL0_GO_TOKEN — a fine-grained PAT (or deploy key) with `contents: read`
-#   on commercelayer/rail0-go.
-#
-# Consequence worth knowing: a pull request from a FORK gets no secrets, so the
-# rail0-go checkout — and therefore this whole job — cannot run there. That is
-# acceptable while contributions come from branches in this repo; if forks ever matter,
-# the SDK has to be consumable without a private checkout.
+# rail0-go comes from the Go module proxy at the version go.mod requires, like every
+# other dependency: no sibling checkout, no token, so pull requests from forks run too.
+# A CLI change that needs unreleased SDK code requires a pseudo-version of the SDK branch
+# (`go get github.com/commercelayer/rail0-go@<branch>`); CI builds it, and the release
+# refuses it until go.mod requires a tagged vX.Y.Z.
 name: ci
 
 on:
   pull_request:
   push:
     branches: [main]
-  # release.yml calls this as its gate: on the exact commit it is about to release, and
-  # against the exact rail0-go tag go.mod requires (what GoReleaser will build with).
+  # release.yml calls this as its gate, on the exact commit it is about to release.
   workflow_call:
     inputs:
       ref:
         description: "Commit to check (default: the commit of the triggering event)"
         type: string
         default: ""
-      sdk-ref:
-        description: "rail0-go ref to build against (default: the twin branch, else main)"
-        type: string
-        default: ""
-    secrets:
-      RAIL0_GO_TOKEN:
-        required: true
 
 permissions:
   contents: read
@@ -51,55 +36,7 @@ jobs:
       - name: Checkout rail0-cli
         uses: actions/checkout@v4
         with:
-          path: rail0-cli
           ref: ${{ inputs.ref }} # empty outside workflow_call: the event's own commit
-
-      # Which rail0-go to build against: the branch of the SAME NAME when it exists,
-      # otherwise main.
-      #
-      # `ref: main` alone made every coordinated change unbuildable. The SDK is consumed
-      # through `replace … => ../rail0-go`, so a CLI change that follows an SDK change
-      # cannot compile until the SDK has landed on main — and the CLI PR that carries the
-      # matching work fails for a reason that has nothing to do with it. Since branch
-      # names are shared across these repos by convention (feature/webhook-topics in
-      # both), looking for the twin first makes the pair testable before either merges,
-      # and falls back to main for every ordinary PR.
-      #
-      # Deliberately NOT pinned to the go.mod version, unlike release.yml. CI's job is
-      # to catch SDK breakage early: building against main (or the twin branch) fails a
-      # CLI PR as soon as the SDK moves in an incompatible way, before that SDK is
-      # released, and keeps coordinated SDK+CLI branches testable together. The pinned
-      # build happens where it matters — at release time, against exactly the tag
-      # go.mod requires — so a CLI that only compiles against unreleased SDK code fails
-      # the release rather than shipping it.
-      - name: Pick the rail0-go ref
-        id: sdk_ref
-        env:
-          GH_TOKEN: ${{ secrets.RAIL0_GO_TOKEN }}
-          SDK_REF: ${{ inputs.sdk-ref }}
-          BRANCH: ${{ github.head_ref || github.ref_name }}
-        run: |
-          if [ -n "$SDK_REF" ]; then
-            echo "Building against rail0-go@$SDK_REF (release gate: the go.mod version)"
-            echo "ref=$SDK_REF" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          branch="$BRANCH"
-          if gh api "repos/commercelayer/rail0-go/branches/$branch" >/dev/null 2>&1; then
-            echo "Building against rail0-go@$branch (twin branch found)"
-            echo "ref=$branch" >> "$GITHUB_OUTPUT"
-          else
-            echo "Building against rail0-go@main (no branch named $branch there)"
-            echo "ref=main" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Checkout rail0-go (private sibling; resolves ../rail0-go)
-        uses: actions/checkout@v4
-        with:
-          repository: commercelayer/rail0-go
-          ref: ${{ steps.sdk_ref.outputs.ref }}
-          path: rail0-go
-          token: ${{ secrets.RAIL0_GO_TOKEN }}
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -109,12 +46,11 @@ jobs:
           # inside the binary, so a stale patch release ships its CVEs too (1.26.8 on
           # the runner missed nine net/http and crypto/tls fixes in 1.26.9).
           check-latest: true
-          cache-dependency-path: rail0-cli/go.sum
+          cache-dependency-path: go.sum
 
       # Reported as a diff rather than a bare exit code: "gofmt failed" tells you
       # nothing, the diff tells you exactly what to run gofmt on.
       - name: gofmt
-        working-directory: rail0-cli
         run: |
           if [ -n "$(gofmt -l .)" ]; then
             echo "::error::gofmt needed on:"; gofmt -l .
@@ -123,22 +59,18 @@ jobs:
           fi
 
       - name: Build
-        working-directory: rail0-cli
         run: go build ./...
 
       - name: Vet
-        working-directory: rail0-cli
         run: go vet ./...
 
       - name: Test
-        working-directory: rail0-cli
         run: go test ./...
 
       # The reference docs are GENERATED from the command tree, so a changed flag or
       # help string silently invalidates them. Regenerate and fail on any diff, which
       # makes staleness impossible to merge rather than something to notice.
       - name: Reference docs are up to date
-        working-directory: rail0-cli
         run: |
           go run ./tools/gendocs
           if ! git diff --quiet -- docs/; then
@@ -156,7 +88,6 @@ jobs:
       # SOURCE_DATE_EPOCH only when the header carries no date, so shifting it here
       # reproduces that regression NOW instead of next month.
       - name: Reference docs do not depend on the clock
-        working-directory: rail0-cli
         run: |
           SOURCE_DATE_EPOCH=1893456000 go run ./tools/gendocs   # 2030-01-01
           if ! git diff --quiet -- docs/; then
@@ -170,18 +101,15 @@ jobs:
       # without running it; `sh` here is dash on the runner, the strictest POSIX shell a
       # user is likely to pipe it into.
       - name: install.sh parses as POSIX sh
-        working-directory: rail0-cli
         run: sh -n install.sh
 
       # VERSION is the release version: the release workflow tags v$(cat VERSION) and
       # GoReleaser stamps the binaries from that tag. Anything but X.Y.Z would make a tag
       # GoReleaser and `rail0 update` cannot order.
       - name: VERSION is X.Y.Z
-        working-directory: rail0-cli
         run: grep -Eqx '(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)' VERSION
 
       # bin/release-prepare opens every release pull request; its test drives it against
       # a throwaway repository (no network, no GitHub), refusals and one full run included.
       - name: bin/release-prepare
-        working-directory: rail0-cli
         run: bin/release-prepare-test

@@ -21,11 +21,9 @@
 # history, not the head of main: a resume after other merges still ships exactly the
 # reviewed commit.
 #
-# rail0-cli depends on rail0-go through `replace github.com/commercelayer/rail0-go =>
-# ../rail0-go` (go.mod). rail0-go is PRIVATE, so the sibling checkout uses the secret
-# RAIL0_GO_TOKEN (fine-grained PAT, `contents: read` on commercelayer/rail0-go). The
-# release builds against EXACTLY the version go.mod requires, checked out at that tag;
-# the run fails if the require line is not a plain vX.Y.Z or that tag does not exist.
+# rail0-go comes from the Go module proxy at the version go.mod requires. The plan
+# refuses a pseudo-version or a version with no rail0-go tag, so a release always builds
+# against a released SDK.
 name: release
 
 on:
@@ -50,7 +48,6 @@ jobs:
       version: ${{ steps.plan.outputs.version }}
       tag: ${{ steps.plan.outputs.tag }}
       commit: ${{ steps.plan.outputs.commit }}
-      sdk_ref: ${{ steps.sdk_ref.outputs.ref }}
     steps:
       - name: Only from main
         if: github.ref != 'refs/heads/main'
@@ -127,12 +124,10 @@ jobs:
 
       # The version go.mod requires AT THE RELEASE COMMIT, in either form (inside the
       # require block, or a one-line `require github.com/commercelayer/rail0-go vX.Y.Z`).
-      # The `replace` line never matches: its second field is `=>`.
-      - name: Resolve the rail0-go version from go.mod
-        id: sdk_ref
+      - name: Check go.mod requires a released rail0-go
         if: steps.plan.outputs.release == 'true'
         env:
-          GH_TOKEN: ${{ secrets.RAIL0_GO_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
           COMMIT: ${{ steps.plan.outputs.commit }}
         run: |
           set -euo pipefail
@@ -149,7 +144,6 @@ jobs:
             exit 1
           fi
           echo "Building against rail0-go@${version} (from go.mod)"
-          echo "ref=${version}" >>"$GITHUB_OUTPUT"
 
   # No release without a second person. The commit that set the version must have reached
   # main through a merged pull request that a reviewer OTHER THAN ITS AUTHOR approved, on
@@ -206,8 +200,6 @@ jobs:
     uses: ./.github/workflows/ci.yml
     with:
       ref: ${{ needs.plan.outputs.commit }}
-      sdk-ref: refs/tags/${{ needs.plan.outputs.sdk_ref }}
-    secrets: inherit
 
   publish:
     name: Tag, build, release
@@ -228,17 +220,8 @@ jobs:
       - name: Checkout rail0-cli at the release commit
         uses: actions/checkout@v4
         with:
-          path: rail0-cli
           ref: ${{ needs.plan.outputs.commit }}
           fetch-depth: 0 # full history + tags for GoReleaser's previous-tag lookup
-
-      - name: Checkout rail0-go at the go.mod version (private sibling; resolves ../rail0-go)
-        uses: actions/checkout@v4
-        with:
-          repository: commercelayer/rail0-go
-          ref: refs/tags/${{ needs.plan.outputs.sdk_ref }}
-          path: rail0-go
-          token: ${{ secrets.RAIL0_GO_TOKEN }}
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -247,7 +230,7 @@ jobs:
           # Latest 1.26.x patch, not whatever the runner has cached: the stdlib ships
           # inside the binary, so a stale patch release ships its CVEs too.
           check-latest: true
-          cache-dependency-path: rail0-cli/go.sum
+          cache-dependency-path: go.sum
 
       - name: Release notes from the release pull request
         id: notes
@@ -277,7 +260,6 @@ jobs:
       # The tag comes first: GoReleaser builds from the tag at HEAD and takes the
       # version from it, so the binaries' `rail0 version` is VERSION by construction.
       - name: Tag the release commit
-        working-directory: rail0-cli
         run: |
           set -euo pipefail
           [ "$(tr -d ' \t\r\n' <VERSION)" = "$VERSION" ] || { echo "::error::VERSION does not say $VERSION"; exit 1; }
@@ -295,7 +277,6 @@ jobs:
         with:
           version: "~> v2"
           args: release --clean ${{ steps.notes.outputs.file && format('--release-notes={0}', steps.notes.outputs.file) || '' }}
-          workdir: rail0-cli
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

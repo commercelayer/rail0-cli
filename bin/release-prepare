@@ -41,8 +41,6 @@ write_version() { # OLD NEW
 
 # The release workflow builds against EXACTLY the rail0-go tag go.mod requires, and
 # refuses a pseudo-version. Catch both here, before the pull request, and offer the bump.
-# go.mod's `replace … => ../rail0-go` (the private sibling checkout) is left as it is;
-# this never adds or changes a replace directive.
 preflight_checks() { # dry|real
   local mode="$1" required latest t v answer
   required="$(awk -v m="$SDK_MODULE" '

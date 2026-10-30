@@ -67,11 +67,3 @@ require (
 	golang.org/x/sys v0.49.0 // indirect
 	golang.org/x/text v0.43.0 // indirect
 )
-
-// Still the sibling checkout, because rail0-go is still a private repo the module proxy
-// cannot fetch. The require above records the real minimum — v1.7.2, the first release
-// whose Wallet carries DeactivatedBy (gateway#439), on top of SignSigningPayloadFor /
-// PayloadExpectationFor and the typed-data check (v1.7.0/v1.7.1) that cmd/tx_verify.go
-// and cmd/signing.go delegate to — so once the repo is public this is a one-line change:
-// drop this directive.
-replace github.com/commercelayer/rail0-go => ../rail0-go

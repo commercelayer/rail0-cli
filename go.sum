@@ -86,12 +86,8 @@ github.com/cockroachdb/swiss v0.0.0-20260820225851-333444432258 h1:IJ+uNItEm0qx9
 github.com/cockroachdb/swiss v0.0.0-20260820225851-333444432258/go.mod h1:yBRu/cnL4ks9bgy4vAASdjIW+/xMlFwuHKqtmh3GZQg=
 github.com/cockroachdb/tokenbucket v0.0.0-20230807174530-cc333fc44b06 h1:zuQyyAKVxetITBuuhv3BI9cMrmStnpT18zmgmTxunpo=
 github.com/cockroachdb/tokenbucket v0.0.0-20230807174530-cc333fc44b06/go.mod h1:7nc4anLGjupUW/PeY5qiNYsdNXj7zopG+eqsS7To5IQ=
-github.com/commercelayer/rail0-go v1.9.0 h1:YEJrkQ0xCmMSgha5dy8IkYU2TkTLbh1/5ZuQdujNF24=
-github.com/commercelayer/rail0-go v1.9.0/go.mod h1:y2FKBxxul1nTclHPed4fzniUgyW5DGjuQiC/d1nEOOE=
-github.com/commercelayer/rail0-go v1.9.1-0.20261030182346-dd5884bc9949 h1:caHQr6X9ejnUysJE+zDztooi7QgPqFd2jOwP4o7osuo=
-github.com/commercelayer/rail0-go v1.9.1-0.20261030182346-dd5884bc9949/go.mod h1:y2FKBxxul1nTclHPed4fzniUgyW5DGjuQiC/d1nEOOE=
-github.com/commercelayer/rail0-go v1.9.1-0.20261030183630-9d1ef348551c h1:hSsGCcjdgxE6Hj79zunFph/bszfCDUNjI8aeOxkB8zs=
-github.com/commercelayer/rail0-go v1.9.1-0.20261030183630-9d1ef348551c/go.mod h1:y2FKBxxul1nTclHPed4fzniUgyW5DGjuQiC/d1nEOOE=
+github.com/commercelayer/rail0-go v1.9.1-0.20261030183630-f59f291b2970 h1:5ScA37bz6LH10R0oNMBW7iLi3N0YBf/ThCdW1zpwz+s=
+github.com/commercelayer/rail0-go v1.9.1-0.20261030183630-f59f291b2970/go.mod h1:y2FKBxxul1nTclHPed4fzniUgyW5DGjuQiC/d1nEOOE=
 github.com/consensys/gnark-crypto v0.18.1 h1:RyLV6UhPRoYYzaFnPQA4qK3DyuDgkTgskDdoGqFt3fI=
 github.com/consensys/gnark-crypto v0.18.1/go.mod h1:L3mXGFTe1ZN+RSJ+CLjUt9x7PNdx8ubaYfDROyp2Z8c=
 github.com/cpuguy83/go-md2man/v2 v2.0.6 h1:XJtiaUW6dEEqVuZiMTn1ldk455QWwEIsMIJlo5vtkx0=

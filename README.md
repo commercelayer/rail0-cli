@@ -1970,3 +1970,15 @@ One-time settings (repository admins):
 - branch protection on `main`: required `ci` check, "Include administrators";
 - the Slack channel: `release.yml` posts through the `PIPELINE_SLACK_CHANNEL_WEBHOOK_URL`
   secret, named in one place (the `announce` job).
+
+### Homebrew formula
+
+`packaging/homebrew/rail0.rb` is the homebrew-core formula (`brew install rail0`, no
+tap): built from source with the Go toolchain, stamped
+`selfupdate.Packager=Homebrew` so the binary never replaces itself or checks for
+updates, with the `r0` alias, shell completions, the man pages and a `test do` block.
+It is submitted to Homebrew/homebrew-core once the repository meets Homebrew's
+notability bar; Homebrew's bots then bump it on each release. `bin/brew-formula-test`
+builds it from the working tree in a throwaway local tap and runs `brew install
+--build-from-source`, `brew test`, `brew audit --strict` and `brew style` (needs
+Homebrew; commit first, it archives `HEAD`).

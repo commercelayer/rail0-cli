@@ -38,7 +38,11 @@ Installed with Homebrew, rail0 never replaces itself: it tells you to run
 Interactive sessions also check for a new release once a day and offer to install
 it. The check never runs in CI, with --json or --quiet (or a stored 'output' default
 of json or quiet, unless another output flag is passed), when stdin or stderr is not
-a terminal, or with RAIL0_NO_UPDATE_CHECK=1.`,
+a terminal, or with RAIL0_NO_UPDATE_CHECK=1.
+
+Installed with Homebrew, rail0 never replaces itself: this command reports the new
+release and says to run 'brew upgrade rail0'. A build from the homebrew-core formula
+also skips the daily check, since Homebrew owns its updates.`,
 	Example: `  rail0 update           # install the latest release
   rail0 update --check   # only report whether one is available`,
 	Args: cobra.NoArgs,
@@ -162,8 +166,12 @@ func updateCheckSkippedFor(cmd *cobra.Command) bool {
 //   - the lookup has a short timeout, and ANY failure — offline, rate-limited, no
 //     release yet — is silent and simply waits for the next day's check;
 //   - a failed install warns and lets the command carry on.
+//
+// A build stamped by its package manager (selfupdate.Packager, e.g. the homebrew-core
+// formula) never checks: updates are the package manager's job, and a packaged binary
+// must not contact GitHub on its own. `rail0 update` still answers when asked.
 func maybeOfferUpdate(cmd *cobra.Command) {
-	if updateCheckSkippedFor(cmd) || !updateCheckWanted() {
+	if selfupdate.Packager != "" || updateCheckSkippedFor(cmd) || !updateCheckWanted() {
 		return
 	}
 	now := time.Now()

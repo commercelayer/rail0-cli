@@ -49,6 +49,6 @@ class Rail0 < Formula
     assert_match(/\A0x\h{64}\z/, key["private_key"])
 
     # The command tree is the one this formula built (no keychain, no network).
-    assert_match "balance", shell_output("#{bin}/rail0 keys --help")
+    assert_match "generate", shell_output("#{bin}/rail0 keys --help")
   end
 end

@@ -24,8 +24,8 @@ those, or --active=false to see only the retired ones.
 	Filter by active flag (--active, or --active=false for retired only); omit for every token
 
 .PP
-\fB-c\fP, \fB--chain-id\fP=0
-	Filter by EVM chain ID (e.g. 5042002)
+\fB-c\fP, \fB--chain\fP=
+	Filter by chain: a slug (arc, base, …) or a chain id; the environment's gateway decides testnet vs mainnet
 
 .PP
 \fB-h\fP, \fB--help\fP[=false]
@@ -64,7 +64,7 @@ those, or --active=false to see only the retired ones.
 .SH EXAMPLE
 .EX
   rail0 tokens
-  rail0 tokens --chain-id 5042002
+  rail0 tokens --chain arc
   rail0 tokens --symbol USDC
   rail0 tokens --active           # only what a new payment can use
 .EE

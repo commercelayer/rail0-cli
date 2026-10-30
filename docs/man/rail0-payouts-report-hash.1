@@ -1,0 +1,65 @@
+.nh
+.TH "RAIL0" "1" "Aug 2026" "rail0 CLI" ""
+
+.SH NAME
+rail0-payouts-report-hash - Report a transfer you broadcast yourself
+
+
+.SH SYNOPSIS
+\fBrail0 payouts report-hash   [flags]\fP
+
+
+.SH DESCRIPTION
+Tell the gateway the hash of a payout transfer you signed and broadcast yourself
+(a wallet that signs and sends in one step), instead of 'payouts submit'.
+
+.PP
+The hash must be THIS transfer — from the wallet, to the token, this amount to
+this destination: a hash a node already knows that is anything else is refused
+(foreign_transfer_hash), and one another payout records is 409 payout_hash_in_use.
+A hash no node has seen yet is accepted and settled from its receipt.
+
+.PP
+Also the way back for a payout that failed submission_timeout or dropped because
+the transaction that went out was sped up or replaced: report its hash and the
+payout returns to submitted.
+
+
+.SH OPTIONS
+\fB-h\fP, \fB--help\fP[=false]
+	help for report-hash
+
+
+.SH OPTIONS INHERITED FROM PARENT COMMANDS
+\fB--agent\fP[=false]
+	Agent mode: one JSON envelope on stdout, JSON events on stderr, no prompts (env: RAIL0_AGENT=1)
+
+.PP
+\fB--base-url\fP=""
+	RAIL0 gateway base URL (env: RAIL0_BASE_URL)
+
+.PP
+\fB--debug\fP[=false]
+	Print HTTP request/response details to stderr
+
+.PP
+\fB--json\fP[=false]
+	Force plain (uncolored) JSON output (useful in scripts)
+
+.PP
+\fB--pretty\fP[=false]
+	Use the key-value/table view instead of JSON (terminal only)
+
+.PP
+\fB-q\fP, \fB--quiet\fP[=false]
+	Print only the result's id/hash, one per line (useful in scripts)
+
+
+.SH EXAMPLE
+.EX
+  rail0 payouts report-hash <payout_id> 0x5c50…
+.EE
+
+
+.SH SEE ALSO
+\fBrail0-payouts(1)\fP

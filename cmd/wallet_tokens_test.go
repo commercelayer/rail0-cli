@@ -33,8 +33,8 @@ func TestMatchHolding(t *testing.T) {
 			t.Errorf("matchHolding(%q) = %q, %v; want %q", c.arg, got, err, c.want)
 		}
 	}
-	if _, err := matchHolding(w, "USDC"); err == nil || !strings.Contains(err.Error(), "--chain-id") {
-		t.Errorf("an ambiguous symbol must ask for --chain-id, got %v", err)
+	if _, err := matchHolding(w, "USDC"); err == nil || !strings.Contains(err.Error(), "--chain") {
+		t.Errorf("an ambiguous symbol must ask for --chain, got %v", err)
 	}
 	if _, err := matchHolding(w, "DAI"); err == nil || !strings.Contains(err.Error(), "wallets tokens add") {
 		t.Errorf("a token the wallet never held must point at 'add', got %v", err)

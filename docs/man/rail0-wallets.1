@@ -37,8 +37,8 @@ not_your_wallet). Adding a wallet ('wallets create') is currently unavailable.
 	Filter wallets by active flag ('true' or 'false')
 
 .PP
-\fB--chain-id\fP=0
-	Restrict nested tokens to this chain id
+\fB--chain\fP=
+	Restrict nested tokens to this chain: a slug (arc, base, …) or a chain id; the environment's gateway decides testnet vs mainnet
 
 .PP
 \fB--default\fP=""
@@ -97,7 +97,7 @@ not_your_wallet). Adding a wallet ('wallets create') is currently unavailable.
 .SH EXAMPLE
 .EX
   rail0 wallets                                   # session account
-  rail0 wallets --account 019e748b-… --chain-id 5042002 --symbol USDC
+  rail0 wallets --account 019e748b-… --chain arc --symbol USDC
   rail0 wallets get 0xABCD…
   rail0 wallets balances 0xABCD…
 .EE

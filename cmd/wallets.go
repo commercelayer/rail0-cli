@@ -46,7 +46,7 @@ A session is bound to the wallet it signed in with. Reads ('wallets',
 you signed in with: another wallet of the account is refused (403
 not_your_wallet). Adding a wallet ('wallets create') is currently unavailable.`,
 	Example: `  rail0 wallets                                   # session account
-  rail0 wallets --account 019e748b-… --chain-id 5042002 --symbol USDC
+  rail0 wallets --account 019e748b-… --chain arc --symbol USDC
   rail0 wallets get 0xABCD…
   rail0 wallets balances 0xABCD…`,
 	Args: cobra.NoArgs,
@@ -226,7 +226,7 @@ one already registered to any account is refused (409).`,
 // is not discovered at the first refused payment.
 func walletCreatedHint(addr string) string {
 	return fmt.Sprintf("\nThis wallet accepts no tokens yet, so it can't receive payments. Add one with:\n"+
-		"  rail0 wallets tokens add %s --chain-id <id> --token <symbol> --default", addr)
+		"  rail0 wallets tokens add %s --chain <id> --token <symbol> --default", addr)
 }
 
 // ── wallets update ──────────────────────────────────────────────────────────
@@ -383,8 +383,8 @@ var walletsBalancesCmd = &cobra.Command{
 
 Each chain reports the native gas-token balance and the active token balances,
 or an error if that chain's RPC was unreachable (reported per chain, so one dead
-RPC never hides the others). Use --chain-id / --symbol to narrow the result.`,
-	Example: `  rail0 wallets balances 0xABCD… --chain-id 84532 --symbol USDC`,
+RPC never hides the others). Use --chain / --symbol to narrow the result.`,
+	Example: `  rail0 wallets balances 0xABCD… --chain base --symbol USDC`,
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		account, err := currentAccountID()
@@ -427,11 +427,11 @@ var walletsAliasCmd = &cobra.Command{
 func init() {
 	// wallets (list). --account targets a specific account; without it the
 	// logged-in session's account is used (one of the two must be present, else
-	// error). --active filters the wallets. --chain-id/--symbol restrict the
+	// error). --active filters the wallets. --chain/--symbol restrict the
 	// server-side nested tokens shown for each wallet.
 	walletsCmd.Flags().StringVar(&walletsAccount, "account", "", "Your account id to list (default: the logged-in session account; must be your own)")
 	walletsCmd.Flags().StringVar(&walletsActive, "active", "", "Filter wallets by active flag ('true' or 'false')")
-	walletsCmd.Flags().IntVar(&walletsChainID, "chain-id", 0, "Restrict nested tokens to this chain id")
+	addChainFlag(walletsCmd, &walletsChainID, "", "Restrict nested tokens to this chain")
 	walletsCmd.Flags().StringVarP(&walletsSymbol, "symbol", "s", "", "Restrict nested tokens to this symbol, e.g. USDC (alias: --token)")
 	walletsCmd.Flags().StringVar(&walletsSymbol, "token", "", "Alias for --symbol")
 	_ = walletsCmd.Flags().MarkHidden("token")
@@ -456,7 +456,7 @@ func init() {
 	walletsUpdateCmd.Flags().StringVar(&updateWalletActive, "active", "", "Set active flag ('true' or 'false')")
 
 	// wallets balances
-	walletsBalancesCmd.Flags().IntVar(&balancesChainID, "chain-id", 0, "Restrict to one chain id")
+	addChainFlag(walletsBalancesCmd, &balancesChainID, "", "Restrict to one chain")
 	walletsBalancesCmd.Flags().StringVarP(&balancesSymbol, "symbol", "s", "", "Restrict tokens to this symbol, e.g. USDC (alias: --token)")
 	walletsBalancesCmd.Flags().StringVar(&balancesSymbol, "token", "", "Alias for --symbol")
 	_ = walletsBalancesCmd.Flags().MarkHidden("token")

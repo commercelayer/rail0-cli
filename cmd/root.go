@@ -40,7 +40,12 @@ var rootCmd = &cobra.Command{
 				"--agent prints one JSON envelope per command; it cannot be combined with --quiet or --pretty")
 		}
 		maybeOfferUpdate(cmd)
-		return checkBaseURL(cmd)
+		if err := checkBaseURL(cmd); err != nil {
+			return err
+		}
+		// After checkBaseURL: a --chain slug is resolved against the gateway the
+		// command talks to (see chainRef).
+		return resolveChainFlags(cmd)
 	},
 	Long: `rail0 is a command-line interface for the RAIL0 stablecoin payment gateway.
 
@@ -146,12 +151,12 @@ func init() {
 		&cobra.Group{ID: groupCatalog, Title: "Network catalog:"},
 		&cobra.Group{ID: groupLocal, Title: "Local configuration:"},
 	)
-	assignGroup(groupPayments, paymentsCmd, openCmd)
+	assignGroup(groupPayments, paymentsCmd, payoutsCmd, openCmd)
 	assignGroup(groupAccount, authCmd, tokenCmd, accountCmd, walletsCmd, paymentMethodsCmd, webhooksCmd, analyticsCmd, disputesCmd)
 	assignGroup(groupCatalog, chainsCmd, tokensCmd, healthCmd)
 	assignGroup(groupLocal, initCmd, configCmd, envCmd, aliasesCmd, keysCmd)
 
-	rootCmd.AddCommand(paymentsCmd, accountCmd, walletsCmd, paymentMethodsCmd, webhooksCmd, chainsCmd, tokensCmd, authCmd, healthCmd, aliasesCmd, keysCmd, configCmd, envCmd, disputesCmd, analyticsCmd, openCmd)
+	rootCmd.AddCommand(paymentsCmd, payoutsCmd, accountCmd, walletsCmd, paymentMethodsCmd, webhooksCmd, chainsCmd, tokensCmd, authCmd, healthCmd, aliasesCmd, keysCmd, configCmd, envCmd, disputesCmd, analyticsCmd, openCmd)
 }
 
 // Help groups. `completion`, `help`, `update` and `version` deliberately have none:
@@ -430,6 +435,26 @@ func currentAccountID() (string, error) {
 		return "", errors.New("session carries no account_id: re-run 'rail0 auth login'")
 	}
 	return id, nil
+}
+
+// sessionAddress returns the wallet address the stored session signed in as (the JWT
+// `sub` claim). A session is bound to that one wallet, so commands that act "for the
+// session's wallet" (registering a payout destination) default to it instead of making
+// the user repeat the address they logged in with.
+func sessionAddress() (string, error) {
+	t := token.Load(resolveBaseURL())
+	if t == "" {
+		return "", errors.New("not logged in: run 'rail0 auth login -p 0xYourKey…'")
+	}
+	claims, err := parseJWTClaims(t)
+	if err != nil {
+		return "", errors.New("session invalid or expired: run 'rail0 auth login'")
+	}
+	sub, _ := claims["sub"].(string)
+	if sub == "" {
+		return "", errors.New("session carries no wallet address: re-run 'rail0 auth login'")
+	}
+	return sub, nil
 }
 
 // resolveAccountID returns the explicit --account value when given, otherwise

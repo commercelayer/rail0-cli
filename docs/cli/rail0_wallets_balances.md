@@ -8,7 +8,7 @@ Read a wallet's live on-chain balances across the configured chains.
 
 Each chain reports the native gas-token balance and the active token balances,
 or an error if that chain's RPC was unreachable (reported per chain, so one dead
-RPC never hides the others). Use --chain-id / --symbol to narrow the result.
+RPC never hides the others). Use --chain / --symbol to narrow the result.
 
 ```
 rail0 wallets balances <wallet> [flags]
@@ -17,13 +17,13 @@ rail0 wallets balances <wallet> [flags]
 ### Examples
 
 ```
-  rail0 wallets balances 0xABCD… --chain-id 84532 --symbol USDC
+  rail0 wallets balances 0xABCD… --chain base --symbol USDC
 ```
 
 ### Options
 
 ```
-      --chain-id int    Restrict to one chain id
+      --chain chain     Restrict to one chain: a slug (arc, base, …) or a chain id; the environment's gateway decides testnet vs mainnet
   -h, --help            help for balances
   -s, --symbol string   Restrict tokens to this symbol, e.g. USDC (alias: --token)
 ```

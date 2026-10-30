@@ -242,7 +242,7 @@ var errorHints = map[string]string{
 	"not_the_payee": "only the merchant (payee) can do this — 'rail0 auth login' with the payee's key",
 	"not_the_payer": "only the buyer (payer) can do this — 'rail0 auth login' with the payer's key",
 	// deactivation and account scoping: the session is fine, the thing it acts for is not
-	"account_deactivated": "the merchant account is deactivated — reads, void, release and refund still work; new payments, authorize, charge and capture need an operator to reactivate it",
+	"account_deactivated": "the merchant account is deactivated — reads, void, release and refund still work; new payments, authorize, charge, capture and every payout or payout-destination change need an operator to reactivate it",
 	// A deactivated session wallet cannot write, with one exception (gateway#439): its
 	// own session may switch it back on when its owner switched it off. Another wallet's
 	// session cannot (gateway#411), and an operator's switch-off is the operator's to lift.
@@ -270,6 +270,24 @@ var errorHints = map[string]string{
 	// POST /webhooks past the account's cap (WEBHOOKS_PER_ACCOUNT, 20 by default).
 	// Disabled subscriptions count, deleted ones do not.
 	"webhook_limit_reached": "the account already holds the most webhook subscriptions it may (disabled ones count too) — delete one ('rail0 webhooks list', 'rail0 webhooks delete <id>'), or add topics to an existing subscription with 'rail0 webhooks update'",
+	// payouts (merchant cash-out): the destination's state, then the payout's
+	"confirmation_required":            "the gateway needs your confirmation of the destination's details — re-run and accept the statement (or pass --confirm-details)",
+	"payout_destination_exists":        "this wallet already has that deposit address for this token and chain — see 'rail0 payouts destinations'",
+	"payout_destination_zero_address":  "the zero address cannot receive a payout — copy the deposit address from the venue again",
+	"payout_destination_own_wallet":    "a wallet cannot pay out to itself — use the venue's deposit address",
+	"payout_destination_is_contract":   "that address is a contract the gateway knows on this chain (a token or RAIL0 itself), not a deposit address — copy it from the venue again",
+	"payout_destination_unverified":    "the destination is not verified: send the proof ('rail0 payouts send --destination <id> --proof'), then 'rail0 payouts destinations confirm <id>' once the venue credited it",
+	"payout_destination_disabled":      "the destination is disabled — 'rail0 payouts destinations enable <id>' first",
+	"payout_destination_proof_missing": "the proof transfer is not confirmed on-chain yet — check it with 'rail0 payouts list --destination <id> --purpose proof', or send one with 'rail0 payouts send --destination <id> --proof'",
+	"payout_below_minimum":             "the amount is below the destination's minimum deposit — a smaller deposit may be lost at the venue; send at least the minimum ('rail0 payouts destinations get <id>')",
+	"insufficient_balance":             "the wallet does not hold enough of the token (after the refund reserve, for 'all') — check 'rail0 wallets balances <wallet>'",
+	"payout_limit_reached":             "too many payouts in the current window — wait and retry",
+	"payout_already_signed":            "a signed payout is pending for this destination and may still be mined — re-broadcast it with 'rail0 payouts resend <id>' and let it settle ('rail0 payouts list --status pending')",
+	"payout_not_pending":               "the payout is no longer pending — 'rail0 payouts get <id>' shows where it is",
+	"payout_not_signed":                "nothing signed is stored for this payout — sign it with 'rail0 payouts submit <id>'",
+	"payout_hash_in_use":               "another payout already records that transaction hash — check the hash you reported",
+	"foreign_transfer_hash":            "that transaction is not this payout's transfer (sender, token, recipient or amount differ) — report the hash of the transfer you sent for it",
+	"transaction_mismatch":             "the signed transaction does not match the one prepared — sign the prepared transaction unchanged",
 	// Not hinted: transaction_not_overwritable. The gateway raises it only on the
 	// /…/submitted endpoints (reporting an externally broadcast hash onto a transaction
 	// already confirmed), and the CLI never calls them — every operation here is

@@ -7,7 +7,7 @@ List payments for the authenticated wallet (requires login)
 Returns all payments where your wallet is payer or payee.
 Requires authentication — run 'rail0 auth login -p 0xKey…' first.
 
-Filter with --status, --mode, --payer, --payee, --token, --chain-id, --disputed,
+Filter with --status, --mode, --payer, --payee, --token, --chain, --disputed,
 --operation, --rail0-id, --reference / --reference-origin, --min-amount / --max-amount, and --created-from /
 --created-to (ISO-8601). --operation keeps payments carrying at least one
 transaction of that operation — '--operation dispute' finds every payment ever
@@ -20,7 +20,7 @@ any request.
 
 --min-amount / --max-amount are DECIMALS in token units ('1.00'), like every other
 amount flag. Converting them to the base units the gateway filters on needs the
-token's decimals, so both --chain-id and --token are required with them — and an
+token's decimals, so both --chain and --token are required with them — and an
 amount range only means something within one token anyway.
 
 '--scope all' is the operator's list: every payment on the gateway, with the same
@@ -46,9 +46,9 @@ rail0 payments list [flags]
   rail0 payments list --sort -created_at
   rail0 payments list --status authorized --mode charge
   rail0 payments list --status authorized,partially_captured
-  rail0 payments list --chain-id 5042002 --disputed
+  rail0 payments list --chain arc --disputed
   rail0 payments list --all --csv > payments.csv          # every matching payment, as CSV
-  rail0 payments list --chain-id 5042002 --token 0x3600… --min-amount 1.00 --created-from 2026-01-01T00:00:00Z
+  rail0 payments list --chain arc --token 0x3600… --min-amount 1.00 --created-from 2026-01-01T00:00:00Z
   rail0 payments list --scope all --has-error                # admin: every payment with an error, any account
   rail0 payments list --scope all --expiring-within 24h      # admin: holds lapsing within a day
   rail0 payments list --scope all --account 019e748b-…       # admin: one merchant's incoming payments
@@ -59,7 +59,7 @@ rail0 payments list [flags]
 ```
       --account string             With --scope all: payments whose payee is one of this account's wallets
       --all                        Fetch every page (ignores --page)
-      --chain-id int               Filter by EVM chain ID
+      --chain chain                Filter by chain: a slug (arc, base, …) or a chain id; the environment's gateway decides testnet vs mainnet
       --created-from string        Only payments created at/after this ISO-8601 time
       --created-to string          Only payments created at/before this ISO-8601 time
       --csv                        Write the payments as CSV instead of JSON (with --all: every page)
@@ -67,8 +67,8 @@ rail0 payments list [flags]
       --expiring-within duration   With --scope all: authorized payments whose hold lapses within this duration (e.g. 24h; max 90 days)
       --has-error                  With --scope all: payments carrying a last_error_code (--has-error=false: none)
   -h, --help                       help for list
-      --max-amount string          Maximum amount as a decimal in token units (inclusive); needs --chain-id and --token
-      --min-amount string          Minimum amount as a decimal in token units (inclusive); needs --chain-id and --token
+      --max-amount string          Maximum amount as a decimal in token units (inclusive); needs --chain and --token
+      --min-amount string          Minimum amount as a decimal in token units (inclusive); needs --chain and --token
       --mode string                Filter by mode (authorize or charge)
       --operation string           Only payments with at least one transaction of this operation (e.g. dispute, refund)
       --page int                   Page number (1-based)

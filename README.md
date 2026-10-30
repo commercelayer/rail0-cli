@@ -33,9 +33,9 @@ rotate is reported rather than silently honoured. Keys are scoped to the payment
 - [Installation](#installation) — [install script](#install-script-macos-and-linux--recommended) · [manual download](#manual-download-any-platform-windows-included) · [from source](#build-from-source-contributors) · [`rail0 update`](#updating-rail0-update) · [`rail0 init`](#guided-setup-rail0-init)
 - [**Your first payment**](#your-first-payment) — the guided path
 - [Shell completion](#shell-completion)
-- [Configuration](#configuration) — [defaults](#persisted-defaults-config) · [environments](#environments-env) · [address book](#address-book-aliases) · [signing keys](#signing-keys-os-keychain) · [new wallet](#new-wallet-keys-generate)
+- [Configuration](#configuration) — [defaults](#persisted-defaults-config) · [environments](#environments-env) · [`--chain`](#chains---chain-slugid) · [address book](#address-book-aliases) · [signing keys](#signing-keys-os-keychain) · [new wallet](#new-wallet-keys-generate) · [`keys balance`](#keys-balance-addressnamename--on-chain-balance-like-cast-balance)
 - [Signing modes](#signing-modes) — who signs what, and when
-- [Commands](#commands) — the full reference, including [repairing a webhook](#repairing-a-webhook-that-stopped-delivering)
+- [Commands](#commands) — the full reference, including [repairing a webhook](#repairing-a-webhook-that-stopped-delivering) and [payouts](#payouts)
 - [Full flow examples](#full-flow-examples) — authorize/capture, charge, refund
 - [Output modes](#output-modes) — including [agent mode (`--agent`)](#agent-mode---agent)
 - [Releasing](#releasing) — for maintainers
@@ -299,7 +299,7 @@ first run.
 ```sh
 RAIL0_ID=$(rail0 payments create \
   --from @buyer --to @merchant \
-  --token USDC --amount 1.00 --chain-id 5042002 \
+  --token USDC --amount 1.00 --chain arc \
   --private-key @buyer-key --quiet)
 
 echo "$RAIL0_ID"
@@ -368,9 +368,10 @@ rail0 completion bash > /etc/bash_completion.d/rail0  # bash
 rail0 completion fish > ~/.config/fish/completions/rail0.fish
 ```
 
-Beyond commands and flags: `keys rm` / `keys address` complete the saved key names,
-the address flags (`--from`, `--to`, `--address`, `--payer`, `--payee`) complete the
-address book as `@name`, `rail0 env <TAB>` completes the environment names, and the
+Beyond commands and flags: `keys rm` / `keys address` / `keys balance` complete the
+saved key names, the address flags (`--from`, `--to`, `--address`, `--payer`,
+`--payee`) complete the address book as `@name`, `--chain` completes the current
+gateway's chain slugs, `rail0 env <TAB>` completes the environment names, and the
 finite enums (`--status`, `--mode`, `--by`, `--interval`, `--until`) complete their
 accepted values.
 
@@ -532,17 +533,18 @@ because it has no value. (Secrets like private keys are never stored here.)
 ```sh
 rail0 config                                  # list the settings that are set + origin (flag/env/file)
 rail0 config set base-url http://localhost:9292
-rail0 config set chain-id 5042002              # fills --chain-id/-c when omitted
+rail0 config set chain arc                     # fills --chain/-c when omitted (slug or id)
 rail0 config set token USDC                    # fills --token/-t when omitted
-rail0 config get chain-id                      # value + origin; an unset key is an error
-rail0 config unset chain-id
+rail0 config get chain                         # value + origin; an unset key is an error
+rail0 config unset chain
 rail0 config path                              # config file location
 ```
 
 | Key | Fills | Env var | When not set |
 | --- | --- | --- | --- |
 | `base-url` | `--base-url` | `RAIL0_BASE_URL` | `https://api.rail0.xyz` |
-| `chain-id` | `--chain-id` / `-c` | `RAIL0_CHAIN_ID` | the matching flag must be passed |
+| `chain` | `--chain` / `-c` | `RAIL0_CHAIN` | the matching flag must be passed |
+| `chain-id` | legacy numeric form of `chain` | `RAIL0_CHAIN_ID` | — |
 | `token` | `--token` / `-t` | `RAIL0_TOKEN_SYMBOL` | the matching flag must be passed |
 | `admin-url` | — (the page `rail0 open` opens) | `RAIL0_ADMIN_URL` | the current environment's (development, staging) |
 | `output` | `--json` / `--pretty` / `--quiet` | `RAIL0_OUTPUT` | `auto` |
@@ -568,6 +570,12 @@ differs every time, and a default there would silently price a payment.
 `--description` is left out as the mirror image — it is the reconciliation reference,
 and a constant one is worse than none.
 
+`chain` takes a slug (`arc`) or a chain id, resolved against the current gateway
+when a command uses it. Configs written before slugs hold the numeric `chain-id`; it is
+still read (`chain` wins when both are set in the same place, and an env var outranks
+the config file across the two, so an exported `RAIL0_CHAIN_ID` still overrides a
+stored `chain`). The next `rail0 env development|staging` rewrites it as `chain: arc`.
+
 Note that `token`'s env var is `RAIL0_TOKEN_SYMBOL`, not `RAIL0_TOKEN` — that name was
 a session-token source until it was removed, and reusing it would make a stale
 exported JWT arrive as a payment token symbol.
@@ -576,10 +584,10 @@ exported JWT arrive as a payment token symbol.
 
 Switch a whole bundle of settings at once instead of setting each key by hand:
 
-| Environment | base-url | admin-url | chain-id | token |
+| Environment | base-url | admin-url | chain | token |
 | --- | --- | --- | --- | --- |
-| `development` | `http://localhost:9292` | `http://localhost:3000` | `5042002` | `USDC` |
-| `staging` | `https://rail0-gateway-staging.fly.dev` | `https://rail0-admin-staging.fly.dev` | `5042002` | `USDC` |
+| `development` | `http://localhost:9292` | `http://localhost:3000` | `arc` | `USDC` |
+| `staging` | `https://rail0-gateway-staging.fly.dev` | `https://rail0-admin-staging.fly.dev` | `arc` | `USDC` |
 | `production` | `https://api.rail0.xyz` | — | — | — |
 
 Production carries no admin URL, chain or token, and that is not an omission: the two other
@@ -614,7 +622,7 @@ and asks first**:
 
 ```
 Switching to "production" clears settings it does not define:
-  chain-id = 5042002
+  chain = arc
   token = USDC
 Clear them and switch? [y/N]:
 ```
@@ -649,6 +657,33 @@ override for a single command. `env current` reports the environment the
 gateway is what identifies an environment, and the other parameters are conveniences
 the switch also writes — comparing those too would report `custom` for someone who
 merely changed chain after `env staging`.
+
+### Chains (`--chain <slug|id>`)
+
+Every command that takes a chain takes `--chain` (`-c` where it had one): a **slug**
+(`arc`, `base`, `optimism`, `arbitrum`, `polygon`, `avalanche`, `sonic`, `ethereum`, …)
+or a numeric **chain id**. A slug is shared by a chain's testnet and mainnet, and a
+gateway serves one network class — staging and development testnets, production
+mainnets — so the slug is resolved against the current environment's gateway
+(`GET /blockchains`, once per command) and picks the right network on its own:
+`--chain arc` is Arc Testnet on staging and Arc on production.
+
+```sh
+rail0 tokens --chain arc
+rail0 payments create … -c base
+rail0 wallets balances @merchant --chain 84532     # an id still works, no lookup
+```
+
+- An unknown slug lists the available ones: `no chain with slug "solana" (available: arc (5042002), base (84532))`.
+- A numeric id is used as is, without asking the gateway — exactly as before.
+- An unreachable gateway is reported as such; pass the id to skip the lookup.
+- `--chain-id <id>` is still accepted as a hidden alias. Passing both with different
+  chains is an error.
+- `rail0 chains` lists each chain's `slug`; shell completion offers the slugs on `--chain`.
+
+Commands with `--chain`: `payments create`, `payments list`,
+`analytics summary|timeseries|breakdown`, `tokens`, `wallets`, `wallets balances`,
+`wallets tokens add|enable|disable`, `payouts destinations add`, `keys balance`.
 
 ### Address book (aliases)
 
@@ -704,9 +739,50 @@ anyway — otherwise the name would be neither addable nor removable. `keys addr
 ```sh
 rail0 keys add payer            # prompts for the key (hidden), saves it as "payer"
 rail0 keys address payer        # shows the derived 0x address (never the key)
+rail0 keys balance payer --chain arc   # on-chain balance of that address
 rail0 keys rm payer             # remove
 
-rail0 payments create -F @buyer -T @payee -t USDC -a 1.00 -c 5042002 -p @payer
+rail0 payments create -F @buyer -T @payee -t USDC -a 1.00 -c arc -p @payer
+```
+
+#### `keys balance <address|@name|name>` — on-chain balance (like `cast balance`)
+
+Reads a balance straight from the chain's RPC nodes: no session, nothing signed. The
+argument is a `0x` address or a saved key name (`@` optional — the address is derived,
+the key is never printed); a name that is not a saved key is tried in the address book.
+
+```sh
+rail0 keys balance 0xABCD… --chain arc               # native balance
+rail0 keys balance @payer --chain arc --token USDC   # one ERC-20 (symbol or 0x address)
+rail0 keys balance payer --tokens                    # native + every active rail0 token (default chain)
+rail0 keys balance 0xABCD… --rpc-url https://rpc.example.org -q
+```
+
+| Flag | Short | Description |
+| --- | --- | --- |
+| `--chain` | `-c` | Chain slug or id; defaults to the configured `chain` |
+| `--rpc-url` | | Read from this node instead (its `eth_chainId` names the chain; `--chain`, if passed, must agree) |
+| `--token` | `-t` | One ERC-20: a symbol from `rail0 tokens` (USDC) or a `0x` address (symbol/decimals read on-chain) |
+| `--tokens` | | Native balance plus every active rail0 token of the chain |
+
+The RPC endpoints are the chain's keyless `public_rpc_urls` from the gateway, tried in
+order with a per-endpoint timeout until one answers. Output: `balance` (wei / base
+units) and `balance_human` per asset; `-q` prints the raw value (one
+`<asset> <symbol> <value>` line each when there are several), `--json` / `--pretty` /
+`--agent` as everywhere. **On Arc the native gas token is USDC with 18 decimals**, while
+the USDC ERC-20 (`--token USDC`) uses 6 — the same money on two scales.
+
+```json
+{
+  "address": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+  "chain_id": 5042002,
+  "chain": "arc",
+  "chain_name": "Arc Testnet",
+  "balances": [
+    { "asset": "native", "symbol": "USDC", "decimals": 18, "balance": "1500000000000000000", "balance_human": "1.5 USDC" },
+    { "asset": "0x3600000000000000000000000000000000000000", "symbol": "USDC", "decimals": 6, "balance": "2500000", "balance_human": "2.5 USDC" }
+  ]
+}
 ```
 
 Backends: macOS Keychain, Windows Credential Manager, Linux Secret Service
@@ -754,7 +830,7 @@ The payer creates the payment and signs the EIP-712 payload with their key
 (`--private-key` / `-p`), submitting the signature in one step:
 
 ```sh
-rail0 payments create -F @buyer -T @merchant -t USDC -a 10.50 -c 5042002 -p @buyer-key
+rail0 payments create -F @buyer -T @merchant -t USDC -a 10.50 -c arc -p @buyer-key
 ```
 
 > **Auto sign-in.** The gateway requires a SIWE session for every `/payments`
@@ -800,7 +876,7 @@ signing payload, the gateway's chain read failed (usually a transient RPC issue)
 retry the same command in a moment.
 
 **Token/chain discovery from the payee.** On a terminal, if you give `--to` but
-omit `--token` and/or `--chain-id`, the CLI looks up what that merchant accepts
+omit `--token` and/or `--chain`, the CLI looks up what that merchant accepts
 (public `GET /payment_methods` for the payee address) and prompts you to pick
 from those combinations — a single accepted method is used automatically. So a
 buyer who knows only the merchant's address can run:
@@ -811,7 +887,7 @@ rail0 payments create -F @buyer -T @merchant -a 10.50 -p @payer
 ```
 
 If you don't pass `--to` (or that merchant exposes no matching method), the
-interactive form still helps: `--chain-id` and `--token` are offered as
+interactive form still helps: `--chain` and `--token` are offered as
 **pickers from the public catalog** (`GET /blockchains`, then `GET /tokens` for
 the chosen chain) rather than free-text — a single active chain/token is taken
 automatically. All of this needs a **reachable gateway**; if none is reachable
@@ -1027,14 +1103,14 @@ Lists the account's wallets, each with its token holdings nested under `tokens`.
 ```sh
 rail0 wallets                                   # logged-in session account
 rail0 wallets --account 019e748b-…              # your own account, stated explicitly
-rail0 wallets --chain-id 5042002 --symbol USDC --active true
+rail0 wallets --chain arc --symbol USDC --active true
 rail0 wallets --default true --sort -created_at
 ```
 
 | Flag | Short | Description |
 |------|-------|-------------|
 | `--account` | — | Your account id to list; defaults to the logged-in session account (must be your own — requires login) |
-| `--chain-id` | — | Restrict the nested tokens to this chain id (wallets still listed) |
+| `--chain` | — | Restrict the nested tokens to this chain id (wallets still listed) |
 | `--symbol` | `-s` | Restrict the nested tokens to this symbol, e.g. `USDC` (wallets still listed) |
 | `--active` | — | Filter the wallets by active flag (`true` or `false`) |
 | `--default` | — | Restrict the nested token holdings to the default one (`true` or `false`) |
@@ -1132,13 +1208,13 @@ rail0 wallets update 0xABCD… --active true        # back on (its own session, 
 Read a wallet's live on-chain balances across the configured chains. Each chain reports the native gas-token balance and the active token balances, or an error if that chain's RPC was unreachable (reported per chain, so one dead RPC never hides the others).
 
 ```sh
-rail0 wallets balances 0xABCD… --chain-id 84532 --symbol USDC
-rail0 wallets balances @merchant --chain-id 5042002
+rail0 wallets balances 0xABCD… --chain base --symbol USDC
+rail0 wallets balances @merchant --chain arc
 ```
 
 | Flag | Short | Description |
 |------|-------|-------------|
-| `--chain-id` | | Restrict to one chain id |
+| `--chain` | | Restrict to one chain id |
 | `--symbol` | `-s` | Restrict tokens to this symbol (e.g. USDC) |
 
 #### `wallets tokens` — what a wallet accepts
@@ -1149,17 +1225,17 @@ wallet with no active holding cannot be paid. So registering a wallet is only ha
 setup; this is the other half.
 
 ```sh
-rail0 wallets tokens add 0xABCD… --chain-id 84532 --token USDC --default
-rail0 wallets tokens disable 0xABCD… USDC --chain-id 84532    # alias: remove
-rail0 wallets tokens enable 0xABCD… USDC --chain-id 84532
+rail0 wallets tokens add 0xABCD… --chain base --token USDC --default
+rail0 wallets tokens disable 0xABCD… USDC --chain base    # alias: remove
+rail0 wallets tokens enable 0xABCD… USDC --chain base
 ```
 
 - `add` is an upsert: a disabled holding is re-enabled, never duplicated. `--token` is a
-  symbol resolved on `--chain-id`, or the token's `0x` address; both fall back to the
-  configured `chain-id` / `token`.
+  symbol resolved on `--chain`, or the token's `0x` address; both fall back to the
+  configured `chain` / `token`.
 - `enable` / `disable` take `<token>` as a symbol, an address, or the `token_id` shown by
   `rail0 wallets`, matched against the holdings the wallet actually has. When the wallet
-  holds one symbol on several chains, `--chain-id` picks the chain; the CLI never guesses.
+  holds one symbol on several chains, `--chain` picks the chain; the CLI never guesses.
 - A wallet with active holdings has exactly **one default**, the method buyers see first.
   The first holding takes it; `add … --default` moves it. The default cannot be disabled
   (`422 default_payment_method`), so move it first.
@@ -1202,7 +1278,9 @@ Exactly one of `--account` / `--address` is required (mirrors the gateway's `GET
 
 #### `chains` (alias: `blockchains`)
 
-List the supported blockchains. Use the `chain_id` field with `--chain-id` in `payments create`.
+List the supported blockchains. Every command's `--chain` takes a chain's `slug` or
+its `chain_id` (see [Chains](#chains---chain-slugid)); `public_rpc_urls` are keyless RPC
+endpoints for reading the chain directly (`rail0 keys balance`).
 
 Filter with `--symbol` / `-s` (the chain's native symbol) and/or `--network-type` / `-n`
 (`testnet` | `mainnet`); both match case-insensitively.
@@ -1228,11 +1306,11 @@ is what sizes the default [`--timeout`](#payments-wait-rail0id) of a wait.
 
 #### `tokens`
 
-List the token catalog. Filter by chain with `--chain-id` / `-c`, by token symbol with `--symbol` / `-s` (case-insensitive), and by `--active` (`--active=false` for retired tokens only; omit it for every token).
+List the token catalog. Filter by chain with `--chain` / `-c`, by token symbol with `--symbol` / `-s` (case-insensitive), and by `--active` (`--active=false` for retired tokens only; omit it for every token).
 
 ```sh
 rail0 tokens
-rail0 tokens --chain-id 5042002
+rail0 tokens --chain arc
 rail0 tokens --symbol USDC
 ```
 
@@ -1261,6 +1339,9 @@ Manage webhook subscriptions for the authenticated account. A webhook subscribes
 | `payments.failed` | an on-chain attempt failed |
 | `payments.disputed` | a dispute is opened |
 | `payments.dispute_closed` | a dispute is closed |
+| `payouts.confirmed` | a payout's transfer was mined with the expected ERC-20 `Transfer` |
+| `payouts.failed` | a payout failed — its `error_code` says how (`reverted`, `dropped`, `cancelled`, …) |
+| `payout_destinations.verified` | a payout destination was confirmed (`payouts destinations confirm`) |
 
 Every payment payload carries `capturable_amount` and `authorization_expiry`.
 
@@ -1422,7 +1503,7 @@ The account's sales analytics. Requires an **account**: a wallet-only session ge
 `403 account_required`, because these are the merchant's figures rather than an
 address's.
 
-All three take the same filters — `--mode`, `--status`, `--token`, `--chain-id`,
+All three take the same filters — `--mode`, `--status`, `--token`, `--chain`,
 `--from`, `--to`, `--payee`.
 
 By default the figures cover the **whole account** — every wallet it owns. `--payee`
@@ -1466,7 +1547,7 @@ Create a payment, sign the EIP-712 payload with the payer's key, and submit the 
 | `--to` | `-T` | yes | — | Payee wallet address (0x-prefixed) |
 | `--token` | `-t` | yes | — | Token symbol as in `tokens` (e.g. `USDC`) |
 | `--amount` | `-a` | yes | — | Amount in token units (e.g. `10.50`) |
-| `--chain-id` | `-c` | yes | — | EVM chain ID as in `chains` (e.g. `5042002`) |
+| `--chain` | `-c` | yes | — | Chain slug (`arc`) or id as in `chains` |
 | `--charge` | `-C` | no | (off) | Create with mode `charge` (immediate, no escrow); default is `authorize` (escrow + capture) |
 | `--description` | `-d` | no | — | Reconciliation note (e.g. order id); prompted on a terminal when omitted |
 | `--payment-file` | `-f` | no | — | JSON file with the full request body: `chain_id`, `mode` (`authorize` or `charge`), `amount`, `token` (the contract address), `payer`, `payee` required, `description` optional. The file is the whole request: `-F -T -t -a -c -C -d` and the stored chain/token defaults are ignored with it, so put `"mode": "charge"` in the file instead of passing `-C` |
@@ -1475,7 +1556,7 @@ Create a payment, sign the EIP-712 payload with the payer's key, and submit the 
 
 ```sh
 rail0 payments create \
-  -F @buyer -T @merchant -t USDC -a 10.50 -c 5042002 \
+  -F @buyer -T @merchant -t USDC -a 10.50 -c arc \
   -p @buyer-key
 ```
 
@@ -1536,7 +1617,7 @@ own status.
 #### `payments list`
 
 List payments for the authenticated wallet (requires login). Filter with `--status`,
-`--mode`, `--payer` / `--payee`, `--token`, `--chain-id`, `--disputed`, `--operation`, `--reference` / `--reference-origin`,
+`--mode`, `--payer` / `--payee`, `--token`, `--chain`, `--disputed`, `--operation`, `--reference` / `--reference-origin`,
 `--rail0-id`, `--min-amount` / `--max-amount`, and `--created-from` / `--created-to`
 (ISO-8601); sort with `--sort`.
 
@@ -1551,7 +1632,7 @@ request, and an unknown one is refused by name.
 (an **open** dispute) does not.
 
 `--min-amount` / `--max-amount` are **decimals in token units** (`1.00`), like every
-other amount flag, and require `--chain-id` and `--token`: converting them to the base
+other amount flag, and require `--chain` and `--token`: converting them to the base
 units the gateway filters on needs the token's decimals, and an amount range across
 tokens with different scales doesn't describe anything. They used to take base units —
 the only flags in the CLI that did — so `--min-amount 1.00` quietly meant one
@@ -1561,8 +1642,8 @@ millionth of a USDC and matched everything.
 rail0 payments list
 rail0 payments list --sort -created_at
 rail0 payments list --status authorized,partially_captured
-rail0 payments list --chain-id 5042002 --disputed
-rail0 payments list --chain-id 5042002 --token 0x3600… --min-amount 1.00
+rail0 payments list --chain arc --disputed
+rail0 payments list --chain arc --token 0x3600… --min-amount 1.00
 rail0 payments list --operation refund --created-from 2026-09-01T00:00:00Z
 ```
 
@@ -1775,6 +1856,99 @@ rail0 payments wait <rail0Id> --until captured
 
 ---
 
+### Payouts
+
+Move a merchant wallet's tokens to a deposit address at a venue of your own — an exchange account, Circle Mint, another wallet you control. The gateway builds an unsigned ERC-20 `transfer` from the wallet to a registered **destination**; the CLI checks it is exactly that transfer (the destination's token and chain, its address, the amount, value 0, from your key's wallet) and signs it locally. The gateway never holds funds or keys and never talks to the venue. Every payout command needs a login; reads cover the whole account, writes act for the wallet you sign in with, which must be the destination's. A **deactivated account is read-only**: it cannot prepare, send or change payouts or destinations (`403 account_deactivated`).
+
+#### First payout to a new venue
+
+```sh
+# 1. register the deposit address — you confirm you checked the details at the venue
+rail0 payouts destinations add -c arc -t USDC -A 0xVenueDeposit… \
+  -l "Exchange USDC (Arc)" --min-amount 10
+
+# 2. send the proof: 1 token unit, raised to the minimum (--wait: until confirmed)
+rail0 payouts send --destination <destination_id> --proof -p @merchant-key --wait
+
+# 3. once the venue shows the proof CREDITED (not just mined)
+rail0 payouts destinations confirm <destination_id>
+
+# 4. pay out — a decimal, or all: the balance minus the refund reserve
+rail0 payouts send --destination <destination_id> --amount 250.00 -p @merchant-key
+```
+
+A destination is bound to **one chain and one token**: an EVM address is the same string on every chain, but a venue credits only the network it issued the address for. Generate the deposit address at the venue with the network set to `--chain`.
+
+#### Confirming the details (`--confirm-details`)
+
+`destinations add`, and an `update` that **changes** the minimum, show what will be registered followed by the gateway's details statement (`details_v1`):
+
+> I have checked the address, network, token and minimum deposit on the venue's deposit page and confirm they are correct. Funds sent to a wrong address or network, or below the venue's minimum, may be permanently lost and cannot be recovered by rail0.
+
+and need your explicit consent: a y/N prompt (default **no**) on a terminal, or `--confirm-details` without one or with `--agent`. Without it nothing is sent. `--yes` does **not** count — a script that passes it everywhere must not attest, by accident, to having checked a page nobody looked at. The gateway records the attestation (version, who, when) in the destination's audit trail.
+
+#### Minimum and refund reserve
+
+`--min-amount` is the venue's minimum deposit. A venue may ignore a deposit below it, and that deposit can be lost for good — so payouts below it are refused (`payout_below_minimum`) and the proof is raised to it. Raising it above the destination's latest proof takes the verification away: the destination needs a new proof.
+
+`--reserve` is what `send --amount all` leaves in the wallet, so refunds still inside their window can be paid. Unset (or `--reserve ""`), the gateway keeps its suggestion: the refundable balance of the wallet's payments in that token (`suggested_reserve` on the destination).
+
+Both are **decimals in token units** (`10.00`), converted with the token's decimals, like every other amount flag.
+
+#### `payouts destinations` — list (also `destinations list`)
+
+```sh
+rail0 payouts destinations --status verified
+rail0 payouts destinations get <destination_id>
+rail0 payouts destinations update <destination_id> --label "Exchange (main)" --reserve 50
+rail0 payouts destinations update <destination_id> --min-amount 25 --confirm-details
+rail0 payouts destinations disable <destination_id>     # reversible; any wallet of the account
+rail0 payouts destinations enable <destination_id>      # keeps the verification it had
+rail0 payouts destinations events <destination_id>      # its audit trail and its payouts'
+```
+
+`disable` settles the destination's pending payout first: an unsigned one fails `cancelled`; a **signed** one refuses the switch-off (`409 payout_already_signed`) because its transaction may still be mined. `confirm` asks y/N (`--yes` to skip) — confirm only after you see the deposit at the venue: a transfer can be mined and never credited.
+
+#### `payouts send`
+
+Prepare → verify → sign → submit in one step, with the destination wallet's key (`-p`, `@name`, `RAIL0_PRIVATE_KEY`, or a hidden prompt). Before signing it shows the amount, token, deposit address, network and sending wallet and asks to confirm (y/N); `--yes` skips it and is required without a terminal. With `--amount all` or `--proof` the gateway computes the amount; to see the exact figure first, use `prepare` + `submit`. A payout to a disabled or not-yet-verified destination is refused before the prompt.
+
+The result is the payout, `submitted` with its `transaction_hash` (`-q` prints the hash); it turns `confirmed` once its block is final. A node refusal (502) leaves it `pending` and signed: `payouts resend <id>`.
+
+**`-w/--wait`** (also on `submit` and `resend`) keeps polling the payout instead, on the same loop as the payment waits: the result is the payout once `confirmed`, and a `failed` one exits `1` with its `error_code`/`error_detail` (for `submission_timeout` and `dropped`, which are not final, the message names `report-hash`). A payout is `confirmed` only at the chain's finality, so the wait can run past the first receipt. `--timeout` follows the [payment actions' convention](#payee--action-commands): unset, 10× the chain's measured p90 settlement kept within `5m`–`15m`. A wait that runs out exits `11` — the transfer may still be in flight: check it with `payouts get <id>`, never send it again. Progress goes to stderr (every ~10s off a terminal); `--json`, `-q` and `--agent` behave as on the payment waits.
+
+```sh
+rail0 payouts send --destination <destination_id> --amount 250.00 -p @merchant-key --yes --wait
+rail0 payouts submit <payout_id> -p @merchant-key --wait --timeout 10m
+```
+
+#### `payouts prepare` / `payouts submit <payout_id>`
+
+`prepare` builds the payout without signing and prints it — the exact `amount`/`amount_formatted` and `unsigned_transaction`. Then either `submit <id> -p …` (verify against the destination read again, confirm, sign, submit), or sign it with a wallet of your own and report the hash with `report-hash`. Only a pending, **unsigned** payout can be signed; a signed one is `resend`'s.
+
+#### `payouts` — list (also `payouts list`), `get`, `events`
+
+```sh
+rail0 payouts --status submitted,confirmed --purpose payout
+rail0 payouts list --destination <destination_id> --created-from 2026-10-01T00:00:00Z
+rail0 payouts get <payout_id>
+rail0 payouts events <payout_id>
+```
+
+A payout goes `pending` → `submitted` → `confirmed`, or `failed` with an `error_code`: `reverted`, `foreign_transfer`, `dropped`, `submission_timeout`, `cancelled`. One pending payout per destination: a new prepare replaces an unsigned one.
+
+#### `payouts resend` / `cancel` / `report-hash`
+
+```sh
+rail0 payouts resend <payout_id>                  # same signed bytes again: mined once at most (--wait to follow it)
+rail0 payouts cancel <payout_id>                  # an UNSIGNED pending payout; frees the destination
+rail0 payouts report-hash <payout_id> 0x5c50…     # a transfer you broadcast yourself
+```
+
+`report-hash` also brings back a payout that failed `submission_timeout` or `dropped` because the transaction that went out was sped up or replaced.
+
+---
+
 ## Full flow examples
 
 Worked versions of the three shapes, using the address book and keychain names
@@ -1801,7 +1975,7 @@ rail0 auth login -p @merchant-key
 
 # 1. Buyer creates the payment and signs the EIP-3009 authorization locally
 RAIL0_ID=$(rail0 payments create \
-  -F @buyer -T @merchant -t USDC -a 1.00 -c 5042002 \
+  -F @buyer -T @merchant -t USDC -a 1.00 -c arc \
   -p @buyer-key -q)
 
 # 2. Merchant authorizes — funds move into escrow
@@ -1827,7 +2001,7 @@ the mode is fixed when the payment is created, not when it is submitted.
 
 ```sh
 RAIL0_ID=$(rail0 payments create \
-  -F @buyer -T @merchant -t USDC -a 1.00 -c 5042002 -C \
+  -F @buyer -T @merchant -t USDC -a 1.00 -c arc -C \
   -p @buyer-key -q)
 
 rail0 payments charge "$RAIL0_ID" -p @merchant-key --wait
@@ -1862,7 +2036,7 @@ Every command prints the gateway response with all fields the gateway returns.
 
 ```sh
 # Extract the rail0_id of a freshly created payment
-RAIL0_ID=$(rail0 payments create -F @buyer -T @merchant -t USDC -a 10.50 -c 5042002 -p @buyer-key --json | jq -r .rail0_id)
+RAIL0_ID=$(rail0 payments create -F @buyer -T @merchant -t USDC -a 10.50 -c arc -p @buyer-key --json | jq -r .rail0_id)
 
 # Check payment status in a script
 STATUS=$(rail0 payments get <rail0Id> --json | jq -r .status)
@@ -1954,3 +2128,7 @@ One-time settings (repository admins):
 - branch protection on `main`: required `ci` check, "Include administrators";
 - the Slack channel: `release.yml` posts through the `PIPELINE_SLACK_CHANNEL_WEBHOOK_URL`
   secret, named in one place (the `announce` job).
+
+## License
+
+MIT — see [LICENSE](LICENSE).

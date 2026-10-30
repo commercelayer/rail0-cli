@@ -29,6 +29,16 @@ func confirmDestructive(prompt string) error {
 		return newUsageError("confirmation_required",
 			"refusing to run without confirmation in a non-interactive shell; pass --yes to proceed")
 	}
+	return promptYesNo(prompt)
+}
+
+// promptYesNo asks prompt on stderr and reads one line from stdin. Only "y" or "yes"
+// (any case) proceeds; anything else — Enter included — is a NO, returned as
+// ErrAborted. Callers check interactive() first: this reads stdin unconditionally.
+//
+// Shared by confirmDestructive and the payout-details attestation, which is NOT
+// bypassed by --yes (see confirmPayoutDetails) and so cannot go through the gate above.
+func promptYesNo(prompt string) error {
 	fmt.Fprintf(os.Stderr, "%s [y/N]: ", prompt)
 	line, _ := bufio.NewReader(os.Stdin).ReadString('\n')
 	switch strings.ToLower(strings.TrimSpace(line)) {

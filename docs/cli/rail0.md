@@ -43,8 +43,8 @@ Use 'rail0 <command> --help' for detailed usage of any command.
 * [rail0 aliases](rail0_aliases.md)	 - Address book — list saved addresses, or manage them with add/rm
 * [rail0 analytics](rail0_analytics.md)	 - Account sales analytics: summary, timeseries, breakdown (requires login)
 * [rail0 auth](rail0_auth.md)	 - Authenticate with the RAIL0 gateway using SIWE
-* [rail0 chains](rail0_chains.md)	 - List supported blockchains (chain IDs used in --chain-id)
-* [rail0 config](rail0_config.md)	 - Manage persisted CLI defaults (base-url, chain-id, token, output, http-timeout)
+* [rail0 chains](rail0_chains.md)	 - List supported blockchains (the slugs and chain IDs --chain takes)
+* [rail0 config](rail0_config.md)	 - Manage persisted CLI defaults (base-url, chain, token, output, http-timeout)
 * [rail0 disputes](rail0_disputes.md)	 - List every dispute on your payments (requires login)
 * [rail0 env](rail0_env.md)	 - Switch the active environment (development/staging/production) in one shot
 * [rail0 health](rail0_health.md)	 - Report gateway health (liveness/readiness)
@@ -53,6 +53,7 @@ Use 'rail0 <command> --help' for detailed usage of any command.
 * [rail0 open](rail0_open.md)	 - Open the admin app in the browser, on a payment's page when given its id
 * [rail0 payment-methods](rail0_payment-methods.md)	 - Discover a merchant's accepted wallets/tokens (public, no login)
 * [rail0 payments](rail0_payments.md)	 - Payment lifecycle operations
+* [rail0 payouts](rail0_payouts.md)	 - Send a wallet's tokens to your own venue (lists when run bare; requires login)
 * [rail0 token](rail0_token.md)	 - Print the stored session token, or suggest logging in
 * [rail0 tokens](rail0_tokens.md)	 - List supported tokens (symbols used in --token)
 * [rail0 update](rail0_update.md)	 - Update rail0 to the latest release

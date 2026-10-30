@@ -20,13 +20,13 @@ rail0 analytics summary [flags]
 ### Examples
 
 ```
-  rail0 analytics summary --chain-id 5042002
+  rail0 analytics summary --chain arc
 ```
 
 ### Options
 
 ```
-      --chain-id int    Filter by EVM chain ID
+      --chain chain     Filter by chain: a slug (arc, base, …) or a chain id; the environment's gateway decides testnet vs mainnet
       --from string     Only payments created at/after this ISO-8601 time
   -h, --help            help for summary
       --mode string     Filter by mode: authorize or charge

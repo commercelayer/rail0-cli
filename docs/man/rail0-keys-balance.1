@@ -1,0 +1,103 @@
+.nh
+.TH "RAIL0" "1" "Aug 2026" "rail0 CLI" ""
+
+.SH NAME
+rail0-keys-balance - Read an address's on-chain balance straight from the chain (like cast balance)
+
+
+.SH SYNOPSIS
+\fBrail0 keys balance  [flags]\fP
+
+
+.SH DESCRIPTION
+Read the native and/or ERC-20 balance of an address directly from the chain's
+RPC nodes — no gateway session, nothing signed.
+
+.PP
+The address is a 0x address, or the name of a saved key ('rail0 keys add'), with or
+without the @: its address is derived from the keychain entry, the key itself is
+never printed. A name that is not a saved key is tried in the address book
+('rail0 aliases').
+
+.PP
+--chain picks the chain by slug (arc, base, …) or id, resolved by the current
+environment's gateway ('rail0 env'), which also publishes the chain's keyless RPC
+endpoints: they are tried in order, each with a timeout, until one answers. Without
+--chain the configured default chain applies ('rail0 config set chain'). --rpc-url
+reads from that node instead (its eth_chainId names the chain; --chain is then
+optional and, if passed, must agree).
+
+.PP
+Default output is the native balance, in wei and in units (18 decimals, symbol from
+the chain). NOTE: on Arc the native gas token is USDC with 18 decimals, while the
+USDC ERC-20 (--token USDC) uses 6 — the same money, two different scales.
+
+.PP
+--token reads one ERC-20: a symbol (USDC) from the gateway's token list for the
+chain, or a 0x address, whose symbol() and decimals() are read on-chain. --tokens
+reads the native balance plus every active rail0 token of the chain.
+
+.PP
+-q prints the raw value in wei / base units; with several assets, one
+"  " line each (asset = native or the token address — on Arc
+the native coin and the ERC-20 are both USDC).
+
+
+.SH OPTIONS
+\fB-c\fP, \fB--chain\fP=
+	Chain to read (default: 'rail0 config' chain): a slug (arc, base, …) or a chain id; the environment's gateway decides testnet vs mainnet
+
+.PP
+\fB-h\fP, \fB--help\fP[=false]
+	help for balance
+
+.PP
+\fB--rpc-url\fP=""
+	Read from this JSON-RPC endpoint instead of the gateway's public ones (its eth_chainId names the chain)
+
+.PP
+\fB-t\fP, \fB--token\fP=""
+	ERC-20 to read: a symbol from 'rail0 tokens' (USDC) or a 0x token address
+
+.PP
+\fB--tokens\fP[=false]
+	Read the native balance plus every active rail0 token of the chain
+
+
+.SH OPTIONS INHERITED FROM PARENT COMMANDS
+\fB--agent\fP[=false]
+	Agent mode: one JSON envelope on stdout, JSON events on stderr, no prompts (env: RAIL0_AGENT=1)
+
+.PP
+\fB--base-url\fP=""
+	RAIL0 gateway base URL (env: RAIL0_BASE_URL)
+
+.PP
+\fB--debug\fP[=false]
+	Print HTTP request/response details to stderr
+
+.PP
+\fB--json\fP[=false]
+	Force plain (uncolored) JSON output (useful in scripts)
+
+.PP
+\fB--pretty\fP[=false]
+	Use the key-value/table view instead of JSON (terminal only)
+
+.PP
+\fB-q\fP, \fB--quiet\fP[=false]
+	Print only the result's id/hash, one per line (useful in scripts)
+
+
+.SH EXAMPLE
+.EX
+  rail0 keys balance 0xABCD… --chain arc
+  rail0 keys balance @payer --chain arc --token USDC
+  rail0 keys balance payer --tokens
+  rail0 keys balance 0xABCD… --token 0x3600000000000000000000000000000000000000
+  rail0 keys balance 0xABCD… --rpc-url https://rpc.example.org -q
+.EE
+
+
+.SH SEE ALSO
+\fBrail0-keys(1)\fP

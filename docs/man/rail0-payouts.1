@@ -1,0 +1,130 @@
+.nh
+.TH "RAIL0" "1" "Aug 2026" "rail0 CLI" ""
+
+.SH NAME
+rail0-payouts - Send a wallet's tokens to your own venue (lists when run bare; requires login)
+
+
+.SH SYNOPSIS
+\fBrail0 payouts [flags]\fP
+
+
+.SH DESCRIPTION
+Pay out: move a merchant wallet's tokens to a deposit address at a venue of your
+own — an exchange account, Circle Mint, another wallet you control. Run bare to
+list the account's payouts.
+
+.PP
+The gateway does the on-chain leg and nothing else. It builds an unsigned ERC-20
+transfer from the wallet to a registered destination; this CLI checks it is
+EXACTLY that transfer (token, recipient, amount, chain, no value) and signs it
+locally with your key. The gateway never holds funds or keys and never talks to
+the venue.
+
+.PP
+First payout to a new venue:
+  1. payouts destinations add -c  -t USDC -A 0xDeposit… --min-amount 
+       register the deposit address; you confirm you checked the details
+  2. payouts send --destination  --proof -p @merchant-key
+       a small proof transfer (1 token unit, raised to the minimum)
+  3. payouts destinations confirm 
+       once the venue shows the proof CREDITED: the destination is verified
+  4. payouts send --destination  --amount 250.00 -p @merchant-key
+       or --amount all: the balance minus the refund reserve
+
+.PP
+Minimum: a deposit below the venue's minimum may be ignored by the venue and lost
+for good. Set it on the destination (--min-amount): payouts below it are refused.
+
+.PP
+Refund reserve: '--amount all' keeps the destination's reserve in the wallet, so
+refunds still inside their window can be paid (default: the gateway's suggestion,
+the refundable balance of the wallet's payments in that token).
+
+.PP
+A payout goes pending → submitted → confirmed (or failed: its error_code says
+why). One pending payout per destination. A deactivated account is read-only: it
+cannot prepare, send or change payouts or destinations (403 account_deactivated).
+
+.PP
+Every read covers the whole account; writes act for the wallet you sign in with,
+which must be the destination's.
+
+
+.SH OPTIONS
+\fB--created-from\fP=""
+	Only payouts created at/after this ISO-8601 time
+
+.PP
+\fB--created-to\fP=""
+	Only payouts created at/before this ISO-8601 time
+
+.PP
+\fB--destination\fP=""
+	Only payouts to this destination (destination id)
+
+.PP
+\fB-h\fP, \fB--help\fP[=false]
+	help for payouts
+
+.PP
+\fB--page\fP=0
+	Page number (1-based)
+
+.PP
+\fB--per-page\fP=0
+	Payouts per page (max 100)
+
+.PP
+\fB--purpose\fP=""
+	Filter by purpose: payout or proof
+
+.PP
+\fB--sort\fP=""
+	Sort fields (e.g. -created_at)
+
+.PP
+\fB--status\fP=[]
+	Filter by status (pending, submitted, confirmed, failed); repeat or comma-separate for any of several
+
+.PP
+\fB--wallet\fP=""
+	Only payouts from this wallet (wallet id)
+
+
+.SH OPTIONS INHERITED FROM PARENT COMMANDS
+\fB--agent\fP[=false]
+	Agent mode: one JSON envelope on stdout, JSON events on stderr, no prompts (env: RAIL0_AGENT=1)
+
+.PP
+\fB--base-url\fP=""
+	RAIL0 gateway base URL (env: RAIL0_BASE_URL)
+
+.PP
+\fB--debug\fP[=false]
+	Print HTTP request/response details to stderr
+
+.PP
+\fB--json\fP[=false]
+	Force plain (uncolored) JSON output (useful in scripts)
+
+.PP
+\fB--pretty\fP[=false]
+	Use the key-value/table view instead of JSON (terminal only)
+
+.PP
+\fB-q\fP, \fB--quiet\fP[=false]
+	Print only the result's id/hash, one per line (useful in scripts)
+
+
+.SH EXAMPLE
+.EX
+  rail0 payouts
+  rail0 payouts --status submitted,confirmed --purpose payout
+  rail0 payouts send --destination <destination_id> --amount 100.00 -p @merchant-key
+  rail0 payouts get <payout_id>
+.EE
+
+
+.SH SEE ALSO
+\fBrail0(1)\fP, \fBrail0-payouts-cancel(1)\fP, \fBrail0-payouts-destinations(1)\fP, \fBrail0-payouts-events(1)\fP, \fBrail0-payouts-get(1)\fP, \fBrail0-payouts-list(1)\fP, \fBrail0-payouts-prepare(1)\fP, \fBrail0-payouts-report-hash(1)\fP, \fBrail0-payouts-resend(1)\fP, \fBrail0-payouts-send(1)\fP, \fBrail0-payouts-submit(1)\fP

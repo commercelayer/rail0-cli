@@ -27,7 +27,7 @@ rail0 wallets [flags]
 
 ```
   rail0 wallets                                   # session account
-  rail0 wallets --account 019e748b-… --chain-id 5042002 --symbol USDC
+  rail0 wallets --account 019e748b-… --chain arc --symbol USDC
   rail0 wallets get 0xABCD…
   rail0 wallets balances 0xABCD…
 ```
@@ -37,7 +37,7 @@ rail0 wallets [flags]
 ```
       --account string        Your account id to list (default: the logged-in session account; must be your own)
       --active string         Filter wallets by active flag ('true' or 'false')
-      --chain-id int          Restrict nested tokens to this chain id
+      --chain chain           Restrict nested tokens to this chain: a slug (arc, base, …) or a chain id; the environment's gateway decides testnet vs mainnet
       --default string        Restrict nested token holdings to the default one ('true' or 'false')
   -h, --help                  help for wallets
       --page int              Page number (1-based)

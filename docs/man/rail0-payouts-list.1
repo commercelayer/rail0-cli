@@ -1,0 +1,91 @@
+.nh
+.TH "RAIL0" "1" "Aug 2026" "rail0 CLI" ""
+
+.SH NAME
+rail0-payouts-list - List the account's payouts, newest first
+
+
+.SH SYNOPSIS
+\fBrail0 payouts list [flags]\fP
+
+
+.SH DESCRIPTION
+List the account's payouts, newest first. --status takes several values, repeated
+or comma-separated, and matches any of them.
+
+
+.SH OPTIONS
+\fB--created-from\fP=""
+	Only payouts created at/after this ISO-8601 time
+
+.PP
+\fB--created-to\fP=""
+	Only payouts created at/before this ISO-8601 time
+
+.PP
+\fB--destination\fP=""
+	Only payouts to this destination (destination id)
+
+.PP
+\fB-h\fP, \fB--help\fP[=false]
+	help for list
+
+.PP
+\fB--page\fP=0
+	Page number (1-based)
+
+.PP
+\fB--per-page\fP=0
+	Payouts per page (max 100)
+
+.PP
+\fB--purpose\fP=""
+	Filter by purpose: payout or proof
+
+.PP
+\fB--sort\fP=""
+	Sort fields (e.g. -created_at)
+
+.PP
+\fB--status\fP=[]
+	Filter by status (pending, submitted, confirmed, failed); repeat or comma-separate for any of several
+
+.PP
+\fB--wallet\fP=""
+	Only payouts from this wallet (wallet id)
+
+
+.SH OPTIONS INHERITED FROM PARENT COMMANDS
+\fB--agent\fP[=false]
+	Agent mode: one JSON envelope on stdout, JSON events on stderr, no prompts (env: RAIL0_AGENT=1)
+
+.PP
+\fB--base-url\fP=""
+	RAIL0 gateway base URL (env: RAIL0_BASE_URL)
+
+.PP
+\fB--debug\fP[=false]
+	Print HTTP request/response details to stderr
+
+.PP
+\fB--json\fP[=false]
+	Force plain (uncolored) JSON output (useful in scripts)
+
+.PP
+\fB--pretty\fP[=false]
+	Use the key-value/table view instead of JSON (terminal only)
+
+.PP
+\fB-q\fP, \fB--quiet\fP[=false]
+	Print only the result's id/hash, one per line (useful in scripts)
+
+
+.SH EXAMPLE
+.EX
+  rail0 payouts list --destination <destination_id>
+  rail0 payouts list --status failed --created-from 2026-10-01T00:00:00Z
+.EE
+
+
+.SH SEE ALSO
+\fBrail0-payouts(1)\fP

@@ -54,10 +54,20 @@ var configKeys = map[string]configKey{
 		whenUnset: func() string { return config.DefaultBaseURL },
 		validate:  validateBaseURL,
 	},
+	"chain": {
+		name:      "chain",
+		env:       "RAIL0_CHAIN",
+		desc:      "Default chain for --chain/-c: a slug (arc) or a chain id",
+		whenUnset: func() string { return "" },
+		validate:  validateChainRef,
+	},
+	// The numeric predecessor of `chain`, still read (configuredChain) so configs and
+	// RAIL0_CHAIN_ID exports written before slugs keep working. `chain` wins when both
+	// are set in the same place.
 	"chain-id": {
 		name:      "chain-id",
 		env:       "RAIL0_CHAIN_ID",
-		desc:      "Default EVM chain ID for --chain-id/-c",
+		desc:      "Legacy numeric default chain; superseded by chain",
 		whenUnset: func() string { return "" },
 		validate:  validatePositiveInt("chain-id"),
 	},
@@ -132,6 +142,22 @@ func validatePositiveInt(key string) func(string) error {
 		}
 		return nil
 	}
+}
+
+// validateChainRef checks the shape of a default chain: a positive chain id or a
+// slug. Syntactic only — whether the slug exists depends on the gateway, which may not
+// be configured yet (and differs per environment); the command using it resolves it.
+func validateChainRef(v string) error {
+	if n, err := strconv.Atoi(v); err == nil {
+		if n <= 0 {
+			return fmt.Errorf("chain must be a slug (e.g. arc) or a positive chain id (got %q)", v)
+		}
+		return nil
+	}
+	if !chainSlugPattern(v) {
+		return fmt.Errorf("chain must be a slug (e.g. arc) or a positive chain id (got %q)", v)
+	}
+	return nil
 }
 
 // validateTokenSymbol checks the shape of a token symbol as the gateway lists it
@@ -228,7 +254,7 @@ func effectiveSetting(k configKey) (value, origin string) {
 // no value, which is what `rail0 config` lists and `config get` answers.
 func configuredSetting(k configKey) (value, origin string, ok bool) {
 	// Only the two keys with a GLOBAL flag can be overridden per command this way.
-	// chain-id and token are overridden by per-command flags, which are not bound
+	// chain and token are overridden by per-command flags, which are not bound
 	// while `config`/`env` render — so their origin here describes the stored
 	// default, which is what those listings are about.
 	if k.name == "base-url" && baseURL != "" {
@@ -291,7 +317,7 @@ func loadConfigForWrite() (*config.Config, error) {
 // set/get/unset/path verbs.
 var configCmd = &cobra.Command{
 	Use:   "config",
-	Short: "Manage persisted CLI defaults (base-url, chain-id, token, output, http-timeout)",
+	Short: "Manage persisted CLI defaults (base-url, chain, token, output, http-timeout)",
 	Long: `Manage persisted CLI defaults stored in the config file.
 
 Run bare to list the settings that are SET, with each value and where it comes from
@@ -308,10 +334,10 @@ add') and the OS keychain ('rail0 keys add', passed as @name), which already spa
 you the retyping without making the parties or the signer implicit.`,
 	Example: `  rail0 config
   rail0 config set base-url http://localhost:9292
-  rail0 config set chain-id 5042002
+  rail0 config set chain arc
   rail0 config set token USDC
-  rail0 config get chain-id
-  rail0 config unset chain-id`,
+  rail0 config get chain
+  rail0 config unset chain`,
 	Args: cobra.NoArgs,
 	RunE: func(_ *cobra.Command, _ []string) error {
 		names := sortedConfigKeyNames()

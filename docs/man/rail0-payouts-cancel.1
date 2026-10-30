@@ -1,0 +1,59 @@
+.nh
+.TH "RAIL0" "1" "Aug 2026" "rail0 CLI" ""
+
+.SH NAME
+rail0-payouts-cancel - Cancel a pending payout that was never signed
+
+
+.SH SYNOPSIS
+\fBrail0 payouts cancel  [flags]\fP
+
+
+.SH DESCRIPTION
+Cancel a pending payout the wallet has not signed: it fails with error_code
+"cancelled" and its destination is free for a new one. Nothing moved, so nothing
+is lost.
+
+.PP
+A SIGNED payout cannot be cancelled (409 payout_already_signed): its transaction
+may still be mined. Resend it and let it settle.
+
+
+.SH OPTIONS
+\fB-h\fP, \fB--help\fP[=false]
+	help for cancel
+
+
+.SH OPTIONS INHERITED FROM PARENT COMMANDS
+\fB--agent\fP[=false]
+	Agent mode: one JSON envelope on stdout, JSON events on stderr, no prompts (env: RAIL0_AGENT=1)
+
+.PP
+\fB--base-url\fP=""
+	RAIL0 gateway base URL (env: RAIL0_BASE_URL)
+
+.PP
+\fB--debug\fP[=false]
+	Print HTTP request/response details to stderr
+
+.PP
+\fB--json\fP[=false]
+	Force plain (uncolored) JSON output (useful in scripts)
+
+.PP
+\fB--pretty\fP[=false]
+	Use the key-value/table view instead of JSON (terminal only)
+
+.PP
+\fB-q\fP, \fB--quiet\fP[=false]
+	Print only the result's id/hash, one per line (useful in scripts)
+
+
+.SH EXAMPLE
+.EX
+  rail0 payouts cancel <payout_id>
+.EE
+
+
+.SH SEE ALSO
+\fBrail0-payouts(1)\fP

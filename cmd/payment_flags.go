@@ -152,8 +152,7 @@ func (f *createPaymentFlags) addTo(cmd *cobra.Command) {
 		"Token symbol as listed in GET /tokens (e.g. USDC)")
 	cmd.Flags().StringVarP(&f.amount, "amount", "a", "",
 		"Amount as a decimal in token units (e.g. '1.00' for 1 USDC); the gateway converts to base units")
-	cmd.Flags().IntVarP(&f.chainID, "chain-id", "c", 0,
-		"EVM chain ID as listed in GET /blockchains (e.g. 5042002)")
+	addChainFlag(cmd, &f.chainID, "c", "Chain of the payment, as listed by 'rail0 chains'")
 	cmd.Flags().BoolVarP(&f.charge, "charge", "C", false,
 		"Create with mode=charge (immediate transfer, no escrow); default is authorize (escrow then capture)")
 	cmd.Flags().StringVarP(&f.description, "description", "d", "",
@@ -183,7 +182,7 @@ func (f *createPaymentFlags) addTo(cmd *cobra.Command) {
 // request by definition, so mixing stored defaults into it would produce a body the
 // author did not write. The same holds for every request flag, -C/--charge included:
 // the file's own "mode" decides authorize vs charge.
-func (f *createPaymentFlags) applyConfiguredDefaults() {
+func (f *createPaymentFlags) applyConfiguredDefaults() error {
 	f.fromConfig = nil
 	if f.token == "" {
 		if v, origin, ok := configuredSetting(configKeys["token"]); ok {
@@ -192,15 +191,18 @@ func (f *createPaymentFlags) applyConfiguredDefaults() {
 		}
 	}
 	if f.chainID == 0 {
-		// Validated at `config set`, so a parse failure here means a hand-edited
-		// file: leaving chainID at 0 lets the normal "required" path report it.
-		if v, origin, ok := configuredSetting(configKeys["chain-id"]); ok {
-			if n, err := strconv.Atoi(v); err == nil {
-				f.chainID = n
-				f.fromConfig = append(f.fromConfig, fmt.Sprintf("%s (%s)", chainLabel(n), origin))
-			}
+		// A stored slug is resolved against the current gateway; one that cannot be
+		// (unknown, or the gateway is down) is an error, not a silent "chain required".
+		id, origin, ok, err := configuredChainID(context.Background())
+		if err != nil {
+			return err
+		}
+		if ok {
+			f.chainID = id
+			f.fromConfig = append(f.fromConfig, fmt.Sprintf("%s (%s)", chainLabel(id), origin))
 		}
 	}
+	return nil
 }
 
 // noteConfiguredDefaults says, on stderr, which values the command took from the
@@ -278,7 +280,9 @@ func (f *createPaymentFlags) buildResolved() (rail0.CreatePaymentRequest, error)
 	// Stored defaults count as supplied, so they must land BEFORE the missing-field
 	// check and the interactive form — otherwise a configured chain would still be
 	// prompted for, which defeats the point of configuring it.
-	f.applyConfiguredDefaults()
+	if err := f.applyConfiguredDefaults(); err != nil {
+		return rail0.CreatePaymentRequest{}, err
+	}
 
 	// Fail fast on anything the user DID pass that's malformed, before showing any
 	// prompt — it's confusing to ask for the remaining fields and only then reject
@@ -299,7 +303,7 @@ func (f *createPaymentFlags) buildResolved() (rail0.CreatePaymentRequest, error)
 		}
 	} else if missing {
 		return rail0.CreatePaymentRequest{}, fmt.Errorf(
-			"--from, --to, --token, --amount, and --chain-id are required (or use --payment-file)")
+			"--from, --to, --token, --amount, and --chain are required (or use --payment-file)")
 	}
 	return f.resolve()
 }
@@ -630,7 +634,7 @@ func acceptedMethods(wallets []rail0.WalletWithTokens, token string, chainID int
 
 // proposeFromPaymentMethods discovers what the merchant accepts from the payee
 // address (public GET /payment_methods) and fills whichever of --token /
-// --chain-id the buyer omitted: a single match (given what was already supplied)
+// --chain the buyer omitted: a single match (given what was already supplied)
 // is taken automatically, several are offered as a picker. Best-effort — on a
 // discovery error, an unknown @alias, or a merchant exposing no active methods
 // it returns quietly, leaving the fields to the normal prompts and to resolve()'s

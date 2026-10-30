@@ -19,9 +19,10 @@ it writes that environment's settings to the config file, so every command uses
 them.
 
 .PP
-The bundle is base-url plus, on development and staging, admin-url, chain-id and
-token — so a switch moves the admin app, the default chain and the token as well as
-the gateway. 'env 
+The bundle is base-url plus, on development and staging, admin-url, chain (the
+slug arc, resolved by the environment's gateway to its Arc network) and token —
+so a switch moves the admin app, the default chain and the token as well as the
+gateway. 'env 
 --details' prints what it ended up with.
 
 .PP

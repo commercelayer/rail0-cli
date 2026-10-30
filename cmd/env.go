@@ -36,17 +36,25 @@ var environments = []environment{
 	{name: "development", settings: map[string]string{
 		"base-url":  "http://localhost:9292",
 		"admin-url": "http://localhost:3000",
-		"chain-id":  "5042002",
+		"chain":     "arc",
 		"token":     "USDC",
 	}},
 	{name: "staging", settings: map[string]string{
 		"base-url":  "https://rail0-gateway-staging.fly.dev",
 		"admin-url": "https://rail0-admin-staging.fly.dev",
-		"chain-id":  "5042002",
+		"chain":     "arc",
 		"token":     "USDC",
 	}},
 	{name: "production", settings: map[string]string{"base-url": config.DefaultBaseURL}},
 }
+
+// supersededKeys maps a legacy env-managed key to the key that replaced it. A switch to
+// an environment declaring the replacement removes the legacy key without asking: the
+// value is not lost but restated (a stored chain-id 5042002 becomes chain arc), and a
+// "clear these settings?" prompt on the first switch after an upgrade would be noise.
+// Toward an environment that does NOT declare the replacement (production), the
+// legacy key is stale like any other and the usual confirmation applies.
+var supersededKeys = map[string]string{"chain-id": "chain"}
 
 // envIdentityKey is the setting that DEFINES which environment you are in: the
 // gateway. Everything else in `settings` is a convenience the switch also writes.
@@ -104,6 +112,9 @@ func detectEnv() string {
 // Sorted, so every listing and every warning orders them the same way.
 func envManagedKeys() []string {
 	set := map[string]struct{}{}
+	for legacy := range supersededKeys {
+		set[legacy] = struct{}{} // still written by older CLIs: a switch must own it too
+	}
 	for _, e := range environments {
 		for key := range e.settings {
 			set[key] = struct{}{}
@@ -123,7 +134,7 @@ func envManagedKeys() []string {
 //
 // They survived because applying an environment only ever wrote its own keys and
 // never removed any. production declares just base-url, so moving there from
-// development left chain-id 5042002 and token USDC in place: pointed at the
+// development left chain-id 5042002 (now chain arc) and token USDC in place: pointed at the
 // production gateway with an Arc Testnet default still armed, inherited in
 // silence because nothing wrote it at that moment. An environment is meant to be
 // a complete answer to "what am I talking to", so after a switch the managed
@@ -133,6 +144,11 @@ func staleAfterSwitch(cfg *config.Config, e environment) []string {
 	for _, key := range envManagedKeys() {
 		if _, declared := e.settings[key]; declared {
 			continue
+		}
+		if repl, ok := supersededKeys[key]; ok {
+			if _, declared := e.settings[repl]; declared {
+				continue // replaced, not lost: removed silently by dropSupersededKeys
+			}
 		}
 		if v, ok := cfg.Settings[key]; ok && v != "" {
 			stale = append(stale, key)
@@ -178,9 +194,10 @@ Run bare to list the selectable environments, with the current one marked; add
 it writes that environment's settings to the config file, so every command uses
 them.
 
-The bundle is base-url plus, on development and staging, admin-url, chain-id and
-token — so a switch moves the admin app, the default chain and the token as well as
-the gateway. 'env <name>
+The bundle is base-url plus, on development and staging, admin-url, chain (the
+slug arc, resolved by the environment's gateway to its Arc network) and token —
+so a switch moves the admin app, the default chain and the token as well as the
+gateway. 'env <name>
 --details' prints what it ended up with.
 
 After a switch the environment-managed settings are exactly the target's: a key
@@ -324,6 +341,8 @@ func switchEnv(name string, details bool) error {
 		}
 	}
 
+	dropSupersededKeys(cfg, e)
+
 	leaving := resolveBaseURL()
 	leavingSomewhere := detectEnv() != name
 	for key, value := range e.settings {
@@ -354,6 +373,16 @@ func switchEnv(name string, details bool) error {
 		ui.Notice("not_logged_in", nil, "No session for this gateway. "+loginHint)
 	}
 	return ui.RunAPI(func() (any, error) { return switchResult(name, details, revoked, loggedIn, cleared), nil })
+}
+
+// dropSupersededKeys removes the legacy keys whose replacement e declares (see
+// supersededKeys), so a config upgraded by a switch holds one default chain, not two.
+func dropSupersededKeys(cfg *config.Config, e environment) {
+	for legacy, repl := range supersededKeys {
+		if _, declared := e.settings[repl]; declared {
+			delete(cfg.Settings, legacy)
+		}
+	}
 }
 
 // refuseOverriddenSwitch stops a switch that could not take effect. `env` writes the

@@ -214,7 +214,7 @@ var paymentsListCmd = &cobra.Command{
 	Long: `Returns all payments where your wallet is payer or payee.
 Requires authentication — run 'rail0 auth login -p 0xKey…' first.
 
-Filter with --status, --mode, --payer, --payee, --token, --chain-id, --disputed,
+Filter with --status, --mode, --payer, --payee, --token, --chain, --disputed,
 --operation, --rail0-id, --reference / --reference-origin, --min-amount / --max-amount, and --created-from /
 --created-to (ISO-8601). --operation keeps payments carrying at least one
 transaction of that operation — '--operation dispute' finds every payment ever
@@ -227,7 +227,7 @@ any request.
 
 --min-amount / --max-amount are DECIMALS in token units ('1.00'), like every other
 amount flag. Converting them to the base units the gateway filters on needs the
-token's decimals, so both --chain-id and --token are required with them — and an
+token's decimals, so both --chain and --token are required with them — and an
 amount range only means something within one token anyway.
 
 '--scope all' is the operator's list: every payment on the gateway, with the same
@@ -245,9 +245,9 @@ decimals.`,
   rail0 payments list --sort -created_at
   rail0 payments list --status authorized --mode charge
   rail0 payments list --status authorized,partially_captured
-  rail0 payments list --chain-id 5042002 --disputed
+  rail0 payments list --chain arc --disputed
   rail0 payments list --all --csv > payments.csv          # every matching payment, as CSV
-  rail0 payments list --chain-id 5042002 --token 0x3600… --min-amount 1.00 --created-from 2026-01-01T00:00:00Z
+  rail0 payments list --chain arc --token 0x3600… --min-amount 1.00 --created-from 2026-01-01T00:00:00Z
   rail0 payments list --scope all --has-error                # admin: every payment with an error, any account
   rail0 payments list --scope all --expiring-within 24h      # admin: holds lapsing within a day
   rail0 payments list --scope all --account 019e748b-…       # admin: one merchant's incoming payments`,
@@ -509,7 +509,7 @@ payer and payee are required, description optional. The file is the complete
 request, so -F, -T, -t, -a, -c, -C and -d are ignored with it, and so are the stored
 chain/token defaults: set "mode": "charge" in the file rather than passing -C.`,
 	Example: `  rail0 payments create \
-    -F @buyer -T @merchant -t USDC -a 10.50 -c 5042002 \
+    -F @buyer -T @merchant -t USDC -a 10.50 -c arc \
     -p @buyer-key`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -901,7 +901,7 @@ soon as the transaction is broadcast.
 Pass --private-key (-p): the CLI signs locally and broadcasts in one step.`,
 	Example: `  # 1. Payer creates and signs the payment in one step
   rail0 payments create --from @buyer --to @merchant \
-    --token USDC --amount 1.00 --chain-id 5042002 -p @payer
+    --token USDC --amount 1.00 --chain arc -p @payer
 
   # 2. Payee authorizes, and waits for the chain to confirm it
   rail0 payments authorize <rail0Id> -p @merchant-key --wait`,
@@ -1633,12 +1633,12 @@ func init() {
 	paymentsListCmd.Flags().StringVar(&paymentsListPayer, "payer", "", "Filter by payer address")
 	paymentsListCmd.Flags().StringVar(&paymentsListPayee, "payee", "", "Filter by payee address")
 	paymentsListCmd.Flags().StringVar(&paymentsListToken, "token", "", "Filter by token address")
-	paymentsListCmd.Flags().IntVar(&paymentsListChainID, "chain-id", 0, "Filter by EVM chain ID")
+	addChainFlag(paymentsListCmd, &paymentsListChainID, "", "Filter by chain")
 	paymentsListCmd.Flags().BoolVar(&paymentsListDisputed, "disputed", false, "Filter by whether an open dispute exists")
 	paymentsListCmd.Flags().StringVar(&paymentsListMinAmount, "min-amount", "",
-		"Minimum amount as a decimal in token units (inclusive); needs --chain-id and --token")
+		"Minimum amount as a decimal in token units (inclusive); needs --chain and --token")
 	paymentsListCmd.Flags().StringVar(&paymentsListMaxAmount, "max-amount", "",
-		"Maximum amount as a decimal in token units (inclusive); needs --chain-id and --token")
+		"Maximum amount as a decimal in token units (inclusive); needs --chain and --token")
 	paymentsListCmd.Flags().StringVar(&paymentsListCreatedFrom, "created-from", "", "Only payments created at/after this ISO-8601 time")
 	paymentsListCmd.Flags().StringVar(&paymentsListCreatedTo, "created-to", "", "Only payments created at/before this ISO-8601 time")
 	paymentsListCmd.Flags().StringVar(&paymentsListOperation, "operation", "",

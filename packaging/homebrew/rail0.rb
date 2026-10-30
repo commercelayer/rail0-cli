@@ -13,7 +13,7 @@ class Rail0 < Formula
   homepage "https://github.com/commercelayer/rail0-cli"
   # Set to the release being submitted (the first one whose go.mod needs no sibling
   # checkout: after rail0-cli#186).
-  url "https://github.com/commercelayer/rail0-cli/archive/refs/tags/v1.8.0.tar.gz"
+  url "https://github.com/commercelayer/rail0-cli/archive/refs/tags/v1.7.1.tar.gz"
   sha256 "0000000000000000000000000000000000000000000000000000000000000000"
   license "MIT"
   head "https://github.com/commercelayer/rail0-cli.git", branch: "main"

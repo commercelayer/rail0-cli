@@ -93,6 +93,9 @@ func payoutAmountUnits(ctx context.Context, flag, value string, chainID int, tok
 	if value == "" {
 		return "", nil
 	}
+	if err := checkNotNegative(flag, value); err != nil {
+		return "", err
+	}
 	decimals, ok := tokenDecimals(ctx, chainID, token)
 	if !ok {
 		return "", fmt.Errorf("unknown token %s on %s — its decimals are needed to convert %s (see 'rail0 tokens')",
@@ -103,6 +106,91 @@ func payoutAmountUnits(ctx context.Context, flag, value string, chainID int, tok
 		return "", fmt.Errorf("%s: %w (use a decimal in token units, e.g. 10.00)", flag, err)
 	}
 	return units, nil
+}
+
+// payoutMinimumGuidance is how to state a destination's minimum deposit, shared by
+// every local refusal of a missing or blank one and by the prompt.
+const payoutMinimumGuidance = "look up the minimum deposit on the venue's deposit page (with the network and token " +
+	"of this destination) and pass it as --min-amount <decimal>, or --no-minimum when the venue has none"
+
+// errPayoutMinimumMissing is the local refusal of a destination with no minimum stated
+// — the gateway would answer 422 minimum_required. Its code is the gateway's, so an
+// agent reads the same machine code whichever side refused.
+func errPayoutMinimumMissing(what string) error {
+	return newUsageError("minimum_required", "%s: %s", what, payoutMinimumGuidance)
+}
+
+// errPayoutMinimumConflict is the local refusal of both answers at once — the
+// gateway's 422 minimum_conflict, with its code.
+func errPayoutMinimumConflict() error {
+	return newUsageError("minimum_conflict",
+		"--min-amount and --no-minimum are mutually exclusive: pass the venue's minimum, or --no-minimum when it has none")
+}
+
+// payoutNoMinimumAnswer is what the minimum prompt takes for "the venue has none" —
+// a word, not a figure: "0" is an ordinary minimum, and "none" is the flag no_minimum.
+const payoutNoMinimumAnswer = "none"
+
+// payoutMinimumLabel renders a destination's minimum deposit for a prompt: none is the
+// merchant's explicit "the venue has none" (no_minimum), an empty figure without it a
+// legacy destination that never stated one; anything else is an amount
+// (payoutAmountLabel).
+func payoutMinimumLabel(ctx context.Context, units string, none bool, chainID int, token, symbol string) string {
+	switch {
+	case none:
+		return "none (no minimum at this venue)"
+	case units == "":
+		return "not set"
+	}
+	return payoutAmountLabel(ctx, units, chainID, token, symbol)
+}
+
+// payoutDestinationView is a destination as the CLI prints it: the gateway's fields,
+// unchanged, plus "minimum" — the one field a reader cannot get from min_amount
+// alone, since a null min_amount means either "the venue has none" (no_minimum) or
+// "never stated" (a destination registered before the minimum was asked).
+type payoutDestinationView struct {
+	*rail0.PayoutDestination
+	Minimum string `json:"minimum,omitempty"`
+}
+
+// viewPayoutDestination wraps a destination for output; nil in, nil out. The figure
+// is the gateway's min_amount_formatted, so a listing costs no token-catalogue read.
+func viewPayoutDestination(d *rail0.PayoutDestination) *payoutDestinationView {
+	if d == nil {
+		return nil
+	}
+	v := &payoutDestinationView{PayoutDestination: d}
+	switch {
+	case ui.IsQuiet():
+	case d.NoMinimum:
+		v.Minimum = "none"
+	case d.MinAmount == "":
+		v.Minimum = "not set"
+	case d.MinAmountFormatted != "":
+		v.Minimum = strings.TrimSpace(d.MinAmountFormatted + " " + d.TokenSymbol)
+	default:
+		v.Minimum = string(d.MinAmount) + " base units"
+	}
+	return v
+}
+
+// viewPayoutDestinations wraps a page of destinations for output.
+func viewPayoutDestinations(ds []rail0.PayoutDestination) []*payoutDestinationView {
+	out := make([]*payoutDestinationView, 0, len(ds))
+	for i := range ds {
+		out = append(out, viewPayoutDestination(&ds[i]))
+	}
+	return out
+}
+
+// checkNotNegative refuses a negative amount flag up front, before any request: the
+// decimal conversion would refuse it too, but only after the token lookup.
+func checkNotNegative(flag, value string) error {
+	if strings.HasPrefix(strings.TrimSpace(value), "-") {
+		return newUsageError("usage_error", "%s may not be negative (use a decimal in token units, e.g. 10.00)", flag)
+	}
+	return nil
 }
 
 // payoutAmountLabel renders a base-unit amount of a destination's token for a prompt:

@@ -279,15 +279,20 @@ var errorHints = map[string]string{
 	"payout_destination_unverified":    "the destination is not verified: send the proof ('rail0 payouts send --destination <id> --proof'), then 'rail0 payouts destinations confirm <id>' once the venue credited it",
 	"payout_destination_disabled":      "the destination is disabled — 'rail0 payouts destinations enable <id>' first",
 	"payout_destination_proof_missing": "the proof transfer is not confirmed on-chain yet — check it with 'rail0 payouts list --destination <id> --purpose proof', or send one with 'rail0 payouts send --destination <id> --proof'",
-	"payout_below_minimum":             "the amount is below the destination's minimum deposit — a smaller deposit may be lost at the venue; send at least the minimum ('rail0 payouts destinations get <id>')",
-	"insufficient_balance":             "the wallet does not hold enough of the token (after the refund reserve, for 'all') — check 'rail0 wallets balances <wallet>'",
-	"payout_limit_reached":             "too many payouts in the current window — wait and retry",
-	"payout_already_signed":            "a signed payout is pending for this destination and may still be mined — re-broadcast it with 'rail0 payouts resend <id>' and let it settle ('rail0 payouts list --status pending')",
-	"payout_not_pending":               "the payout is no longer pending — 'rail0 payouts get <id>' shows where it is",
-	"payout_not_signed":                "nothing signed is stored for this payout — sign it with 'rail0 payouts submit <id>'",
-	"payout_hash_in_use":               "another payout already records that transaction hash — check the hash you reported",
-	"foreign_transfer_hash":            "that transaction is not this payout's transfer (sender, token, recipient or amount differ) — report the hash of the transfer you sent for it",
-	"transaction_mismatch":             "the signed transaction does not match the one prepared — sign the prepared transaction unchanged",
+	// The minimum deposit is a required, explicit answer: a figure (min_amount) or the
+	// flag no_minimum — exactly one. minimum_required is neither (or a blank figure),
+	// minimum_conflict both.
+	"minimum_required":      "state the venue's minimum deposit, from its deposit page: --min-amount <decimal>, or --no-minimum when the venue has none (--min-amount may not be blank)",
+	"minimum_conflict":      "pass the venue's minimum (--min-amount) OR --no-minimum, not both",
+	"payout_below_minimum":  "the amount is below the destination's minimum deposit — a smaller deposit may be lost at the venue; send at least the minimum ('rail0 payouts destinations get <id>')",
+	"insufficient_balance":  "the wallet does not hold enough of the token (after the refund reserve, for 'all') — check 'rail0 wallets balances <wallet>'",
+	"payout_limit_reached":  "too many payouts in the current window — wait and retry",
+	"payout_already_signed": "a signed payout is pending for this destination and may still be mined — re-broadcast it with 'rail0 payouts resend <id>' and let it settle ('rail0 payouts list --status pending')",
+	"payout_not_pending":    "the payout is no longer pending — 'rail0 payouts get <id>' shows where it is",
+	"payout_not_signed":     "nothing signed is stored for this payout — sign it with 'rail0 payouts submit <id>'",
+	"payout_hash_in_use":    "another payout already records that transaction hash — check the hash you reported",
+	"foreign_transfer_hash": "that transaction is not this payout's transfer (sender, token, recipient or amount differ) — report the hash of the transfer you sent for it",
+	"transaction_mismatch":  "the signed transaction does not match the one prepared — sign the prepared transaction unchanged",
 	// Not hinted: transaction_not_overwritable. The gateway raises it only on the
 	// /…/submitted endpoints (reporting an externally broadcast hash onto a transaction
 	// already confirmed), and the CLI never calls them — every operation here is

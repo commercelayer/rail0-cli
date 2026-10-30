@@ -25,7 +25,8 @@ First payout to a new venue:
        or --amount all: the balance minus the refund reserve
 
 Minimum: a deposit below the venue's minimum may be ignored by the venue and lost
-for good. Set it on the destination (--min-amount): payouts below it are refused.
+for good. Every destination states it (--min-amount, or --no-minimum when the venue
+has none): payouts below it are refused.
 
 Refund reserve: '--amount all' keeps the destination's reserve in the wallet, so
 refunds still inside their window can be paid (default: the gateway's suggestion,

@@ -2121,3 +2121,7 @@ One-time settings (repository admins):
 - branch protection on `main`: required `ci` check, "Include administrators";
 - the Slack channel: `release.yml` posts through the `PIPELINE_SLACK_CHANNEL_WEBHOOK_URL`
   secret, named in one place (the `announce` job).
+
+## License
+
+MIT — see [LICENSE](LICENSE).

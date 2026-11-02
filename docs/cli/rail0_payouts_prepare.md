@@ -6,8 +6,13 @@ Prepare a payout without signing it (shows the exact amount)
 
 Ask the gateway to build a payout's unsigned transfer, and print the pending
 payout: the exact amount (base units and amount_formatted) — the way to see what
-"all" or a proof comes to — and unsigned_transaction, the EIP-1559 transaction to
+"all" or a proof comes to —, the reserves it keeps back in the wallet
+(refund_reserve, gas_reserve) and unsigned_transaction, the EIP-1559 transaction to
 sign. Nothing is signed or sent.
+
+Both reserves are kept by default; --no-refund-reserve / --no-gas-reserve skip one
+for this payout (see 'payouts send --help': a later refund or capture may then
+fail).
 
 Then either 'payouts submit <id>' (verify, sign with -p, submit), or sign it with
 a wallet of your own and report the hash with 'payouts report-hash <id> <hash>'.
@@ -26,15 +31,18 @@ rail0 payouts prepare [flags]
 
 ```
   rail0 payouts prepare --destination <destination_id> --amount all
+  rail0 payouts prepare --destination <destination_id> --amount all --no-gas-reserve
   rail0 payouts prepare --destination <destination_id> --proof
 ```
 
 ### Options
 
 ```
-  -a, --amount string        Decimal in token units (e.g. 250.00), or 'all' for the balance minus the refund reserve
+  -a, --amount string        Decimal in token units (e.g. 250.00), or 'all' for the balance minus the reserves kept back
   -d, --destination string   Destination id ('rail0 payouts destinations')
   -h, --help                 help for prepare
+      --no-gas-reserve       Do not keep the gas reserve back for this payout (native-gas chains; a later refund or capture may fail)
+      --no-refund-reserve    Do not keep the refund reserve back for this payout (a later refund may fail)
       --proof                Send the proof transfer (the gateway sets its amount) instead of a payout
 ```
 

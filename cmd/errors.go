@@ -285,7 +285,7 @@ var errorHints = map[string]string{
 	"minimum_required":      "state the venue's minimum deposit, from its deposit page: --min-amount <decimal>, or --no-minimum when the venue has none (--min-amount may not be blank)",
 	"minimum_conflict":      "pass the venue's minimum (--min-amount) OR --no-minimum, not both",
 	"payout_below_minimum":  "the amount is below the destination's minimum deposit — a smaller deposit may be lost at the venue; send at least the minimum ('rail0 payouts destinations get <id>')",
-	"insufficient_balance":  "the wallet does not hold enough of the token (after the refund reserve, for 'all') — check 'rail0 wallets balances <wallet>'",
+	"insufficient_balance":  "the wallet does not hold enough of the token after the reserves kept back (refund reserve, and gas reserve on a native-gas chain) — see 'rail0 payouts destinations reserves <id>'; --no-refund-reserve / --no-gas-reserve skip one",
 	"payout_limit_reached":  "too many payouts in the current window — wait and retry",
 	"payout_already_signed": "a signed payout is pending for this destination and may still be mined — re-broadcast it with 'rail0 payouts resend <id>' and let it settle ('rail0 payouts list --status pending')",
 	"payout_not_pending":    "the payout is no longer pending — 'rail0 payouts get <id>' shows where it is",

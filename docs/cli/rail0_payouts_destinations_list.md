@@ -11,17 +11,19 @@ rail0 payouts destinations list [flags]
 ```
   rail0 payouts destinations list --status verified
   rail0 payouts destinations list --wallet <wallet_id>
+  rail0 payouts destinations list --include-deleted
 ```
 
 ### Options
 
 ```
-  -h, --help            help for list
-      --page int        Page number (1-based)
-      --per-page int    Destinations per page
-      --sort string     Sort fields (e.g. -created_at)
-      --status string   Filter by status: unverified, verified, disabled
-      --wallet string   Only this wallet's destinations (wallet id)
+  -h, --help              help for list
+      --include-deleted   List deleted destinations too (deleted_at set)
+      --page int          Page number (1-based)
+      --per-page int      Destinations per page
+      --sort string       Sort fields (e.g. -created_at)
+      --status string     Filter by status: unverified, verified, disabled
+      --wallet string     Only this wallet's destinations (wallet id)
 ```
 
 ### Options inherited from parent commands

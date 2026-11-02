@@ -31,9 +31,13 @@ destination needs a new proof). A destination registered before the minimum was
 asked shows it as "not set" (the "minimum" field of list and get): state it with
 'update'.
 
-Refund reserve: a full-balance payout ('send --amount all') leaves --reserve in the
-wallet, so refunds still inside their window can be paid. Unset, the gateway keeps
-its suggestion: the refundable balance of the wallet's payments in that token.
+Reserves are decided at payout time, not on the destination: 'reserves <id>'
+shows what a payout to it would keep back in the wallet right now (the refund
+reserve and, on a chain whose gas is paid in this token, the gas reserve) and
+what '--amount all' would move. See 'rail0 payouts send --help'.
+
+'delete' removes a destination for good (it leaves the lists, its address can be
+registered again; its payouts and audit trail keep naming it).
 
 Every wallet of the account can READ every destination and disable one; only the
 destination's own wallet may change or re-enable it. A deactivated account is
@@ -49,18 +53,20 @@ rail0 payouts destinations [flags]
   rail0 payouts destinations
   rail0 payouts destinations add -c arc -t USDC -A 0xVenueDeposit… -l "Exchange" --min-amount 10
   rail0 payouts destinations confirm <destination_id>
+  rail0 payouts destinations reserves <destination_id>
   rail0 payouts destinations events <destination_id>
 ```
 
 ### Options
 
 ```
-  -h, --help            help for destinations
-      --page int        Page number (1-based)
-      --per-page int    Destinations per page
-      --sort string     Sort fields (e.g. -created_at)
-      --status string   Filter by status: unverified, verified, disabled
-      --wallet string   Only this wallet's destinations (wallet id)
+  -h, --help              help for destinations
+      --include-deleted   List deleted destinations too (deleted_at set)
+      --page int          Page number (1-based)
+      --per-page int      Destinations per page
+      --sort string       Sort fields (e.g. -created_at)
+      --status string     Filter by status: unverified, verified, disabled
+      --wallet string     Only this wallet's destinations (wallet id)
 ```
 
 ### Options inherited from parent commands
@@ -79,10 +85,12 @@ rail0 payouts destinations [flags]
 * [rail0 payouts](rail0_payouts.md)	 - Send a wallet's tokens to your own venue (lists when run bare; requires login)
 * [rail0 payouts destinations add](rail0_payouts_destinations_add.md)	 - Register a payout destination (asks you to confirm the details)
 * [rail0 payouts destinations confirm](rail0_payouts_destinations_confirm.md)	 - Attest the venue credited the proof: the destination becomes verified
+* [rail0 payouts destinations delete](rail0_payouts_destinations_delete.md)	 - Delete a destination (it leaves the lists; cannot be undone)
 * [rail0 payouts destinations disable](rail0_payouts_destinations_disable.md)	 - Switch a destination off (reversible)
 * [rail0 payouts destinations enable](rail0_payouts_destinations_enable.md)	 - Switch a disabled destination back on
 * [rail0 payouts destinations events](rail0_payouts_destinations_events.md)	 - A destination's audit trail (its events and its payouts'), newest first
 * [rail0 payouts destinations get](rail0_payouts_destinations_get.md)	 - Fetch one payout destination
 * [rail0 payouts destinations list](rail0_payouts_destinations_list.md)	 - List the account's payout destinations (every wallet's)
-* [rail0 payouts destinations update](rail0_payouts_destinations_update.md)	 - Change a destination's label, refund reserve or minimum
+* [rail0 payouts destinations reserves](rail0_payouts_destinations_reserves.md)	 - What a payout to a destination would keep back now, and what it could move
+* [rail0 payouts destinations update](rail0_payouts_destinations_update.md)	 - Change a destination's label or minimum
 

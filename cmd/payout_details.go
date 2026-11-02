@@ -10,8 +10,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// The merchant's attestation that a payout destination's details are right, and the
-// amount conversion its two amount flags need. Shared by `payouts destinations add`
+// The merchant's attestation that a payout destination's details are right, the
+// amount conversion its minimum needs, and how destinations and their reserves print. Shared by `payouts destinations add`
 // and `payouts destinations update`.
 
 // payoutConfirmDetails is --confirm-details: the NON-INTERACTIVE way to accept the
@@ -80,7 +80,7 @@ func wrapIndented(text string, indent, width int) string {
 	return strings.Join(lines, "\n")
 }
 
-// payoutAmountUnits converts a --reserve / --min-amount decimal ("10.00") to the base
+// payoutAmountUnits converts a --min-amount decimal ("10.00") to the base
 // units the gateway stores, with the decimals of the destination's token. "" stays ""
 // (the caller decides what an empty value means).
 //
@@ -208,4 +208,65 @@ func payoutAmountLabel(ctx context.Context, units string, chainID int, token, sy
 		return units + " base units of " + symbol
 	}
 	return rail0.FormatAmount(units, decimals) + " " + symbol
+}
+
+// payoutReservesView is a destination's reserves as a person reads them on a
+// terminal: every figure in token units with its symbol, the refund reserve with the
+// number of payments it covers, and the gas lines only on a chain whose gas is paid in
+// this very token (elsewhere they are "0" and say nothing).
+type payoutReservesView struct {
+	DestinationID string `json:"destination_id"`
+	Network       string `json:"network"`
+	Token         string `json:"token"`
+	Balance       string `json:"balance"`
+	RefundReserve string `json:"refund_reserve"`
+	GasReserve    string `json:"gas_reserve,omitempty"`
+	GasAllowance  string `json:"gas_allowance,omitempty"`
+	Available     string `json:"available"`
+}
+
+// viewPayoutReserves renders GET /payout_destinations/{id}/reserves for output. Machine
+// output (--json, a pipe, --agent) gets the gateway's record unchanged, base units and
+// counts included, so a script reads the same fields as the API; a terminal gets
+// payoutReservesView. nil in, nil out.
+func viewPayoutReserves(r *rail0.PayoutReserves) any {
+	if r == nil || ui.IsMachineOutput() || ui.IsQuiet() {
+		return r
+	}
+	return humanPayoutReserves(r)
+}
+
+// humanPayoutReserves is the terminal form of the reserves (payoutReservesView).
+func humanPayoutReserves(r *rail0.PayoutReserves) *payoutReservesView {
+	amount := func(formatted, units string) string {
+		if formatted == "" {
+			return units + " base units"
+		}
+		return strings.TrimSpace(formatted + " " + r.TokenSymbol)
+	}
+	v := &payoutReservesView{
+		DestinationID: r.DestinationID,
+		Network:       chainLabel(r.ChainID),
+		Token:         tokenLabel(r.TokenSymbol, r.Token),
+		Balance:       amount(r.BalanceFormatted, r.Balance),
+		RefundReserve: fmt.Sprintf("%s (%s)", amount(r.RefundReserveFormatted, r.RefundReserve),
+			plural(r.RefundablePayments, "refundable payment", "refundable payments")),
+		Available: amount(r.AvailableFormatted, r.Available),
+	}
+	if r.NativeGas {
+		v.GasReserve = fmt.Sprintf("%s (%s, %s + %s)", amount(r.GasReserveFormatted, r.GasReserve),
+			plural(r.GasRefunds, "refund", "refunds"),
+			plural(r.OpenAuthorizations, "open authorization", "open authorizations"),
+			plural(r.BaseCaptures, "new capture", "new captures"))
+		v.GasAllowance = amount(r.GasAllowanceFormatted, r.GasAllowance)
+	}
+	return v
+}
+
+// plural renders "1 refund" / "3 refunds".
+func plural(n int, one, many string) string {
+	if n == 1 {
+		return "1 " + one
+	}
+	return fmt.Sprintf("%d %s", n, many)
 }

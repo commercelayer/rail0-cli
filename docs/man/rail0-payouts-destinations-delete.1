@@ -1,0 +1,73 @@
+.nh
+.TH "RAIL0" "1" "Aug 2026" "rail0 CLI" ""
+
+.SH NAME
+rail0-payouts-destinations-delete - Delete a destination (it leaves the lists; cannot be undone)
+
+
+.SH SYNOPSIS
+\fBrail0 payouts destinations delete  [flags]\fP
+
+
+.SH DESCRIPTION
+Delete a payout destination. Only the destination's own wallet may.
+
+.PP
+It leaves the lists ('destinations --include-deleted' still shows it) and its
+address can be registered again. The record is kept: its payouts and audit trail
+keep naming it, and 'get' and 'events' still read it, with deleted_at set and
+status "disabled". A deleted destination takes no further change and cannot be
+re-enabled — to pause one instead, use 'disable'.
+
+.PP
+Its pending payout is settled first, as on 'disable': an unsigned one fails
+"cancelled"; a SIGNED one refuses the delete (409 payout_already_signed), because
+its transaction may still be mined — resend it or let it settle, then delete.
+
+.PP
+You are asked to confirm (y/N); pass --yes to skip the prompt in a script.
+
+
+.SH OPTIONS
+\fB-h\fP, \fB--help\fP[=false]
+	help for delete
+
+.PP
+\fB-y\fP, \fB--yes\fP[=false]
+	Skip the confirmation prompt (required to run non-interactively)
+
+
+.SH OPTIONS INHERITED FROM PARENT COMMANDS
+\fB--agent\fP[=false]
+	Agent mode: one JSON envelope on stdout, JSON events on stderr, no prompts (env: RAIL0_AGENT=1)
+
+.PP
+\fB--base-url\fP=""
+	RAIL0 gateway base URL (env: RAIL0_BASE_URL)
+
+.PP
+\fB--debug\fP[=false]
+	Print HTTP request/response details to stderr
+
+.PP
+\fB--json\fP[=false]
+	Force plain (uncolored) JSON output (useful in scripts)
+
+.PP
+\fB--pretty\fP[=false]
+	Use the key-value/table view instead of JSON (terminal only)
+
+.PP
+\fB-q\fP, \fB--quiet\fP[=false]
+	Print only the result's id/hash, one per line (useful in scripts)
+
+
+.SH EXAMPLE
+.EX
+  rail0 payouts destinations delete <destination_id>
+  rail0 payouts destinations delete <destination_id> --yes
+.EE
+
+
+.SH SEE ALSO
+\fBrail0-payouts-destinations(1)\fP

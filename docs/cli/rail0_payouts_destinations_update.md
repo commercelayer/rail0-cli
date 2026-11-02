@@ -1,15 +1,14 @@
 ## rail0 payouts destinations update
 
-Change a destination's label, refund reserve or minimum
+Change a destination's label or minimum
 
 ### Synopsis
 
-Change a payout destination's label, refund reserve or minimum deposit. Only the
-destination's own wallet may.
+Change a payout destination's label or minimum deposit. Only the destination's
+own wallet may.
 
---reserve and --min-amount are decimals in token units, converted with the
-destination token's decimals. --reserve "" restores the gateway's suggestion. The
-minimum cannot be blanked: --min-amount "" is refused — to state that the venue has
+--min-amount is a decimal in token units, converted with the destination token's
+decimals. The minimum cannot be blanked: --min-amount "" is refused — to state that the venue has
 no minimum, pass --no-minimum. --min-amount and --no-minimum exclude each other. A
 destination registered before the minimum was asked shows it as "not set": state it
 here.
@@ -22,7 +21,8 @@ Re-sending the current value asks nothing. Raising it above the destination's
 latest proof takes the verification away: the destination goes back to
 "unverified" and needs a new proof at the new minimum.
 
-To switch a destination off or on, use 'disable' / 'enable'.
+To switch a destination off or on, use 'disable' / 'enable'; to remove it, 'delete'.
+The reserves a payout keeps back are decided at payout time ('payouts send').
 
 ```
 rail0 payouts destinations update <destination_id> [flags]
@@ -32,7 +32,6 @@ rail0 payouts destinations update <destination_id> [flags]
 
 ```
   rail0 payouts destinations update <destination_id> --label "Exchange (main)"
-  rail0 payouts destinations update <destination_id> --reserve 50
   rail0 payouts destinations update <destination_id> --min-amount 25 --confirm-details
   rail0 payouts destinations update <destination_id> --no-minimum --confirm-details
 ```
@@ -45,7 +44,6 @@ rail0 payouts destinations update <destination_id> [flags]
   -l, --label string        New label
       --min-amount string   New minimum deposit, decimal in token units; asks for the details confirmation
       --no-minimum          The venue has no minimum deposit (no_minimum: true; removes a figure); asks for the details confirmation
-      --reserve string      New refund reserve, decimal in token units ("" restores the gateway's suggestion)
 ```
 
 ### Options inherited from parent commands

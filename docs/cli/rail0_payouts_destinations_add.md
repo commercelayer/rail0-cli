@@ -23,8 +23,8 @@ accept it for you.
 
 --token is a symbol (USDC) resolved on --chain, or the token's 0x address;
 --chain and --token fall back to the configured defaults ('rail0 config').
---min-amount and --reserve are decimals in token units (10.00), never negative,
-converted with the token's decimals. --wallet defaults to the wallet you are
+--min-amount is a decimal in token units (10.00), never negative, converted with
+the token's decimals. --wallet defaults to the wallet you are
 signed in with, and must be it.
 
 The destination is born "unverified". Next: send the proof with
@@ -61,7 +61,6 @@ rail0 payouts destinations add [flags]
   -l, --label string        Human-readable label
       --min-amount string   The venue's minimum deposit, decimal in token units (e.g. 10.00) — required, or --no-minimum
       --no-minimum          The venue has no minimum deposit (no_minimum: true); excludes --min-amount
-      --reserve string      Refund reserve left in the wallet on '--amount all', decimal in token units
   -t, --token string        Token symbol (USDC) or 0x address on that chain (default: 'rail0 config' token)
       --wallet string       Wallet that will send to it, id or address (default: the signed-in wallet)
 ```

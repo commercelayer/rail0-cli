@@ -37,10 +37,13 @@ type payoutGateway struct {
 	prepared map[string]any
 	requests []string
 	bodies   map[string]map[string]any // "METHOD path" → last JSON body
+	queries  map[string]string         // "METHOD path" → last raw query
 	// polls, once the payout was submitted or resent, is what successive GET
 	// /payouts/{id} answer (the last one repeats): the payout as a --wait sees it.
 	polls     []map[string]any
 	submitted bool
+	// reserves is what GET /payout_destinations/{id}/reserves answers.
+	reserves map[string]any
 }
 
 // pollsAfterSubmit makes GET /payouts/{id} answer the submitted payout with each
@@ -93,6 +96,12 @@ func (g *payoutGateway) sent(methodPath string) bool {
 	return false
 }
 
+func (g *payoutGateway) query(methodPath string) string {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.queries[methodPath]
+}
+
 func (g *payoutGateway) body(methodPath string) map[string]any {
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -110,7 +119,14 @@ func newPayoutGateway(t *testing.T) *payoutGateway {
 		dest: map[string]any{
 			"id": poDestID, "chain_id": poChain, "token": poToken, "token_symbol": "USDC",
 			"address": poDeposit, "status": "verified", "min_amount": "10000000",
-			"suggested_reserve": "5000000",
+		},
+		queries: map[string]string{},
+		reserves: map[string]any{
+			"destination_id": poDestID, "chain_id": poChain, "token": poToken, "token_symbol": "USDC", "decimals": 6,
+			"balance": "100000000", "balance_formatted": "100", "refund_reserve": "5000000", "refund_reserve_formatted": "5",
+			"refundable_payments": 3, "native_gas": true, "gas_reserve": "150000", "gas_reserve_formatted": "0.15",
+			"gas_refunds": 3, "open_authorizations": 1, "base_captures": 5,
+			"gas_allowance": "20000", "gas_allowance_formatted": "0.02", "available": "94830000", "available_formatted": "94.83",
 		},
 	}
 	g.prepared = map[string]any{
@@ -127,7 +143,8 @@ func newPayoutGateway(t *testing.T) *payoutGateway {
 		g.mu.Lock()
 		g.requests = append(g.requests, key)
 		g.bodies[key] = body
-		dest, prepared := g.dest, g.prepared
+		g.queries[key] = r.URL.RawQuery
+		dest, prepared, reserves := g.dest, g.prepared, g.reserves
 		if r.Method == http.MethodPost && (r.URL.Path == "/payouts/"+poID+"/submit" || r.URL.Path == "/payouts/"+poID+"/resend") {
 			g.submitted = true
 		} else if r.Method == http.MethodGet && r.URL.Path == "/payouts/"+poID && g.submitted && len(g.polls) > 0 {
@@ -143,10 +160,21 @@ func newPayoutGateway(t *testing.T) *payoutGateway {
 			_ = json.NewEncoder(w).Encode([]map[string]any{{
 				"symbol": "USDC", "address": poToken, "chain_id": poChain, "decimals": 6, "active": true,
 			}})
+		case r.URL.Path == "/payout_destinations/"+poDestID+"/reserves":
+			_ = json.NewEncoder(w).Encode(reserves)
+		case r.URL.Path == "/payout_destinations/"+poDestID && r.Method == http.MethodDelete:
+			out := map[string]any{}
+			for k, v := range dest {
+				out[k] = v
+			}
+			out["status"], out["deleted_at"] = "disabled", "2026-11-02T10:00:00Z"
+			_ = json.NewEncoder(w).Encode(out)
 		case r.URL.Path == "/payout_destinations/"+poDestID && r.Method == http.MethodGet:
 			_ = json.NewEncoder(w).Encode(dest)
 		case r.URL.Path == "/payout_destinations/"+poDestID:
 			_ = json.NewEncoder(w).Encode(dest)
+		case r.URL.Path == "/payout_destinations" && r.Method == http.MethodGet:
+			_ = json.NewEncoder(w).Encode([]map[string]any{dest})
 		case r.URL.Path == "/payout_destinations":
 			w.WriteHeader(http.StatusCreated)
 			_ = json.NewEncoder(w).Encode(dest)
@@ -175,6 +203,7 @@ func newPayoutGateway(t *testing.T) *payoutGateway {
 		tokenCatalogAll = previous
 		assumeYes, payoutConfirmDetails = false, false
 		payoutSendDestination, payoutSendAmount, payoutSendProof, payoutSendKey, payoutSubmitKey = "", "", false, "", ""
+		payoutSendNoRefund, payoutSendNoGas = false, false
 		waitFlag, waitTimeout, waitTimeoutExplicit = false, defaultWaitTimeout, false
 	})
 	return g
@@ -220,15 +249,16 @@ func TestDestinationAddRefusesWithoutTheDetailsConfirmation(t *testing.T) {
 	}
 }
 
-// With --confirm-details the request carries confirm_details=true and the minimum and
-// reserve converted from decimals to base units.
+// With --confirm-details the request carries confirm_details=true and the minimum
+// converted from decimals to base units — and no reserve: the gateway decides the
+// reserves at payout time.
 func TestDestinationAddSendsTheConfirmationAndBaseUnits(t *testing.T) {
 	g := newPayoutGateway(t)
 	payoutDestAddChainID, payoutDestAddToken, payoutDestAddAddress = poChain, "USDC", poDeposit
-	payoutDestAddMin, payoutDestAddReserve = "10", "2.5"
+	payoutDestAddMin = "10"
 	payoutConfirmDetails = true
 	t.Cleanup(func() {
-		payoutDestAddChainID, payoutDestAddToken, payoutDestAddAddress, payoutDestAddMin, payoutDestAddReserve = 0, "", "", "", ""
+		payoutDestAddChainID, payoutDestAddToken, payoutDestAddAddress, payoutDestAddMin = 0, "", "", ""
 	})
 
 	_ = captureStdout(t, func() {
@@ -243,8 +273,11 @@ func TestDestinationAddSendsTheConfirmationAndBaseUnits(t *testing.T) {
 	if b["confirm_details"] != true {
 		t.Errorf("confirm_details = %v, want true", b["confirm_details"])
 	}
-	if b["min_amount"] != "10000000" || b["reserve_amount"] != "2500000" {
-		t.Errorf("min/reserve = %v/%v, want base units 10000000/2500000", b["min_amount"], b["reserve_amount"])
+	if b["min_amount"] != "10000000" {
+		t.Errorf("min_amount = %v, want base units 10000000", b["min_amount"])
+	}
+	if _, present := b["reserve_amount"]; present {
+		t.Errorf("reserve_amount sent: %v", b)
 	}
 	if b["token"] != poToken || !strings.EqualFold(fmt.Sprint(b["wallet_id"]), addressForTestKey(t)) {
 		t.Errorf("token/wallet = %v/%v, want the resolved token and the session wallet", b["token"], b["wallet_id"])
@@ -475,7 +508,7 @@ func TestPayoutMinimumHints(t *testing.T) {
 func TestDestinationUpdateAsksOnlyWhenTheMinimumChanges(t *testing.T) {
 	cmd := payoutDestinationsUpdateCmd
 	t.Cleanup(func() {
-		payoutDestUpdateLabel, payoutDestUpdateMin, payoutDestUpdateReserve = "", "", ""
+		payoutDestUpdateLabel, payoutDestUpdateMin = "", ""
 		cmd.Flags().Lookup("label").Changed = false
 		cmd.Flags().Lookup("min-amount").Changed = false
 	})
@@ -631,6 +664,183 @@ func TestPayoutsSendToAnUnverifiedDestination(t *testing.T) {
 	}
 }
 
+// The reserve opt-outs: sent only as false and only when asked for (unset = the
+// gateway keeps both), and refused with --proof, which keeps nothing back.
+func TestPayoutPrepareRequestReserveFlags(t *testing.T) {
+	t.Cleanup(func() {
+		payoutSendDestination, payoutSendAmount, payoutSendProof = "", "", false
+		payoutSendNoRefund, payoutSendNoGas = false, false
+	})
+	payoutSendDestination, payoutSendAmount = poDestID, "all"
+	req, err := payoutPrepareRequest()
+	if err != nil || req.KeepRefundReserve != nil || req.KeepGasReserve != nil {
+		t.Fatalf("no flags: req = %+v, err = %v, want both reserve keys unset", req, err)
+	}
+	payoutSendNoRefund = true
+	req, err = payoutPrepareRequest()
+	if err != nil || req.KeepRefundReserve == nil || *req.KeepRefundReserve || req.KeepGasReserve != nil {
+		t.Fatalf("--no-refund-reserve: req = %+v, err = %v", req, err)
+	}
+	payoutSendNoRefund, payoutSendNoGas = false, true
+	req, err = payoutPrepareRequest()
+	if err != nil || req.KeepGasReserve == nil || *req.KeepGasReserve || req.KeepRefundReserve != nil {
+		t.Fatalf("--no-gas-reserve: req = %+v, err = %v", req, err)
+	}
+	payoutSendAmount, payoutSendProof = "", true
+	if _, err := payoutPrepareRequest(); err == nil || !strings.Contains(err.Error(), "not to the proof") {
+		t.Fatalf("--proof with --no-gas-reserve: err = %v, want a usage error", err)
+	}
+}
+
+// send --no-refund-reserve sends keep_refund_reserve: false and nothing about the gas
+// reserve; the prompt says the refund reserve is skipped and what that risks, and
+// "all" is computed without it.
+func TestPayoutsSendWithoutTheRefundReserve(t *testing.T) {
+	g := newPayoutGateway(t)
+	payoutSendDestination, payoutSendAmount, payoutSendKey = poDestID, "25", testKeyHex
+	payoutSendNoRefund, assumeYes = true, true
+	_ = captureStdout(t, func() {
+		if err := payoutsSendCmd.RunE(payoutsSendCmd, nil); err != nil {
+			t.Fatalf("send: %v", err)
+		}
+	})
+	b := g.body("POST /payouts/prepare")
+	if v, present := b["keep_refund_reserve"]; !present || v != false {
+		t.Errorf("prepare body = %v, want keep_refund_reserve false", b)
+	}
+	if _, present := b["keep_gas_reserve"]; present {
+		t.Errorf("prepare body = %v, want no keep_gas_reserve", b)
+	}
+
+	res := &rail0.PayoutReserves{Balance: "100000000", RefundReserve: "5000000", RefundablePayments: 3,
+		NativeGas: true, GasReserve: "150000", GasAllowance: "20000", Available: "94830000"}
+	dest := &rail0.PayoutDestination{ID: poDestID, ChainID: poChain, Token: poToken, TokenSymbol: "USDC", Address: poDeposit}
+	req, _ := payoutPrepareRequest()
+	req.Amount = rail0.PayoutAmountAll
+	prompt := payoutSendPrompt(t.Context(), dest, req, res, "0xsigner")
+	for _, want := range []string{"about 99.83 USDC now", "refund reserve  SKIPPED (--no-refund-reserve)", "a later refund may fail", "gas reserve     0.15 USDC kept back"} {
+		if !strings.Contains(prompt, want) {
+			t.Errorf("prompt lacks %q:\n%s", want, prompt)
+		}
+	}
+}
+
+// Both reserves kept (the default): the prompt names them with the gateway's figures,
+// "all" is the gateway's available, and off a native-gas chain there is no gas line.
+func TestPayoutSendPromptShowsTheReserves(t *testing.T) {
+	_ = newPayoutGateway(t)
+	res := &rail0.PayoutReserves{Balance: "100000000", RefundReserve: "5000000", RefundablePayments: 1,
+		NativeGas: true, GasReserve: "150000", GasAllowance: "20000", Available: "94830000"}
+	dest := &rail0.PayoutDestination{ID: poDestID, ChainID: poChain, Token: poToken, TokenSymbol: "USDC", Address: poDeposit}
+	req := rail0.PreparePayoutRequest{DestinationID: poDestID, Purpose: rail0.PayoutPurposePayout, Amount: rail0.PayoutAmountAll}
+	prompt := payoutSendPrompt(t.Context(), dest, req, res, "0xsigner")
+	for _, want := range []string{"about 94.83 USDC now", "refund reserve  5 USDC kept back (1 refundable payment)", "gas reserve     0.15 USDC kept back"} {
+		if !strings.Contains(prompt, want) {
+			t.Errorf("prompt lacks %q:\n%s", want, prompt)
+		}
+	}
+	res.NativeGas, res.GasReserve, res.GasAllowance = false, "0", "0"
+	if prompt := payoutSendPrompt(t.Context(), dest, req, res, "0xsigner"); strings.Contains(prompt, "gas reserve") {
+		t.Errorf("a chain whose gas is not the token shows a gas reserve:\n%s", prompt)
+	}
+	req.Purpose, req.Amount = rail0.PayoutPurposeProof, ""
+	if prompt := payoutSendPrompt(t.Context(), dest, req, nil, "0xsigner"); strings.Contains(prompt, "reserve") {
+		t.Errorf("the proof keeps nothing back, prompt:\n%s", prompt)
+	}
+}
+
+// submit shows the reserves the prepared payout recorded.
+func TestPayoutSubmitPromptShowsTheRecordedReserves(t *testing.T) {
+	_ = newPayoutGateway(t)
+	p := &rail0.Payout{ID: poID, Purpose: "payout", ChainID: poChain, Token: poToken, TokenSymbol: "USDC",
+		Address: poDeposit, Amount: "25000000", AmountFormatted: "25", RefundReserve: "0", GasReserve: "150000"}
+	prompt := payoutSubmitPrompt(t.Context(), p, "0xsigner")
+	for _, want := range []string{"refund reserve  0 USDC kept back", "gas reserve     0.15 USDC kept back"} {
+		if !strings.Contains(prompt, want) {
+			t.Errorf("prompt lacks %q:\n%s", want, prompt)
+		}
+	}
+}
+
+// ── destinations delete / reserves / --include-deleted ──────────────────────
+
+// delete is gated like every destructive command: no TTY and no --yes refuses before
+// any request; with --yes it sends DELETE and prints the deleted destination.
+func TestDestinationDelete(t *testing.T) {
+	g := newPayoutGateway(t)
+	err := payoutDestinationsDeleteCmd.RunE(payoutDestinationsDeleteCmd, []string{poDestID})
+	if err == nil || !strings.Contains(err.Error(), "--yes") {
+		t.Fatalf("want the confirmation gate, got %v", err)
+	}
+	if len(g.all()) > 0 {
+		t.Fatalf("requests %v sent before the confirmation", g.all())
+	}
+	assumeYes = true
+	out := captureStdout(t, func() {
+		if err := payoutDestinationsDeleteCmd.RunE(payoutDestinationsDeleteCmd, []string{poDestID}); err != nil {
+			t.Fatalf("delete: %v", err)
+		}
+	})
+	if !g.sent("DELETE /payout_destinations/" + poDestID) {
+		t.Error("no DELETE sent")
+	}
+	if !strings.Contains(out, "deleted_at") || !strings.Contains(out, "disabled") {
+		t.Errorf("output = %s, want the deleted destination", out)
+	}
+}
+
+// reserves reads GET …/reserves; machine output is the gateway's record unchanged,
+// the terminal form puts every figure in token units with the counts beside them.
+func TestDestinationReserves(t *testing.T) {
+	g := newPayoutGateway(t)
+	out := captureStdout(t, func() {
+		if err := payoutDestinationsReservesCmd.RunE(payoutDestinationsReservesCmd, []string{poDestID}); err != nil {
+			t.Fatalf("reserves: %v", err)
+		}
+	})
+	if !g.sent("GET /payout_destinations/" + poDestID + "/reserves") {
+		t.Error("no reserves read")
+	}
+	for _, want := range []string{`"available": "94830000"`, `"refundable_payments": 3`, `"gas_reserve": "150000"`} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output lacks %s:\n%s", want, out)
+		}
+	}
+
+	r := &rail0.PayoutReserves{DestinationID: poDestID, ChainID: poChain, Token: poToken, TokenSymbol: "USDC",
+		BalanceFormatted: "100", RefundReserveFormatted: "5", RefundablePayments: 1, NativeGas: true,
+		GasReserveFormatted: "0.15", GasRefunds: 1, OpenAuthorizations: 2, BaseCaptures: 5,
+		GasAllowanceFormatted: "0.02", AvailableFormatted: "94.83"}
+	v := humanPayoutReserves(r)
+	if v.Balance != "100 USDC" || v.RefundReserve != "5 USDC (1 refundable payment)" || v.Available != "94.83 USDC" ||
+		v.GasReserve != "0.15 USDC (1 refund, 2 open authorizations + 5 new captures)" || v.GasAllowance != "0.02 USDC" {
+		t.Errorf("human view = %+v", v)
+	}
+	r.NativeGas = false
+	if v := humanPayoutReserves(r); v.GasReserve != "" || v.GasAllowance != "" {
+		t.Errorf("gas lines off a native-gas chain: %+v", v)
+	}
+}
+
+func TestDestinationListIncludeDeleted(t *testing.T) {
+	g := newPayoutGateway(t)
+	payoutDestListDeleted = true
+	t.Cleanup(func() { payoutDestListDeleted = false })
+	_ = captureStdout(t, func() {
+		if err := payoutDestinationsListCmd.RunE(payoutDestinationsListCmd, nil); err != nil {
+			t.Fatalf("list: %v", err)
+		}
+	})
+	if q := g.query("GET /payout_destinations"); q != "include_deleted=true" {
+		t.Errorf("query = %q, want include_deleted=true", q)
+	}
+	for _, c := range []*cobra.Command{payoutDestinationsAddCmd, payoutDestinationsUpdateCmd} {
+		if c.Flags().Lookup("reserve") != nil {
+			t.Errorf("%s still takes --reserve", c.CommandPath())
+		}
+	}
+}
+
 func TestPayoutPrepareRequestFlags(t *testing.T) {
 	t.Cleanup(func() { payoutSendDestination, payoutSendAmount, payoutSendProof = "", "", false })
 	for _, c := range []struct {
@@ -725,6 +935,7 @@ func TestPayoutCommandTree(t *testing.T) {
 		{"payouts", "destinations", "update"}, {"payouts", "destinations", "disable"},
 		{"payouts", "destinations", "enable"}, {"payouts", "destinations", "confirm"},
 		{"payouts", "destinations", "events"}, {"payouts", "destinations", "get"},
+		{"payouts", "destinations", "delete"}, {"payouts", "destinations", "reserves"},
 	} {
 		if c, _, err := rootCmd.Find(path); err != nil || c.Name() != path[len(path)-1] {
 			t.Errorf("rail0 %s: not found (%v)", strings.Join(path, " "), err)
@@ -733,7 +944,7 @@ func TestPayoutCommandTree(t *testing.T) {
 	if payoutsCmd.RunE == nil || payoutDestinationsCmd.RunE == nil {
 		t.Error("payouts and payouts destinations must list when run bare")
 	}
-	for _, c := range []*cobra.Command{payoutsSendCmd, payoutsSubmitCmd, payoutDestinationsConfirmCmd} {
+	for _, c := range []*cobra.Command{payoutsSendCmd, payoutsSubmitCmd, payoutDestinationsConfirmCmd, payoutDestinationsDeleteCmd} {
 		if c.Flags().Lookup("yes") == nil {
 			t.Errorf("%s: missing --yes", c.CommandPath())
 		}

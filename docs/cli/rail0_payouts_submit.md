@@ -10,8 +10,8 @@ gateway, which broadcasts it.
 The transaction is checked against the destination, read again from the gateway —
 exactly transfer(destination address, payout amount) on the destination's token
 and chain, value 0, from your key's wallet — and refused otherwise before the key
-touches it. The command shows the amount, token, deposit address and network and
-asks to confirm (y/N); --yes skips it and is required without a terminal.
+touches it. The command shows the amount, token, deposit address and network —
+and, for a payout, the reserves it keeps back in the wallet — and asks to confirm (y/N); --yes skips it and is required without a terminal.
 
 Only a pending, unsigned payout can be signed. One already signed is 'resend's:
 its transaction may already be in a mempool, and signing again would risk a second

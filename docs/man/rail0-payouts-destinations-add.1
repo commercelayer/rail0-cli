@@ -33,8 +33,8 @@ accept it for you.
 .PP
 --token is a symbol (USDC) resolved on --chain, or the token's 0x address;
 --chain and --token fall back to the configured defaults ('rail0 config').
---min-amount and --reserve are decimals in token units (10.00), never negative,
-converted with the token's decimals. --wallet defaults to the wallet you are
+--min-amount is a decimal in token units (10.00), never negative, converted with
+the token's decimals. --wallet defaults to the wallet you are
 signed in with, and must be it.
 
 .PP
@@ -80,10 +80,6 @@ address for this token and chain.
 .PP
 \fB--no-minimum\fP[=false]
 	The venue has no minimum deposit (no_minimum: true); excludes --min-amount
-
-.PP
-\fB--reserve\fP=""
-	Refund reserve left in the wallet on '--amount all', decimal in token units
 
 .PP
 \fB-t\fP, \fB--token\fP=""

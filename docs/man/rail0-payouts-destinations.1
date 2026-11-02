@@ -43,9 +43,14 @@ asked shows it as "not set" (the "minimum" field of list and get): state it with
 \&'update'.
 
 .PP
-Refund reserve: a full-balance payout ('send --amount all') leaves --reserve in the
-wallet, so refunds still inside their window can be paid. Unset, the gateway keeps
-its suggestion: the refundable balance of the wallet's payments in that token.
+Reserves are decided at payout time, not on the destination: 'reserves \&'
+shows what a payout to it would keep back in the wallet right now (the refund
+reserve and, on a chain whose gas is paid in this token, the gas reserve) and
+what '--amount all' would move. See 'rail0 payouts send --help'.
+
+.PP
+\&'delete' removes a destination for good (it leaves the lists, its address can be
+registered again; its payouts and audit trail keep naming it).
 
 .PP
 Every wallet of the account can READ every destination and disable one; only the
@@ -56,6 +61,10 @@ read-only: every change is refused (403 account_deactivated).
 .SH OPTIONS
 \fB-h\fP, \fB--help\fP[=false]
 	help for destinations
+
+.PP
+\fB--include-deleted\fP[=false]
+	List deleted destinations too (deleted_at set)
 
 .PP
 \fB--page\fP=0
@@ -108,9 +117,10 @@ read-only: every change is refused (403 account_deactivated).
   rail0 payouts destinations
   rail0 payouts destinations add -c arc -t USDC -A 0xVenueDeposit… -l "Exchange" --min-amount 10
   rail0 payouts destinations confirm <destination_id>
+  rail0 payouts destinations reserves <destination_id>
   rail0 payouts destinations events <destination_id>
 .EE
 
 
 .SH SEE ALSO
-\fBrail0-payouts(1)\fP, \fBrail0-payouts-destinations-add(1)\fP, \fBrail0-payouts-destinations-confirm(1)\fP, \fBrail0-payouts-destinations-disable(1)\fP, \fBrail0-payouts-destinations-enable(1)\fP, \fBrail0-payouts-destinations-events(1)\fP, \fBrail0-payouts-destinations-get(1)\fP, \fBrail0-payouts-destinations-list(1)\fP, \fBrail0-payouts-destinations-update(1)\fP
+\fBrail0-payouts(1)\fP, \fBrail0-payouts-destinations-add(1)\fP, \fBrail0-payouts-destinations-confirm(1)\fP, \fBrail0-payouts-destinations-delete(1)\fP, \fBrail0-payouts-destinations-disable(1)\fP, \fBrail0-payouts-destinations-enable(1)\fP, \fBrail0-payouts-destinations-events(1)\fP, \fBrail0-payouts-destinations-get(1)\fP, \fBrail0-payouts-destinations-list(1)\fP, \fBrail0-payouts-destinations-reserves(1)\fP, \fBrail0-payouts-destinations-update(1)\fP

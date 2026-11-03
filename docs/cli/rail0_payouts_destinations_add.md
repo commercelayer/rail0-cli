@@ -57,7 +57,6 @@ rail0 payouts destinations add [flags]
   -c, --chain chain         Chain the deposit address was issued for (default: 'rail0 config' chain): a slug (arc, base, …) or a chain id; the environment's gateway decides testnet vs mainnet
       --confirm-details     Accept the details statement without a prompt (needed without a TTY or with --agent); --yes does NOT imply it
   -h, --help                help for add
-      --kind string         Informational: exchange, circle_mint, self_custody, provider (default exchange)
   -l, --label string        Human-readable label
       --min-amount string   The venue's minimum deposit, decimal in token units (e.g. 10.00) — required, or --no-minimum
       --no-minimum          The venue has no minimum deposit (no_minimum: true); excludes --min-amount

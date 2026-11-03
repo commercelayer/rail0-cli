@@ -21,13 +21,6 @@ var payoutDestinationStatuses = []string{
 	rail0.PayoutDestinationStatusDisabled,
 }
 
-var payoutDestinationKinds = []string{
-	rail0.PayoutDestinationKindExchange,
-	rail0.PayoutDestinationKindCircleMint,
-	rail0.PayoutDestinationKindSelfCustody,
-	rail0.PayoutDestinationKindProvider,
-}
-
 // ── payouts destinations [list] ──────────────────────────────────────────────────
 
 var (
@@ -156,7 +149,6 @@ var (
 	payoutDestAddToken   string
 	payoutDestAddAddress string
 	payoutDestAddLabel   string
-	payoutDestAddKind    string
 	payoutDestAddMin     string
 	payoutDestAddNoMin   bool
 )
@@ -291,7 +283,6 @@ address for this token and chain.`,
 			Token:          rail0.Address(tokenAddress),
 			Address:        rail0.Address(address),
 			Label:          payoutDestAddLabel,
-			Kind:           payoutDestAddKind,
 			NoMinimum:      noMinimum,
 			ConfirmDetails: true, // reached only past confirmPayoutDetails
 		}
@@ -618,10 +609,8 @@ func init() {
 	f.StringVarP(&payoutDestAddToken, "token", "t", "", "Token symbol (USDC) or 0x address on that chain (default: 'rail0 config' token)")
 	f.StringVarP(&payoutDestAddAddress, "address", "A", "", "The venue's deposit address (0x…, or @alias)")
 	f.StringVarP(&payoutDestAddLabel, "label", "l", "", "Human-readable label")
-	f.StringVar(&payoutDestAddKind, "kind", "", "Informational: "+strings.Join(payoutDestinationKinds, ", ")+" (default exchange)")
 	f.StringVar(&payoutDestAddMin, "min-amount", "", "The venue's minimum deposit, decimal in token units (e.g. 10.00) — required, or --no-minimum")
 	f.BoolVar(&payoutDestAddNoMin, "no-minimum", false, "The venue has no minimum deposit (no_minimum: true); excludes --min-amount")
-	_ = payoutDestinationsAddCmd.RegisterFlagCompletionFunc("kind", fixedCompletions(payoutDestinationKinds...))
 	_ = payoutDestinationsAddCmd.RegisterFlagCompletionFunc("address", completeAliasNames)
 	addConfirmDetailsFlag(payoutDestinationsAddCmd)
 

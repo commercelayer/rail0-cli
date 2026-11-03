@@ -1933,7 +1933,7 @@ rail0 payouts destinations reserves <destination_id>    # what a payout would ke
 rail0 payouts destinations delete <destination_id>      # asks y/N (--yes to skip); cannot be undone
 ```
 
-`delete` (only the destination's own wallet) removes it from the lists and frees its address to be registered again; the record is kept — `get` and `events` still read it, with `deleted_at` set and status `disabled`, and its payouts keep naming it — but it takes no further change and cannot be re-enabled. `delete` and `disable` both settle the destination's pending payout first: an unsigned one fails `cancelled`; a **signed** one refuses the switch-off (`409 payout_already_signed`) because its transaction may still be mined. `confirm` asks y/N (`--yes` to skip) — confirm only after you see the deposit at the venue: a transfer can be mined and never credited.
+`delete` (only the destination's own wallet) removes it from the lists and frees its payment method — one destination per token and chain — so another address can be registered there; the record is kept — `get` and `events` still read it, with `deleted_at` set and status `disabled`, and its payouts keep naming it — but it takes no further change and cannot be re-enabled. `delete` and `disable` both settle the destination's pending payout first: an unsigned one fails `cancelled`; a **signed** one refuses the switch-off (`409 payout_already_signed`) because its transaction may still be mined. `confirm` asks y/N (`--yes` to skip) — confirm only after you see the deposit at the venue: a transfer can be mined and never credited.
 
 #### `payouts send`
 

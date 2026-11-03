@@ -272,7 +272,7 @@ var errorHints = map[string]string{
 	"webhook_limit_reached": "the account already holds the most webhook subscriptions it may (disabled ones count too) — delete one ('rail0 webhooks list', 'rail0 webhooks delete <id>'), or add topics to an existing subscription with 'rail0 webhooks update'",
 	// payouts (merchant cash-out): the destination's state, then the payout's
 	"confirmation_required":            "the gateway needs your confirmation of the destination's details — re-run and accept the statement (or pass --confirm-details)",
-	"payout_destination_exists":        "this wallet already has that deposit address for this token and chain — see 'rail0 payouts destinations'",
+	"payout_destination_exists":        "this payment method (token and chain) already has a destination — one per method; delete it to register another, see 'rail0 payouts destinations'",
 	"payout_destination_zero_address":  "the zero address cannot receive a payout — copy the deposit address from the venue again",
 	"payout_destination_own_wallet":    "a wallet cannot pay out to itself — use the venue's deposit address",
 	"payout_destination_is_contract":   "that address is a contract the gateway knows on this chain (a token or RAIL0 itself), not a deposit address — copy it from the venue again",

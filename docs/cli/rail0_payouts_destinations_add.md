@@ -10,6 +10,12 @@ Before running it, open the venue's deposit page with the NETWORK set to --chain
 and the asset set to --token, and copy the address and the minimum deposit from
 there.
 
+--label is required: a name for the destination, unique in the account
+(ignoring case; a deleted destination's label is free again). Surrounding spaces
+are trimmed, and a blank label is refused. On a terminal, leaving it out prompts
+for it; without a terminal or with --agent it is a usage error (label_required),
+before any request.
+
 The minimum is required, and stated explicitly: --min-amount <decimal> (the
 figure; 0 is an ordinary figure), or --no-minimum when the venue has none — never
 both. On a terminal, leaving both out prompts for it (an empty answer is not
@@ -32,9 +38,11 @@ The destination is born "unverified". Next: send the proof with
 credited, 'rail0 payouts destinations confirm <id>'.
 
 Refused (422): the zero address, the wallet itself, a contract the gateway knows on
-that chain, no minimum stated (minimum_required), both a figure and --no-minimum
-(minimum_conflict), or no confirmation; 409 when the wallet already has this
-address for this token and chain.
+that chain, no label (label_required), no minimum stated (minimum_required), both
+a figure and --no-minimum (minimum_conflict), or no confirmation; 409 when the
+wallet already has a destination for this token and chain
+(payout_destination_exists), or another destination of the account already has
+the label (payout_destination_label_taken).
 
 ```
 rail0 payouts destinations add [flags]
@@ -46,8 +54,9 @@ rail0 payouts destinations add [flags]
   rail0 payouts destinations add -c arc -t USDC -A 0xVenueDeposit… \
     -l "Exchange USDC (Arc)" --min-amount 10
 
-  # non-interactive: state the minimum and accept the statement explicitly
-  rail0 payouts destinations add -c arc -t USDC -A 0xVenueDeposit… --no-minimum --confirm-details
+  # non-interactive: name it, state the minimum and accept the statement explicitly
+  rail0 payouts destinations add -c arc -t USDC -A 0xVenueDeposit… \
+    -l "Exchange USDC (Arc)" --no-minimum --confirm-details
 ```
 
 ### Options
@@ -57,7 +66,7 @@ rail0 payouts destinations add [flags]
   -c, --chain chain         Chain the deposit address was issued for (default: 'rail0 config' chain): a slug (arc, base, …) or a chain id; the environment's gateway decides testnet vs mainnet
       --confirm-details     Accept the details statement without a prompt (needed without a TTY or with --agent); --yes does NOT imply it
   -h, --help                help for add
-  -l, --label string        Human-readable label
+  -l, --label string        Name of the destination — required, unique in the account (ignoring case)
       --min-amount string   The venue's minimum deposit, decimal in token units (e.g. 10.00) — required, or --no-minimum
       --no-minimum          The venue has no minimum deposit (no_minimum: true); excludes --min-amount
   -t, --token string        Token symbol (USDC) or 0x address on that chain (default: 'rail0 config' token)

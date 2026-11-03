@@ -14,6 +14,11 @@ Change a payout destination's label or minimum deposit. Only the destination's
 own wallet may.
 
 .PP
+--label is trimmed and may not be blank (label_required, refused before any
+request); it must stay unique in the account, ignoring case (409
+payout_destination_label_taken when another destination already has it).
+
+.PP
 --min-amount is a decimal in token units, converted with the destination token's
 decimals. The minimum cannot be blanked: --min-amount "" is refused — to state that the venue has
 no minimum, pass --no-minimum. --min-amount and --no-minimum exclude each other. A
@@ -44,7 +49,7 @@ The reserves a payout keeps back are decided at payout time ('payouts send').
 
 .PP
 \fB-l\fP, \fB--label\fP=""
-	New label
+	New label — not blank, unique in the account (ignoring case)
 
 .PP
 \fB--min-amount\fP=""

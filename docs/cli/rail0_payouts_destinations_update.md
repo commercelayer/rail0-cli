@@ -7,6 +7,10 @@ Change a destination's label or minimum
 Change a payout destination's label or minimum deposit. Only the destination's
 own wallet may.
 
+--label is trimmed and may not be blank (label_required, refused before any
+request); it must stay unique in the account, ignoring case (409
+payout_destination_label_taken when another destination already has it).
+
 --min-amount is a decimal in token units, converted with the destination token's
 decimals. The minimum cannot be blanked: --min-amount "" is refused — to state that the venue has
 no minimum, pass --no-minimum. --min-amount and --no-minimum exclude each other. A
@@ -41,7 +45,7 @@ rail0 payouts destinations update <destination_id> [flags]
 ```
       --confirm-details     Accept the details statement without a prompt (needed without a TTY or with --agent); --yes does NOT imply it
   -h, --help                help for update
-  -l, --label string        New label
+  -l, --label string        New label — not blank, unique in the account (ignoring case)
       --min-amount string   New minimum deposit, decimal in token units; asks for the details confirmation
       --no-minimum          The venue has no minimum deposit (no_minimum: true; removes a figure); asks for the details confirmation
 ```

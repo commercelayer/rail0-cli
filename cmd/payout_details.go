@@ -127,6 +127,13 @@ func errPayoutMinimumConflict() error {
 		"--min-amount and --no-minimum are mutually exclusive: pass the venue's minimum, or --no-minimum when it has none")
 }
 
+// errPayoutLabelMissing is the local refusal of a destination with no label, or a
+// blank one — the gateway would answer 422 label_required, so the code is the same.
+func errPayoutLabelMissing(what string) error {
+	return newUsageError("label_required",
+		"%s: name the destination with --label <name>, unique in the account (ignoring case)", what)
+}
+
 // payoutNoMinimumAnswer is what the minimum prompt takes for "the venue has none" —
 // a word, not a figure: "0" is an ordinary minimum, and "none" is the flag no_minimum.
 const payoutNoMinimumAnswer = "none"

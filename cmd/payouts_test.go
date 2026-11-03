@@ -231,8 +231,10 @@ func payoutTransfer(t *testing.T, from, to, amount string) string {
 func TestDestinationAddRefusesWithoutTheDetailsConfirmation(t *testing.T) {
 	g := newPayoutGateway(t)
 	payoutDestAddChainID, payoutDestAddToken, payoutDestAddAddress, payoutDestAddMin = poChain, "USDC", poDeposit, "10"
+	payoutDestAddLabel = "Exchange"
 	t.Cleanup(func() {
 		payoutDestAddChainID, payoutDestAddToken, payoutDestAddAddress, payoutDestAddMin = 0, "", "", ""
+		payoutDestAddLabel = ""
 	})
 	assumeYes = true
 
@@ -255,10 +257,12 @@ func TestDestinationAddRefusesWithoutTheDetailsConfirmation(t *testing.T) {
 func TestDestinationAddSendsTheConfirmationAndBaseUnits(t *testing.T) {
 	g := newPayoutGateway(t)
 	payoutDestAddChainID, payoutDestAddToken, payoutDestAddAddress = poChain, "USDC", poDeposit
+	payoutDestAddLabel = "Exchange"
 	payoutDestAddMin = "10"
 	payoutConfirmDetails = true
 	t.Cleanup(func() {
 		payoutDestAddChainID, payoutDestAddToken, payoutDestAddAddress, payoutDestAddMin = 0, "", "", ""
+		payoutDestAddLabel = ""
 	})
 
 	_ = captureStdout(t, func() {
@@ -303,10 +307,12 @@ func TestDestinationAddRefusesWithoutAnExplicitMinimum(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			g := newPayoutGateway(t)
 			payoutDestAddChainID, payoutDestAddToken, payoutDestAddAddress = poChain, "USDC", poDeposit
+			payoutDestAddLabel = "Exchange"
 			payoutDestAddMin, payoutDestAddNoMin = c.min, c.noMin
 			payoutConfirmDetails = true // the minimum is refused regardless
 			t.Cleanup(func() {
 				payoutDestAddChainID, payoutDestAddToken, payoutDestAddAddress, payoutDestAddMin = 0, "", "", ""
+				payoutDestAddLabel = ""
 				payoutDestAddNoMin = false
 			})
 
@@ -341,10 +347,12 @@ func TestDestinationAddSendsTheMinimumAnswer(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			g := newPayoutGateway(t)
 			payoutDestAddChainID, payoutDestAddToken, payoutDestAddAddress = poChain, "USDC", poDeposit
+			payoutDestAddLabel = "Exchange"
 			payoutDestAddMin, payoutDestAddNoMin = c.min, c.noMin
 			payoutConfirmDetails = true
 			t.Cleanup(func() {
 				payoutDestAddChainID, payoutDestAddToken, payoutDestAddAddress, payoutDestAddMin = 0, "", "", ""
+				payoutDestAddLabel = ""
 				payoutDestAddNoMin = false
 			})
 
@@ -364,6 +372,111 @@ func TestDestinationAddSendsTheMinimumAnswer(t *testing.T) {
 				t.Errorf("the summary does not state %q:\n%s", c.summary, notice)
 			}
 		})
+	}
+}
+
+// ── the required label ──────────────────────────────────────────────────────
+
+// The label is required: without a terminal, add with no --label or a blank one is
+// refused locally with the gateway's code — nothing reaches the gateway.
+func TestDestinationAddRefusesWithoutALabel(t *testing.T) {
+	for _, label := range []string{"", "   "} {
+		t.Run(fmt.Sprintf("%q", label), func(t *testing.T) {
+			g := newPayoutGateway(t)
+			payoutDestAddChainID, payoutDestAddToken, payoutDestAddAddress = poChain, "USDC", poDeposit
+			payoutDestAddLabel, payoutDestAddMin = label, "10"
+			payoutConfirmDetails = true // the label is refused regardless
+			t.Cleanup(func() {
+				payoutDestAddChainID, payoutDestAddToken, payoutDestAddAddress, payoutDestAddMin = 0, "", "", ""
+				payoutDestAddLabel = ""
+			})
+
+			err := payoutDestinationsAddCmd.RunE(payoutDestinationsAddCmd, nil)
+			var ue *usageError
+			if !errors.As(err, &ue) || ue.Code != "label_required" || !strings.Contains(err.Error(), "--label") {
+				t.Fatalf("want usage error label_required naming --label, got %v", err)
+			}
+			if len(g.all()) > 0 {
+				t.Errorf("requests %v sent before the usage error", g.all())
+			}
+		})
+	}
+}
+
+// The label is sent trimmed, and the summary shows it.
+func TestDestinationAddSendsTheTrimmedLabel(t *testing.T) {
+	g := newPayoutGateway(t)
+	payoutDestAddChainID, payoutDestAddToken, payoutDestAddAddress = poChain, "USDC", poDeposit
+	payoutDestAddLabel, payoutDestAddMin = "  Exchange USDC (Arc)  ", "10"
+	payoutConfirmDetails = true
+	t.Cleanup(func() {
+		payoutDestAddChainID, payoutDestAddToken, payoutDestAddAddress, payoutDestAddMin = 0, "", "", ""
+		payoutDestAddLabel = ""
+	})
+
+	var notice string
+	_ = captureStdout(t, func() {
+		notice = captureStderr(t, func() {
+			if err := payoutDestinationsAddCmd.RunE(payoutDestinationsAddCmd, nil); err != nil {
+				t.Fatalf("add: %v", err)
+			}
+		})
+	})
+	if b := g.body("POST /payout_destinations"); b == nil || b["label"] != "Exchange USDC (Arc)" {
+		t.Errorf("body = %v, want the trimmed label", b)
+	}
+	if !strings.Contains(notice, "label            Exchange USDC (Arc)") {
+		t.Errorf("the summary does not show the label:\n%s", notice)
+	}
+}
+
+// update: a blank --label is refused locally; a label is sent trimmed.
+func TestDestinationUpdateLabel(t *testing.T) {
+	cmd := payoutDestinationsUpdateCmd
+	reset := func() {
+		payoutDestUpdateLabel = ""
+		cmd.Flags().Lookup("label").Changed = false
+	}
+	t.Cleanup(reset)
+
+	for _, blank := range []string{"", "  "} {
+		t.Run(fmt.Sprintf("blank %q", blank), func(t *testing.T) {
+			g := newPayoutGateway(t)
+			_ = cmd.Flags().Set("label", blank)
+			t.Cleanup(reset)
+			err := cmd.RunE(cmd, []string{poDestID})
+			var ue *usageError
+			if !errors.As(err, &ue) || ue.Code != "label_required" {
+				t.Fatalf("want usage error label_required, got %v", err)
+			}
+			if len(g.all()) > 0 {
+				t.Errorf("requests %v sent before the usage error", g.all())
+			}
+		})
+	}
+
+	t.Run("trimmed", func(t *testing.T) {
+		g := newPayoutGateway(t)
+		_ = cmd.Flags().Set("label", " Main ")
+		t.Cleanup(reset)
+		_ = captureStdout(t, func() {
+			if err := cmd.RunE(cmd, []string{poDestID}); err != nil {
+				t.Fatalf("update: %v", err)
+			}
+		})
+		if b := g.body("PATCH /payout_destinations/" + poDestID); b["label"] != "Main" {
+			t.Errorf("body = %v, want the trimmed label", b)
+		}
+	})
+}
+
+// The label hints say how to fix it.
+func TestPayoutLabelHints(t *testing.T) {
+	if h := hintFor("label_required", ""); !strings.Contains(h, "--label") {
+		t.Errorf("label_required hint %q", h)
+	}
+	if h := hintFor("payout_destination_label_taken", ""); !strings.Contains(h, "unique") || !strings.Contains(h, "ignoring case") {
+		t.Errorf("payout_destination_label_taken hint %q", h)
 	}
 }
 

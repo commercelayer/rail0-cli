@@ -1879,6 +1879,10 @@ rail0 payouts send --destination <destination_id> --amount 250.00 -p @merchant-k
 
 A destination is bound to **one chain and one token**: an EVM address is the same string on every chain, but a venue credits only the network it issued the address for. Generate the deposit address at the venue with the network set to `--chain`.
 
+#### Label
+
+Every destination has a **label** (`--label` / `-l`), **required** and **unique in the account, ignoring case**: two live destinations may not share one (`409 payout_destination_label_taken`); deleting a destination frees its label. It is trimmed before it is sent, and a blank one is refused. `destinations add` without a label prompts for it on a terminal, and is a usage error (`label_required`) without one or with `--agent`, before any request; `update --label ""` (or only spaces) is refused locally the same way.
+
 #### Confirming the details (`--confirm-details`)
 
 `destinations add`, and an `update` that **changes** the minimum, show what will be registered followed by the gateway's details statement (`details_v1`):
@@ -1933,7 +1937,7 @@ rail0 payouts destinations reserves <destination_id>    # what a payout would ke
 rail0 payouts destinations delete <destination_id>      # asks y/N (--yes to skip); cannot be undone
 ```
 
-`delete` (only the destination's own wallet) removes it from the lists and frees its payment method — one destination per token and chain — so another address can be registered there; the record is kept — `get` and `events` still read it, with `deleted_at` set and status `disabled`, and its payouts keep naming it — but it takes no further change and cannot be re-enabled. `delete` and `disable` both settle the destination's pending payout first: an unsigned one fails `cancelled`; a **signed** one refuses the switch-off (`409 payout_already_signed`) because its transaction may still be mined. `confirm` asks y/N (`--yes` to skip) — confirm only after you see the deposit at the venue: a transfer can be mined and never credited.
+`delete` (only the destination's own wallet) removes it from the lists and frees its payment method — one destination per token and chain — so another address can be registered there, and its label; the record is kept — `get` and `events` still read it, with `deleted_at` set and status `disabled`, and its payouts keep naming it — but it takes no further change and cannot be re-enabled. `delete` and `disable` both settle the destination's pending payout first: an unsigned one fails `cancelled`; a **signed** one refuses the switch-off (`409 payout_already_signed`) because its transaction may still be mined. `confirm` asks y/N (`--yes` to skip) — confirm only after you see the deposit at the venue: a transfer can be mined and never credited.
 
 #### `payouts send`
 

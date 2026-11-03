@@ -36,8 +36,11 @@ shows what a payout to it would keep back in the wallet right now (the refund
 reserve and, on a chain whose gas is paid in this token, the gas reserve) and
 what '--amount all' would move. See 'rail0 payouts send --help'.
 
-'delete' removes a destination for good (it leaves the lists, its address can be
-registered again; its payouts and audit trail keep naming it).
+Every destination has a label (--label), required and unique in the account,
+ignoring case: two live destinations may not share one. 'delete' frees it.
+
+'delete' removes a destination for good (it leaves the lists, its payment method
+and its label are free again; its payouts and audit trail keep naming it).
 
 Every wallet of the account can READ every destination and disable one; only the
 destination's own wallet may change or re-enable it. A deactivated account is

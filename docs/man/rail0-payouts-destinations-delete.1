@@ -13,8 +13,8 @@ rail0-payouts-destinations-delete - Delete a destination (it leaves the lists; c
 Delete a payout destination. Only the destination's own wallet may.
 
 .PP
-It leaves the lists ('destinations --include-deleted' still shows it) and its
-address can be registered again. The record is kept: its payouts and audit trail
+It leaves the lists ('destinations --include-deleted' still shows it), and its
+payment method (token and chain) and its label are free to be registered again. The record is kept: its payouts and audit trail
 keep naming it, and 'get' and 'events' still read it, with deleted_at set and
 status "disabled". A deleted destination takes no further change and cannot be
 re-enabled — to pause one instead, use 'disable'.

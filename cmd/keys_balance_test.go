@@ -13,6 +13,7 @@ import (
 
 	rail0 "github.com/commercelayer/rail0-go"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/rail0/cli/internal/chainread"
 	"github.com/rail0/cli/internal/config"
 )
 
@@ -180,5 +181,35 @@ func TestPrintBalancesQuiet(t *testing.T) {
 	})
 	if two != "native USDC 15\n"+arcUSDC+" USDC 7\n" {
 		t.Errorf("several = %q", two)
+	}
+}
+
+// On Arc the gas coin is USDC: the default read shows the native row (18 decimals)
+// AND the USDC ERC-20 row (6 decimals), so the scale payments use is on screen. Any
+// other chain keeps the native row alone.
+func TestKeysBalanceDefaultOnArcShowsBothScales(t *testing.T) {
+	resetKeysBalanceFlags(t)
+	node := fakeArcNode(t)
+	defer node.Close()
+	reader, err := chainread.New([]string{node.URL}, chainread.DefaultTimeout)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+
+	rows, err := readBalances(context.Background(), reader, &rail0.Blockchain{ChainID: 5042002, NativeSymbol: "USDC"}, common.Address{})
+	if err != nil || len(rows) != 2 {
+		t.Fatalf("Arc default rows = %+v, %v", rows, err)
+	}
+	if rows[0].Asset != "native" || rows[0].Decimals != 18 || rows[0].BalanceHuman != "1.5 USDC" {
+		t.Errorf("native row = %+v", rows[0])
+	}
+	if !strings.EqualFold(rows[1].Asset, arcUSDC) || rows[1].Decimals != 6 || rows[1].BalanceHuman != "2.5 USDC" {
+		t.Errorf("ERC-20 row = %+v", rows[1])
+	}
+
+	rows, err = readBalances(context.Background(), reader, &rail0.Blockchain{ChainID: 84532, NativeSymbol: "ETH"}, common.Address{})
+	if err != nil || len(rows) != 1 || rows[0].Asset != "native" {
+		t.Errorf("a non-Arc chain must keep the native row alone, got %+v, %v", rows, err)
 	}
 }

@@ -6,7 +6,7 @@
 set -euo pipefail
 
 # The files bin/release-prepare reads the version from and bumps.
-FILES="VERSION go.mod"
+FILES="VERSION go.mod go.sum"
 
 # ---------------------------------------------------------------------------
 # Shared by rail0-ts, rail0-ruby, rail0-go and rail0-cli; only FILES above differs.

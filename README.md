@@ -1857,6 +1857,8 @@ rail0 payments wait <rail0Id> --until captured
 
 ### Payouts
 
+> **Hidden for now.** Payouts are not part of rail0's first phase: the gateway answers every payout route `404 unknown_route` unless it runs with `RAIL0_FEATURE_PAYOUTS` on. So `rail0 payouts` is left out of `--help`, shell completion and the generated reference (`docs/cli`, `docs/man`). It still runs when typed, against a gateway that has the feature on, and everything below describes it as it is.
+
 Move a merchant wallet's tokens to a deposit address at a venue of your own — an exchange account, Circle Mint, another wallet you control. The gateway builds an unsigned ERC-20 `transfer` from the wallet to a registered **destination**; the CLI checks it is exactly that transfer (the destination's token and chain, its address, the amount, value 0, from your key's wallet) and signs it locally. The gateway never holds funds or keys and never talks to the venue. Every payout command needs a login; reads cover the whole account, writes act for the wallet you sign in with, which must be the destination's. A **deactivated account is read-only**: it cannot prepare, send or change payouts or destinations (`403 account_deactivated`).
 
 #### First payout to a new venue

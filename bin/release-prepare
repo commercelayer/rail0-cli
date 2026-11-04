@@ -28,7 +28,7 @@ set -euo pipefail
 PACKAGE_LABEL="rail0 CLI"
 REPO_SLUG="commercelayer/rail0-cli"
 VERSION_SOURCE="VERSION"
-VERSION_FILES="VERSION go.mod"
+VERSION_FILES="VERSION go.mod go.sum"
 PUBLISH_SENTENCE="creates the tag, and GoReleaser builds the binaries and publishes the GitHub release"
 
 SDK_MODULE="github.com/commercelayer/rail0-go"
@@ -92,7 +92,13 @@ preflight_checks() { # dry|real
       if git diff -U0 -- go.mod | grep -E '^[-+]' | grep -v '^[-+][-+]' | grep -q '=>'; then
         die "a replace directive changed in go.mod: refusing to commit it"
       fi
-      info "go.mod now requires rail0-go v$latest (check the build: go build ./...)"
+      # go.sum too: a go.mod moved without its checksums is what broke v1.8.0 (CI on the
+      # release commit stopped on "missing go.sum entry", and nothing was published).
+      command -v go >/dev/null 2>&1 || die "go not found: cannot refresh go.sum for rail0-go v$latest"
+      go mod download "$SDK_MODULE@v$latest" || die "could not download $SDK_MODULE v$latest"
+      go mod tidy || die "go mod tidy failed after requiring rail0-go v$latest"
+      go build ./... || die "the CLI does not build against rail0-go v$latest"
+      info "go.mod and go.sum now require rail0-go v$latest (go mod tidy, go build ./... pass)"
       ;;
     *)
       [ "$pseudo" = 0 ] || die "release rail0-go first, then require its tag in go.mod"

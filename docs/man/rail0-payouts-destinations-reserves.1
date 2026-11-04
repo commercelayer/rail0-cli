@@ -1,0 +1,73 @@
+.nh
+.TH "RAIL0" "1" "Aug 2026" "rail0 CLI" ""
+
+.SH NAME
+rail0-payouts-destinations-reserves - What a payout to a destination would keep back now, and what it could move
+
+
+.SH SYNOPSIS
+\fBrail0 payouts destinations reserves  [flags]\fP
+
+
+.SH DESCRIPTION
+Show what a payout to the destination would keep back in the wallet right now,
+and what '--amount all' would move. Nothing is stored: the gateway computes it
+from the wallet's payments and the chain's current fees, so the figures can move
+by the time you send.
+
+.PP
+balance         the wallet's balance of the destination's token
+  refund reserve  the refundable balance of the wallet's payments in this token
+                  still inside their refund window, and how many payments that is
+                  (a refund is pulled from the wallet: an emptied wallet fails it)
+  gas reserve     only on a chain whose gas is paid in this very token (Arc's
+                  USDC): the gas for those refunds and for capturing the wallet's
+                  open authorizations plus a base of new captures
+  gas allowance   the payout transfer's own fee, always kept back on such a chain
+  available       what '--amount all' moves with both reserves kept (the default)
+
+.PP
+Both reserves are kept by default; 'payouts send --no-refund-reserve' /
+\&'--no-gas-reserve' skip one for a single payout. Any wallet of the account may
+read it; a deleted destination still reads. --json prints the gateway's record.
+
+
+.SH OPTIONS
+\fB-h\fP, \fB--help\fP[=false]
+	help for reserves
+
+
+.SH OPTIONS INHERITED FROM PARENT COMMANDS
+\fB--agent\fP[=false]
+	Agent mode: one JSON envelope on stdout, JSON events on stderr, no prompts (env: RAIL0_AGENT=1)
+
+.PP
+\fB--base-url\fP=""
+	RAIL0 gateway base URL (env: RAIL0_BASE_URL)
+
+.PP
+\fB--debug\fP[=false]
+	Print HTTP request/response details to stderr
+
+.PP
+\fB--json\fP[=false]
+	Force plain (uncolored) JSON output (useful in scripts)
+
+.PP
+\fB--pretty\fP[=false]
+	Use the key-value/table view instead of JSON (terminal only)
+
+.PP
+\fB-q\fP, \fB--quiet\fP[=false]
+	Print only the result's id/hash, one per line (useful in scripts)
+
+
+.SH EXAMPLE
+.EX
+  rail0 payouts destinations reserves <destination_id>
+  rail0 payouts destinations reserves <destination_id> --json
+.EE
+
+
+.SH SEE ALSO
+\fBrail0-payouts-destinations(1)\fP

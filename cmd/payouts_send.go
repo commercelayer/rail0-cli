@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/big"
 	"strings"
 
 	rail0 "github.com/commercelayer/rail0-go"
@@ -21,6 +22,8 @@ var (
 	payoutSendDestination string
 	payoutSendAmount      string
 	payoutSendProof       bool
+	payoutSendNoRefund    bool
+	payoutSendNoGas       bool
 	payoutSendKey         string
 	payoutSubmitKey       string
 )
@@ -38,14 +41,25 @@ With -w/--wait the command instead follows it until "confirmed" (the result) or
 "failed" (an error); see --wait below.
 
 --amount is a decimal in token units (250.00), or "all": the wallet's balance minus
-the destination's refund reserve, computed by the gateway. --proof sends the proof
-transfer instead (1 token unit, raised to the destination's minimum) — the step
-before 'payouts destinations confirm'. An unverified destination takes the proof
-only.
+the reserves kept back, computed by the gateway. --proof sends the proof transfer
+instead (1 token unit, raised to the destination's minimum) — the step before
+'payouts destinations confirm'. An unverified destination takes the proof only.
+
+Reserves: every payout keeps two reserves back in the wallet by default, decided
+when it is prepared ('payouts destinations reserves <id>' shows them beforehand):
+  - the refund reserve: the refundable balance of the wallet's payments in this
+    token still inside their refund window (a refund is pulled from the wallet);
+  - the gas reserve, only on a chain whose gas is paid in this very token (Arc's
+    USDC): the gas for those refunds and for the captures the wallet still owes.
+    On such a chain the transfer's own gas allowance is kept back too.
+They bound "all" and a typed amount alike. --no-refund-reserve / --no-gas-reserve
+skip one for this payout only: a later refund, or a later capture or refund
+without the gas to pay for it, may then FAIL. The payout records what it kept back
+(refund_reserve, gas_reserve).
 
 Before signing, the command shows what will be sent — amount, token, deposit
-address, network, from — and asks to confirm (y/N); --yes skips the prompt and is
-required without a terminal. With "all" or --proof the gateway sets the amount: to
+address, network, from, and the reserves kept back — and asks to confirm (y/N);
+--yes skips the prompt and is required without a terminal. With "all" or --proof the gateway sets the amount: to
 see the exact figure before signing, run 'payouts prepare' and then
 'payouts submit <id>', which shows it.
 
@@ -66,7 +80,8 @@ kept within 5m–15m. A wait that runs out exits 11: the transfer may still be i
 flight — check it with 'payouts get <id>', never send it again.`,
 	Example: `  rail0 payouts send --destination <destination_id> --proof -p @merchant-key --wait
   rail0 payouts send --destination <destination_id> --amount 250.00 -p @merchant-key
-  rail0 payouts send --destination <destination_id> --amount all -p @merchant-key --yes`,
+  rail0 payouts send --destination <destination_id> --amount all -p @merchant-key --yes
+  rail0 payouts send --destination <destination_id> --amount all --no-refund-reserve -p @merchant-key`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		req, err := payoutPrepareRequest()
@@ -107,7 +122,7 @@ flight — check it with 'payouts get <id>', never send it again.`,
 				}
 			}
 		}
-		if err := confirmDestructive(payoutSendPrompt(ctx, dest, req, signer)); err != nil {
+		if err := confirmDestructive(payoutSendPrompt(ctx, dest, req, payoutReservesForPrompt(ctx, client, req), signer)); err != nil {
 			return err
 		}
 		var sent *rail0.Payout
@@ -127,10 +142,15 @@ flight — check it with 'payouts get <id>', never send it again.`,
 	},
 }
 
-// payoutPrepareRequest builds the prepare request from --destination, --amount and
-// --proof (shared by send and prepare), refusing a bad combination before any request:
-// a proof's amount is the gateway's, and a payout needs one — a decimal (checked
-// syntactically here, against the token's decimals by the caller) or "all".
+// payoutPrepareRequest builds the prepare request from --destination, --amount,
+// --proof and the reserve opt-outs (shared by send and prepare), refusing a bad
+// combination before any request: a proof's amount is the gateway's and it keeps no
+// reserve back, and a payout needs an amount — a decimal (checked syntactically here,
+// against the token's decimals by the caller) or "all".
+//
+// keep_refund_reserve / keep_gas_reserve are sent only as false, on the matching
+// --no-… flag: left out, the gateway keeps both (its default), so the CLI never sends
+// a "true" that would read as a choice the merchant did not make.
 func payoutPrepareRequest() (rail0.PreparePayoutRequest, error) {
 	req := rail0.PreparePayoutRequest{DestinationID: payoutSendDestination, Purpose: rail0.PayoutPurposePayout}
 	switch {
@@ -138,6 +158,8 @@ func payoutPrepareRequest() (rail0.PreparePayoutRequest, error) {
 		return req, newUsageError("usage_error", "--destination is required")
 	case payoutSendProof && payoutSendAmount != "":
 		return req, newUsageError("usage_error", "--proof sends the gateway's proof amount; drop --amount")
+	case payoutSendProof && (payoutSendNoRefund || payoutSendNoGas):
+		return req, newUsageError("usage_error", "--no-refund-reserve / --no-gas-reserve apply to a payout, not to the proof")
 	case payoutSendProof:
 		req.Purpose = rail0.PayoutPurposeProof
 	case payoutSendAmount == "":
@@ -149,6 +171,14 @@ func payoutPrepareRequest() (rail0.PreparePayoutRequest, error) {
 			return req, err
 		}
 		req.Amount = payoutSendAmount
+	}
+	if payoutSendNoRefund {
+		no := false
+		req.KeepRefundReserve = &no
+	}
+	if payoutSendNoGas {
+		no := false
+		req.KeepGasReserve = &no
 	}
 	return req, nil
 }
@@ -173,8 +203,11 @@ func checkDestinationSendable(d *rail0.PayoutDestination, purpose string) error 
 // fresh read of the destination, the same record the SDK then holds the transaction to.
 //
 // For "all" and a proof the gateway computes the amount at prepare time, so the prompt
-// says how instead of a number — and names the reserve / minimum that number depends on.
-func payoutSendPrompt(ctx context.Context, d *rail0.PayoutDestination, req rail0.PreparePayoutRequest, signer string) string {
+// says how instead of a number — and names the minimum / reserves that number depends
+// on. A payout's reserves come from a fresh GET …/reserves (res, nil when it could not
+// be read): the figures the prepare is about to keep back, or "skipped" for the ones
+// the merchant opted out of, with what that risks.
+func payoutSendPrompt(ctx context.Context, d *rail0.PayoutDestination, req rail0.PreparePayoutRequest, res *rail0.PayoutReserves, signer string) string {
 	token := string(d.Token)
 	symbol := d.TokenSymbol
 	if symbol == "" {
@@ -189,12 +222,10 @@ func payoutSendPrompt(ctx context.Context, d *rail0.PayoutDestination, req rail0
 		}
 		amount += ")"
 	case req.Amount == rail0.PayoutAmountAll:
-		reserve := string(d.ReserveAmount)
-		if reserve == "" {
-			reserve = string(d.SuggestedReserve)
+		amount = "ALL — the wallet's balance minus the reserves kept back"
+		if res != nil {
+			amount += " (about " + payoutAmountLabel(ctx, availableAfter(res, req), d.ChainID, token, d.TokenSymbol) + " now)"
 		}
-		amount = "ALL — the wallet's balance minus the refund reserve of " +
-			payoutAmountLabel(ctx, reserve, d.ChainID, token, d.TokenSymbol)
 	default:
 		amount = req.Amount + " " + symbol
 	}
@@ -202,13 +233,86 @@ func payoutSendPrompt(ctx context.Context, d *rail0.PayoutDestination, req rail0
 	if d.Label != "" {
 		to += " (" + d.Label + ")"
 	}
-	return fmt.Sprintf("Send this payout? A transfer is final once mined.\n"+
+	prompt := fmt.Sprintf("Send this payout? A transfer is final once mined.\n"+
 		"  amount   %s\n"+
 		"  token    %s\n"+
 		"  to       %s\n"+
 		"  network  %s\n"+
 		"  from     %s",
 		amount, tokenLabel(d.TokenSymbol, token), to, chainLabel(d.ChainID), signer)
+	if req.Purpose == rail0.PayoutPurposeProof {
+		return prompt
+	}
+	label := func(units string) string { return payoutAmountLabel(ctx, units, d.ChainID, token, d.TokenSymbol) }
+	refund, gas := "kept back", "kept back"
+	if res != nil {
+		refund = fmt.Sprintf("%s kept back (%s)", label(res.RefundReserve),
+			plural(res.RefundablePayments, "refundable payment", "refundable payments"))
+		gas = label(res.GasReserve) + " kept back"
+	}
+	if payoutSendNoRefund {
+		refund = "SKIPPED (--no-refund-reserve) — a later refund may fail for lack of funds"
+	}
+	if payoutSendNoGas {
+		gas = "SKIPPED (--no-gas-reserve) — a later refund or capture may fail for lack of gas"
+	}
+	prompt += "\n  refund reserve  " + refund
+	// The gas reserve exists only where the chain's gas is this very token; elsewhere
+	// it is 0 and a line about it would only confuse. Unknown (no read): say it anyway.
+	if res == nil || res.NativeGas {
+		prompt += "\n  gas reserve     " + gas
+	}
+	return prompt
+}
+
+// availableAfter is what "all" would move now: the gateway's `available` when both
+// reserves are kept, else balance minus the reserves still kept and the gas allowance
+// (always kept back on a native-gas chain), floored at 0 — the gateway's own formula.
+// Base units; a figure the gateway sent malformed falls back to `available`.
+func availableAfter(r *rail0.PayoutReserves, req rail0.PreparePayoutRequest) string {
+	if req.KeepRefundReserve == nil && req.KeepGasReserve == nil {
+		return r.Available
+	}
+	n, ok := new(big.Int).SetString(r.Balance, 10)
+	if !ok {
+		return r.Available
+	}
+	sub := []string{r.GasAllowance}
+	if req.KeepRefundReserve == nil || *req.KeepRefundReserve {
+		sub = append(sub, r.RefundReserve)
+	}
+	if req.KeepGasReserve == nil || *req.KeepGasReserve {
+		sub = append(sub, r.GasReserve)
+	}
+	for _, s := range sub {
+		if s == "" {
+			continue
+		}
+		m, ok := new(big.Int).SetString(s, 10)
+		if !ok {
+			return r.Available
+		}
+		n.Sub(n, m)
+	}
+	if n.Sign() < 0 {
+		return "0"
+	}
+	return n.String()
+}
+
+// payoutReservesForPrompt reads the reserves a payout to the destination would keep
+// back, for the confirmation prompt only — best effort: a failed read leaves the
+// prompt without figures (nil) rather than stopping a send the gateway may accept.
+// A proof keeps nothing back, so it reads nothing.
+func payoutReservesForPrompt(ctx context.Context, client *rail0.Client, req rail0.PreparePayoutRequest) *rail0.PayoutReserves {
+	if req.Purpose == rail0.PayoutPurposeProof {
+		return nil
+	}
+	r, err := client.PayoutDestinations.Reserves(ctx, req.DestinationID)
+	if err != nil {
+		return nil
+	}
+	return r
 }
 
 // payoutSentHint is the next step after a submit: a proof needs the venue check and
@@ -330,8 +434,13 @@ var payoutsPrepareCmd = &cobra.Command{
 	Short: "Prepare a payout without signing it (shows the exact amount)",
 	Long: `Ask the gateway to build a payout's unsigned transfer, and print the pending
 payout: the exact amount (base units and amount_formatted) — the way to see what
-"all" or a proof comes to — and unsigned_transaction, the EIP-1559 transaction to
+"all" or a proof comes to —, the reserves it keeps back in the wallet
+(refund_reserve, gas_reserve) and unsigned_transaction, the EIP-1559 transaction to
 sign. Nothing is signed or sent.
+
+Both reserves are kept by default; --no-refund-reserve / --no-gas-reserve skip one
+for this payout (see 'payouts send --help': a later refund or capture may then
+fail).
 
 Then either 'payouts submit <id>' (verify, sign with -p, submit), or sign it with
 a wallet of your own and report the hash with 'payouts report-hash <id> <hash>'.
@@ -342,6 +451,7 @@ A prepare replaces the destination's pending payout while it is unsigned; leave 
 and it stays pending until replaced or cancelled ('payouts cancel <id>'). The
 session must be the destination's wallet ('rail0 auth login').`,
 	Example: `  rail0 payouts prepare --destination <destination_id> --amount all
+  rail0 payouts prepare --destination <destination_id> --amount all --no-gas-reserve
   rail0 payouts prepare --destination <destination_id> --proof`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -366,8 +476,8 @@ gateway, which broadcasts it.
 The transaction is checked against the destination, read again from the gateway —
 exactly transfer(destination address, payout amount) on the destination's token
 and chain, value 0, from your key's wallet — and refused otherwise before the key
-touches it. The command shows the amount, token, deposit address and network and
-asks to confirm (y/N); --yes skips it and is required without a terminal.
+touches it. The command shows the amount, token, deposit address and network —
+and, for a payout, the reserves it keeps back in the wallet — and asks to confirm (y/N); --yes skips it and is required without a terminal.
 
 Only a pending, unsigned payout can be signed. One already signed is 'resend's:
 its transaction may already be in a mempool, and signing again would risk a second
@@ -405,7 +515,7 @@ transfer.
 		case payout.Status != rail0.PayoutStatusPending:
 			return fmt.Errorf("payout %s is %s, not pending: there is nothing to sign", payout.ID, payout.Status)
 		}
-		if err := confirmDestructive(payoutSubmitPrompt(payout, signer)); err != nil {
+		if err := confirmDestructive(payoutSubmitPrompt(ctx, payout, signer)); err != nil {
 			return err
 		}
 		var sent *rail0.Payout
@@ -428,8 +538,10 @@ transfer.
 // payoutSubmitPrompt is the confirmation before signing an existing payout, from the
 // payout's own decoded intent. The SDK then holds the transaction to the destination
 // as read again from the gateway, so a payout whose fields disagree with its
-// destination is refused after this prompt, before signing.
-func payoutSubmitPrompt(p *rail0.Payout, signer string) string {
+// destination is refused after this prompt, before signing. A payout also shows the
+// reserves its prepare kept back (refund_reserve, gas_reserve): "0" is an opt-out —
+// or, for the gas reserve, a chain whose gas is not this token.
+func payoutSubmitPrompt(ctx context.Context, p *rail0.Payout, signer string) string {
 	amount := p.AmountFormatted
 	if amount == "" {
 		amount = string(p.Amount) + " base units"
@@ -441,13 +553,20 @@ func payoutSubmitPrompt(p *rail0.Payout, signer string) string {
 	if p.Purpose == rail0.PayoutPurposeProof {
 		what = "proof transfer"
 	}
-	return fmt.Sprintf("Sign and send this %s? A transfer is final once mined.\n"+
+	prompt := fmt.Sprintf("Sign and send this %s? A transfer is final once mined.\n"+
 		"  amount   %s\n"+
 		"  token    %s\n"+
 		"  to       %s\n"+
 		"  network  %s\n"+
 		"  from     %s",
 		what, amount, tokenLabel(p.TokenSymbol, string(p.Token)), p.Address, chainLabel(p.ChainID), signer)
+	if p.RefundReserve != "" {
+		prompt += "\n  refund reserve  " + payoutAmountLabel(ctx, p.RefundReserve, p.ChainID, string(p.Token), p.TokenSymbol) + " kept back"
+	}
+	if p.GasReserve != "" && p.GasReserve != "0" {
+		prompt += "\n  gas reserve     " + payoutAmountLabel(ctx, p.GasReserve, p.ChainID, string(p.Token), p.TokenSymbol) + " kept back"
+	}
+	return prompt
 }
 
 // addPayoutKeyFlags registers -p/--private-key (and the hidden --pk) for a payout
@@ -466,8 +585,12 @@ func addPayoutKeyFlags(cmd *cobra.Command, key *string) {
 func addPayoutAmountFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVarP(&payoutSendDestination, "destination", "d", "", "Destination id ('rail0 payouts destinations')")
 	cmd.Flags().StringVarP(&payoutSendAmount, "amount", "a", "",
-		"Decimal in token units (e.g. 250.00), or 'all' for the balance minus the refund reserve")
+		"Decimal in token units (e.g. 250.00), or 'all' for the balance minus the reserves kept back")
 	cmd.Flags().BoolVar(&payoutSendProof, "proof", false, "Send the proof transfer (the gateway sets its amount) instead of a payout")
+	cmd.Flags().BoolVar(&payoutSendNoRefund, "no-refund-reserve", false,
+		"Do not keep the refund reserve back for this payout (a later refund may fail)")
+	cmd.Flags().BoolVar(&payoutSendNoGas, "no-gas-reserve", false,
+		"Do not keep the gas reserve back for this payout (native-gas chains; a later refund or capture may fail)")
 	cmd.MarkFlagsMutuallyExclusive("amount", "proof")
 }
 

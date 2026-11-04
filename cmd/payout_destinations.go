@@ -21,13 +21,6 @@ var payoutDestinationStatuses = []string{
 	rail0.PayoutDestinationStatusDisabled,
 }
 
-var payoutDestinationKinds = []string{
-	rail0.PayoutDestinationKindExchange,
-	rail0.PayoutDestinationKindCircleMint,
-	rail0.PayoutDestinationKindSelfCustody,
-	rail0.PayoutDestinationKindProvider,
-}
-
 // ── payouts destinations [list] ──────────────────────────────────────────────────
 
 var (
@@ -36,6 +29,7 @@ var (
 	payoutDestListSort    string
 	payoutDestListPage    int
 	payoutDestListPerPage int
+	payoutDestListDeleted bool
 )
 
 var payoutDestinationsCmd = &cobra.Command{
@@ -60,14 +54,24 @@ Its lifecycle:
                  becomes "verified" and takes payouts of any amount.
 
 Minimum: a venue may silently ignore a deposit below its minimum, and that deposit
-can be lost for good. Set --min-amount to the venue's minimum: payouts below it are
-refused, and the proof is raised to it. Changing the minimum asks for the details
-confirmation again, and raising it above the latest proof takes the verification
-away (the destination needs a new proof).
+can be lost for good. Every destination states it: --min-amount with the venue's
+minimum, or --no-minimum when the venue has none. Payouts below it are refused, and
+the proof is raised to it. Changing the minimum asks for the details confirmation
+again, and raising it above the latest proof takes the verification away (the
+destination needs a new proof). A destination registered before the minimum was
+asked shows it as "not set" (the "minimum" field of list and get): state it with
+'update'.
 
-Refund reserve: a full-balance payout ('send --amount all') leaves --reserve in the
-wallet, so refunds still inside their window can be paid. Unset, the gateway keeps
-its suggestion: the refundable balance of the wallet's payments in that token.
+Reserves are decided at payout time, not on the destination: 'reserves <id>'
+shows what a payout to it would keep back in the wallet right now (the refund
+reserve and, on a chain whose gas is paid in this token, the gas reserve) and
+what '--amount all' would move. See 'rail0 payouts send --help'.
+
+Every destination has a label (--label), required and unique in the account,
+ignoring case: two live destinations may not share one. 'delete' frees it.
+
+'delete' removes a destination for good (it leaves the lists, its payment method
+and its label are free again; its payouts and audit trail keep naming it).
 
 Every wallet of the account can READ every destination and disable one; only the
 destination's own wallet may change or re-enable it. A deactivated account is
@@ -75,6 +79,7 @@ read-only: every change is refused (403 account_deactivated).`,
 	Example: `  rail0 payouts destinations
   rail0 payouts destinations add -c arc -t USDC -A 0xVenueDeposit… -l "Exchange" --min-amount 10
   rail0 payouts destinations confirm <destination_id>
+  rail0 payouts destinations reserves <destination_id>
   rail0 payouts destinations events <destination_id>`,
 	Args: cobra.NoArgs,
 	RunE: runPayoutDestinationsList,
@@ -84,7 +89,8 @@ var payoutDestinationsListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List the account's payout destinations (every wallet's)",
 	Example: `  rail0 payouts destinations list --status verified
-  rail0 payouts destinations list --wallet <wallet_id>`,
+  rail0 payouts destinations list --wallet <wallet_id>
+  rail0 payouts destinations list --include-deleted`,
 	Args: cobra.NoArgs,
 	RunE: runPayoutDestinationsList,
 }
@@ -99,13 +105,15 @@ func runPayoutDestinationsList(_ *cobra.Command, _ []string) error {
 		Sort:     payoutDestListSort,
 		Page:     payoutDestListPage,
 		PerPage:  payoutDestListPerPage,
+		// Deleted destinations are left out unless asked for (deleted_at set).
+		IncludeDeleted: payoutDestListDeleted,
 	}
 	return ui.RunAPI(func() (any, error) {
 		resp, err := newReadClient().PayoutDestinations.List(context.Background(), p)
 		if err != nil {
 			return nil, err
 		}
-		return resp.Data, nil // bare array; pagination is in headers
+		return viewPayoutDestinations(resp.Data), nil // bare array; pagination is in headers
 	})
 }
 
@@ -118,6 +126,7 @@ func addPayoutDestinationListFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&payoutDestListSort, "sort", "", "Sort fields (e.g. -created_at)")
 	cmd.Flags().IntVar(&payoutDestListPage, "page", 0, "Page number (1-based)")
 	cmd.Flags().IntVar(&payoutDestListPerPage, "per-page", 0, "Destinations per page")
+	cmd.Flags().BoolVar(&payoutDestListDeleted, "include-deleted", false, "List deleted destinations too (deleted_at set)")
 }
 
 // ── payouts destinations get ──────────────────────────────────────────────────
@@ -129,7 +138,8 @@ var payoutDestinationsGetCmd = &cobra.Command{
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return ui.RunAPI(func() (any, error) {
-			return newReadClient().PayoutDestinations.Get(context.Background(), args[0])
+			d, err := newReadClient().PayoutDestinations.Get(context.Background(), args[0])
+			return viewPayoutDestination(d), err
 		})
 	},
 }
@@ -142,9 +152,8 @@ var (
 	payoutDestAddToken   string
 	payoutDestAddAddress string
 	payoutDestAddLabel   string
-	payoutDestAddKind    string
-	payoutDestAddReserve string
 	payoutDestAddMin     string
+	payoutDestAddNoMin   bool
 )
 
 var payoutDestinationsAddCmd = &cobra.Command{
@@ -154,32 +163,70 @@ var payoutDestinationsAddCmd = &cobra.Command{
 
 Before running it, open the venue's deposit page with the NETWORK set to --chain
 and the asset set to --token, and copy the address and the minimum deposit from
-there. The command shows what it will register and the details statement, and you
-must accept it: a y/N prompt (default no) on a terminal, or --confirm-details when
+there.
+
+--label is required: a name for the destination, unique in the account
+(ignoring case; a deleted destination's label is free again). Surrounding spaces
+are trimmed, and a blank label is refused. On a terminal, leaving it out prompts
+for it; without a terminal or with --agent it is a usage error (label_required),
+before any request.
+
+The minimum is required, and stated explicitly: --min-amount <decimal> (the
+figure; 0 is an ordinary figure), or --no-minimum when the venue has none — never
+both. On a terminal, leaving both out prompts for it (an empty answer is not
+accepted: type "none" if the venue has none); without a terminal or with --agent
+it is a usage error, before any request.
+
+The command shows what it will register and the details statement, and you must
+accept it: a y/N prompt (default no) on a terminal, or --confirm-details when
 there is no terminal or with --agent. Without it nothing is sent. --yes does not
 accept it for you.
 
 --token is a symbol (USDC) resolved on --chain, or the token's 0x address;
 --chain and --token fall back to the configured defaults ('rail0 config').
---min-amount and --reserve are decimals in token units (10.00), converted with the
-token's decimals. --wallet defaults to the wallet you are signed in with, and must
-be it.
+--min-amount is a decimal in token units (10.00), never negative, converted with
+the token's decimals. --wallet defaults to the wallet you are
+signed in with, and must be it.
 
 The destination is born "unverified". Next: send the proof with
 'rail0 payouts send --destination <id> --proof', and once the venue shows it
 credited, 'rail0 payouts destinations confirm <id>'.
 
 Refused (422): the zero address, the wallet itself, a contract the gateway knows on
-that chain, or no confirmation; 409 when the wallet already has this address for
-this token and chain.`,
+that chain, no label (label_required), no minimum stated (minimum_required), both
+a figure and --no-minimum (minimum_conflict), or no confirmation; 409 when the
+wallet already has a destination for this token and chain
+(payout_destination_exists), or another destination of the account already has
+the label (payout_destination_label_taken).`,
 	Example: `  rail0 payouts destinations add -c arc -t USDC -A 0xVenueDeposit… \
     -l "Exchange USDC (Arc)" --min-amount 10
 
-  # non-interactive: accept the statement explicitly
-  rail0 payouts destinations add -c arc -t USDC -A 0xVenueDeposit… --confirm-details`,
+  # non-interactive: name it, state the minimum and accept the statement explicitly
+  rail0 payouts destinations add -c arc -t USDC -A 0xVenueDeposit… \
+    -l "Exchange USDC (Arc)" --no-minimum --confirm-details`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := context.Background()
+		// The minimum is checked first: refused without a terminal before anything is
+		// read, prompted for on one once the token (and so its decimals) is known.
+		noMinimum := payoutDestAddNoMin
+		minArg := payoutDestAddMin
+		if noMinimum && minArg != "" {
+			return errPayoutMinimumConflict()
+		}
+		if err := checkNotNegative("--min-amount", minArg); err != nil {
+			return err
+		}
+		minGiven := noMinimum || minArg != ""
+		if !minGiven && !interactive() {
+			return errPayoutMinimumMissing("the venue's minimum deposit is required")
+		}
+		// The label likewise: refused without a terminal before any request (blank
+		// counts as missing — the gateway trims it too), prompted for on one.
+		label := strings.TrimSpace(payoutDestAddLabel)
+		if label == "" && !interactive() {
+			return errPayoutLabelMissing("--label is required")
+		}
 		wallet := payoutDestAddWallet
 		if wallet == "" {
 			var err error
@@ -222,27 +269,37 @@ this token and chain.`,
 			}
 			symbol = strings.ToUpper(tokenArg)
 		}
-		minUnits, err := payoutAmountUnits(ctx, "--min-amount", payoutDestAddMin, chainID, tokenAddress)
+		if label == "" {
+			answer, err := promptPayoutLabel()
+			if err != nil {
+				return err
+			}
+			label = strings.TrimSpace(answer)
+		}
+		if !minGiven {
+			answer, err := promptPayoutMinimum(ctx, chainID, tokenAddress, symbol)
+			if err != nil {
+				return err
+			}
+			if strings.EqualFold(strings.TrimSpace(answer), payoutNoMinimumAnswer) {
+				noMinimum = true
+			} else {
+				minArg = answer
+			}
+		}
+		minUnits, err := payoutAmountUnits(ctx, "--min-amount", minArg, chainID, tokenAddress)
 		if err != nil {
 			return err
-		}
-		reserveUnits, err := payoutAmountUnits(ctx, "--reserve", payoutDestAddReserve, chainID, tokenAddress)
-		if err != nil {
-			return err
-		}
-		reserve := payoutAmountLabel(ctx, reserveUnits, chainID, tokenAddress, symbol)
-		if reserveUnits == "" {
-			reserve = "the gateway's suggestion (refundable balance still in its window)"
 		}
 		summary := fmt.Sprintf("Register this payout destination?\n"+
+			"  label            %s\n"+
 			"  deposit address  %s\n"+
 			"  network          %s\n"+
 			"  token            %s\n"+
 			"  minimum deposit  %s\n"+
-			"  refund reserve   %s\n"+
 			"  from wallet      %s",
-			address, chainLabel(chainID), tokenLabel(symbol, tokenAddress),
-			payoutAmountLabel(ctx, minUnits, chainID, tokenAddress, symbol), reserve, wallet)
+			label, address, chainLabel(chainID), tokenLabel(symbol, tokenAddress),
+			payoutMinimumLabel(ctx, minUnits, noMinimum, chainID, tokenAddress, symbol), wallet)
 		if err := confirmPayoutDetails(summary); err != nil {
 			return err
 		}
@@ -251,17 +308,19 @@ this token and chain.`,
 			ChainID:        chainID,
 			Token:          rail0.Address(tokenAddress),
 			Address:        rail0.Address(address),
-			Label:          payoutDestAddLabel,
-			Kind:           payoutDestAddKind,
-			ReserveAmount:  reserveUnits,
-			MinAmount:      minUnits,
+			Label:          label,
+			NoMinimum:      noMinimum,
 			ConfirmDetails: true, // reached only past confirmPayoutDetails
+		}
+		if !noMinimum {
+			m := rail0.Uint256String(minUnits)
+			req.MinAmount = &m
 		}
 		var created *rail0.PayoutDestination
 		err = ui.RunAPI(func() (any, error) {
 			d, err := newClient().PayoutDestinations.Create(ctx, req)
 			created = d
-			return d, err
+			return viewPayoutDestination(d), err
 		})
 		if err != nil {
 			return err
@@ -276,6 +335,37 @@ this token and chain.`,
 	},
 }
 
+// promptPayoutMinimum asks, on a terminal, for the venue's minimum deposit 'add' was
+// not given. An empty answer is refused inline — the point of the field is that the
+// merchant states it — and "none" is the answer for a venue with none (the flag
+// no_minimum; "0" is an ordinary figure). The value is
+// validated with the token's decimals before the prompt closes.
+func promptPayoutMinimum(ctx context.Context, chainID int, token, symbol string) (string, error) {
+	return promptValidated("Minimum deposit",
+		fmt.Sprintf("The venue's minimum deposit for %s on %s, from its deposit page, in token units (e.g. 10.00) — or %q if the venue has none",
+			tokenLabel(symbol, token), chainLabel(chainID), payoutNoMinimumAnswer),
+		false, func(s string) error {
+			if strings.EqualFold(strings.TrimSpace(s), payoutNoMinimumAnswer) {
+				return nil
+			}
+			_, err := payoutAmountUnits(ctx, "minimum deposit", s, chainID, token)
+			return err
+		})
+}
+
+// promptPayoutLabel asks, on a terminal, for the label 'add' was not given. A blank
+// answer is refused inline: every destination needs one.
+func promptPayoutLabel() (string, error) {
+	return promptValidated("Label",
+		"A name for this destination, unique in the account (ignoring case), e.g. \"Exchange USDC (Arc)\"",
+		false, func(s string) error {
+			if strings.TrimSpace(s) == "" {
+				return errors.New("the label may not be blank")
+			}
+			return nil
+		})
+}
+
 // tokenLabel renders "USDC (0x36…)" when the symbol is known, else the bare address.
 func tokenLabel(symbol, address string) string {
 	if symbol == "" {
@@ -287,82 +377,103 @@ func tokenLabel(symbol, address string) string {
 // ── payouts destinations update ───────────────────────────────────────────────
 
 var (
-	payoutDestUpdateLabel   string
-	payoutDestUpdateReserve string
-	payoutDestUpdateMin     string
+	payoutDestUpdateLabel string
+	payoutDestUpdateMin   string
+	payoutDestUpdateNoMin bool
 )
 
 var payoutDestinationsUpdateCmd = &cobra.Command{
 	Use:   "update <destination_id>",
-	Short: "Change a destination's label, refund reserve or minimum",
-	Long: `Change a payout destination's label, refund reserve or minimum deposit. Only the
-destination's own wallet may.
+	Short: "Change a destination's label or minimum",
+	Long: `Change a payout destination's label or minimum deposit. Only the destination's
+own wallet may.
 
---reserve and --min-amount are decimals in token units, converted with the
-destination token's decimals. An empty value clears the field: --reserve ""
-restores the gateway's suggestion, --min-amount "" removes the minimum.
+--label is trimmed and may not be blank (label_required, refused before any
+request); it must stay unique in the account, ignoring case (409
+payout_destination_label_taken when another destination already has it).
 
-CHANGING the minimum asks for the details confirmation again, exactly like 'add'
-(a y/N prompt on a terminal, or --confirm-details; --yes does not count): the
-minimum is copied from the venue, and a wrong one is how a deposit gets lost.
+--min-amount is a decimal in token units, converted with the destination token's
+decimals. The minimum cannot be blanked: --min-amount "" is refused — to state that the venue has
+no minimum, pass --no-minimum. --min-amount and --no-minimum exclude each other. A
+destination registered before the minimum was asked shows it as "not set": state it
+here.
+
+CHANGING the minimum (a new figure, or --no-minimum on one that had a figure)
+asks for the details confirmation again, exactly like 'add' (a y/N prompt on a
+terminal, or --confirm-details; --yes does not count): the minimum is copied from
+the venue, and a wrong one is how a deposit gets lost.
 Re-sending the current value asks nothing. Raising it above the destination's
 latest proof takes the verification away: the destination goes back to
 "unverified" and needs a new proof at the new minimum.
 
-To switch a destination off or on, use 'disable' / 'enable'.`,
+To switch a destination off or on, use 'disable' / 'enable'; to remove it, 'delete'.
+The reserves a payout keeps back are decided at payout time ('payouts send').`,
 	Example: `  rail0 payouts destinations update <destination_id> --label "Exchange (main)"
-  rail0 payouts destinations update <destination_id> --reserve 50
-  rail0 payouts destinations update <destination_id> --min-amount 25 --confirm-details`,
+  rail0 payouts destinations update <destination_id> --min-amount 25 --confirm-details
+  rail0 payouts destinations update <destination_id> --no-minimum --confirm-details`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := context.Background()
 		flags := cmd.Flags()
 		var req rail0.UpdatePayoutDestinationRequest
 		if flags.Changed("label") {
-			req.Label = &payoutDestUpdateLabel
+			label := strings.TrimSpace(payoutDestUpdateLabel)
+			if label == "" {
+				return errPayoutLabelMissing("--label may not be blank")
+			}
+			req.Label = &label
 		}
-		changesAmounts := flags.Changed("reserve") || flags.Changed("min-amount")
-		if req.Label == nil && !changesAmounts {
-			return newUsageError("usage_error", "nothing to update: pass --label, --reserve or --min-amount")
+		noMinimum := payoutDestUpdateNoMin
+		if flags.Changed("min-amount") && noMinimum {
+			return errPayoutMinimumConflict()
+		}
+		if flags.Changed("min-amount") && strings.TrimSpace(payoutDestUpdateMin) == "" {
+			return errPayoutMinimumMissing(`--min-amount may not be blank`)
+		}
+		if err := checkNotNegative("--min-amount", payoutDestUpdateMin); err != nil {
+			return err
+		}
+		changesMin := flags.Changed("min-amount") || noMinimum
+		if req.Label == nil && !changesMin {
+			return newUsageError("usage_error", "nothing to update: pass --label, --min-amount or --no-minimum")
 		}
 		client := newClient()
-		if changesAmounts {
-			// The amounts are decimals of the destination's token, and only the stored
+		if changesMin {
+			// The minimum is a decimal of the destination's token, and only the stored
 			// minimum says whether --min-amount CHANGES it — so read the destination first.
 			dest, err := client.PayoutDestinations.Get(ctx, args[0])
 			if err != nil {
 				return err
 			}
-			if flags.Changed("reserve") {
-				units, err := payoutAmountUnits(ctx, "--reserve", payoutDestUpdateReserve, dest.ChainID, string(dest.Token))
-				if err != nil {
+			// A change is a different [figure, no_minimum] pair — what the gateway
+			// compares to ask for confirm_details; re-sending the current one is not.
+			units := ""
+			if noMinimum {
+				req.NoMinimum = true
+			} else {
+				if units, err = payoutAmountUnits(ctx, "--min-amount", payoutDestUpdateMin, dest.ChainID, string(dest.Token)); err != nil {
 					return err
 				}
-				req.ReserveAmount = &units
+				m := rail0.Uint256String(units)
+				req.MinAmount = &m
 			}
-			if flags.Changed("min-amount") {
-				units, err := payoutAmountUnits(ctx, "--min-amount", payoutDestUpdateMin, dest.ChainID, string(dest.Token))
-				if err != nil {
+			if noMinimum != dest.NoMinimum || units != string(dest.MinAmount) {
+				if err := confirmPayoutDetails(minChangeSummary(ctx, dest, units, noMinimum)); err != nil {
 					return err
 				}
-				req.MinAmount = &units
-				if units != string(dest.MinAmount) {
-					if err := confirmPayoutDetails(minChangeSummary(ctx, dest, units)); err != nil {
-						return err
-					}
-					req.ConfirmDetails = true // reached only past confirmPayoutDetails
-				}
+				req.ConfirmDetails = true // reached only past confirmPayoutDetails
 			}
 		}
 		return ui.RunAPI(func() (any, error) {
-			return client.PayoutDestinations.Update(ctx, args[0], req)
+			d, err := client.PayoutDestinations.Update(ctx, args[0], req)
+			return viewPayoutDestination(d), err
 		})
 	},
 }
 
 // minChangeSummary is the prompt for a minimum change: the destination it applies to
 // (so the merchant re-checks the right venue page) and the old and new minimum.
-func minChangeSummary(ctx context.Context, d *rail0.PayoutDestination, units string) string {
+func minChangeSummary(ctx context.Context, d *rail0.PayoutDestination, units string, none bool) string {
 	token := string(d.Token)
 	return fmt.Sprintf("Change the minimum deposit of this payout destination?\n"+
 		"  deposit address  %s\n"+
@@ -370,8 +481,8 @@ func minChangeSummary(ctx context.Context, d *rail0.PayoutDestination, units str
 		"  token            %s\n"+
 		"  minimum deposit  %s → %s",
 		d.Address, chainLabel(d.ChainID), tokenLabel(d.TokenSymbol, token),
-		payoutAmountLabel(ctx, string(d.MinAmount), d.ChainID, token, d.TokenSymbol),
-		payoutAmountLabel(ctx, units, d.ChainID, token, d.TokenSymbol))
+		payoutMinimumLabel(ctx, string(d.MinAmount), d.NoMinimum, d.ChainID, token, d.TokenSymbol),
+		payoutMinimumLabel(ctx, units, none, d.ChainID, token, d.TokenSymbol))
 }
 
 // ── payouts destinations disable / enable ─────────────────────────────────────
@@ -407,8 +518,79 @@ had: a verified destination stays verified. Only the destination's own wallet ma
 func setPayoutDestinationActive(id string, active bool) error {
 	req := rail0.UpdatePayoutDestinationRequest{Active: &active}
 	return ui.RunAPI(func() (any, error) {
-		return newClient().PayoutDestinations.Update(context.Background(), id, req)
+		d, err := newClient().PayoutDestinations.Update(context.Background(), id, req)
+		return viewPayoutDestination(d), err
 	})
+}
+
+// ── payouts destinations delete ───────────────────────────────────────────────
+
+var payoutDestinationsDeleteCmd = &cobra.Command{
+	Use:   "delete <destination_id>",
+	Short: "Delete a destination (it leaves the lists; cannot be undone)",
+	Long: `Delete a payout destination. Only the destination's own wallet may.
+
+It leaves the lists ('destinations --include-deleted' still shows it), and its
+payment method (token and chain) and its label are free to be registered again. The record is kept: its payouts and audit trail
+keep naming it, and 'get' and 'events' still read it, with deleted_at set and
+status "disabled". A deleted destination takes no further change and cannot be
+re-enabled — to pause one instead, use 'disable'.
+
+Its pending payout is settled first, as on 'disable': an unsigned one fails
+"cancelled"; a SIGNED one refuses the delete (409 payout_already_signed), because
+its transaction may still be mined — resend it or let it settle, then delete.
+
+You are asked to confirm (y/N); pass --yes to skip the prompt in a script.`,
+	Example: `  rail0 payouts destinations delete <destination_id>
+  rail0 payouts destinations delete <destination_id> --yes`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := confirmDestructive(fmt.Sprintf(
+			"Delete payout destination %s? It cannot be re-enabled.", args[0])); err != nil {
+			return err
+		}
+		return ui.RunAPI(func() (any, error) {
+			d, err := newClient().PayoutDestinations.Delete(context.Background(), args[0])
+			return viewPayoutDestination(d), err
+		})
+	},
+}
+
+// ── payouts destinations reserves ─────────────────────────────────────────────
+
+var payoutDestinationsReservesCmd = &cobra.Command{
+	Use:   "reserves <destination_id>",
+	Short: "What a payout to a destination would keep back now, and what it could move",
+	Long: `Show what a payout to the destination would keep back in the wallet right now,
+and what '--amount all' would move. Nothing is stored: the gateway computes it
+from the wallet's payments and the chain's current fees, so the figures can move
+by the time you send.
+
+  balance         the wallet's balance of the destination's token
+  refund reserve  the refundable balance of the wallet's payments in this token
+                  still inside their refund window, and how many payments that is
+                  (a refund is pulled from the wallet: an emptied wallet fails it)
+  gas reserve     only on a chain whose gas is paid in this very token (Arc's
+                  USDC): the gas for those refunds and for capturing the wallet's
+                  open authorizations plus a base of new captures
+  gas allowance   the payout transfer's own fee, always kept back on such a chain
+  available       what '--amount all' moves with both reserves kept (the default)
+
+Both reserves are kept by default; 'payouts send --no-refund-reserve' /
+'--no-gas-reserve' skip one for a single payout. Any wallet of the account may
+read it; a deleted destination still reads. --json prints the gateway's record.`,
+	Example: `  rail0 payouts destinations reserves <destination_id>
+  rail0 payouts destinations reserves <destination_id> --json`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return ui.RunAPI(func() (any, error) {
+			r, err := newReadClient().PayoutDestinations.Reserves(context.Background(), args[0])
+			if err != nil {
+				return nil, err
+			}
+			return viewPayoutReserves(r), nil
+		})
+	},
 }
 
 // ── payouts destinations confirm ──────────────────────────────────────────────
@@ -434,7 +616,8 @@ You are asked to confirm (y/N); pass --yes to skip the prompt in a script.`,
 			return err
 		}
 		return ui.RunAPI(func() (any, error) {
-			return newClient().PayoutDestinations.Confirm(context.Background(), args[0])
+			d, err := newClient().PayoutDestinations.Confirm(context.Background(), args[0])
+			return viewPayoutDestination(d), err
 		})
 	},
 }
@@ -472,21 +655,20 @@ func init() {
 	addChainFlag(payoutDestinationsAddCmd, &payoutDestAddChainID, "c", "Chain the deposit address was issued for (default: 'rail0 config' chain)")
 	f.StringVarP(&payoutDestAddToken, "token", "t", "", "Token symbol (USDC) or 0x address on that chain (default: 'rail0 config' token)")
 	f.StringVarP(&payoutDestAddAddress, "address", "A", "", "The venue's deposit address (0x…, or @alias)")
-	f.StringVarP(&payoutDestAddLabel, "label", "l", "", "Human-readable label")
-	f.StringVar(&payoutDestAddKind, "kind", "", "Informational: "+strings.Join(payoutDestinationKinds, ", ")+" (default exchange)")
-	f.StringVar(&payoutDestAddMin, "min-amount", "", "The venue's minimum deposit, decimal in token units (e.g. 10.00)")
-	f.StringVar(&payoutDestAddReserve, "reserve", "", "Refund reserve left in the wallet on '--amount all', decimal in token units")
-	_ = payoutDestinationsAddCmd.RegisterFlagCompletionFunc("kind", fixedCompletions(payoutDestinationKinds...))
+	f.StringVarP(&payoutDestAddLabel, "label", "l", "", "Name of the destination — required, unique in the account (ignoring case)")
+	f.StringVar(&payoutDestAddMin, "min-amount", "", "The venue's minimum deposit, decimal in token units (e.g. 10.00) — required, or --no-minimum")
+	f.BoolVar(&payoutDestAddNoMin, "no-minimum", false, "The venue has no minimum deposit (no_minimum: true); excludes --min-amount")
 	_ = payoutDestinationsAddCmd.RegisterFlagCompletionFunc("address", completeAliasNames)
 	addConfirmDetailsFlag(payoutDestinationsAddCmd)
 
 	u := payoutDestinationsUpdateCmd.Flags()
-	u.StringVarP(&payoutDestUpdateLabel, "label", "l", "", "New label")
-	u.StringVar(&payoutDestUpdateReserve, "reserve", "", "New refund reserve, decimal in token units (\"\" restores the gateway's suggestion)")
-	u.StringVar(&payoutDestUpdateMin, "min-amount", "", "New minimum deposit, decimal in token units (\"\" removes it); asks for the details confirmation")
+	u.StringVarP(&payoutDestUpdateLabel, "label", "l", "", "New label — not blank, unique in the account (ignoring case)")
+	u.StringVar(&payoutDestUpdateMin, "min-amount", "", "New minimum deposit, decimal in token units; asks for the details confirmation")
+	u.BoolVar(&payoutDestUpdateNoMin, "no-minimum", false, "The venue has no minimum deposit (no_minimum: true; removes a figure); asks for the details confirmation")
 	addConfirmDetailsFlag(payoutDestinationsUpdateCmd)
 
 	addYesFlag(payoutDestinationsConfirmCmd)
+	addYesFlag(payoutDestinationsDeleteCmd)
 
 	payoutDestinationsEventsCmd.Flags().IntVar(&payoutDestEventsPage, "page", 0, "Page number (1-based)")
 	payoutDestinationsEventsCmd.Flags().IntVar(&payoutDestEventsPerPage, "per-page", 0, "Events per page (max 100)")
@@ -498,7 +680,9 @@ func init() {
 		payoutDestinationsUpdateCmd,
 		payoutDestinationsDisableCmd,
 		payoutDestinationsEnableCmd,
+		payoutDestinationsDeleteCmd,
 		payoutDestinationsConfirmCmd,
+		payoutDestinationsReservesCmd,
 		payoutDestinationsEventsCmd,
 	)
 }

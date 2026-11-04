@@ -60,14 +60,19 @@ First payout to a new venue:
   3. payouts destinations confirm <id>
        once the venue shows the proof CREDITED: the destination is verified
   4. payouts send --destination <id> --amount 250.00 -p @merchant-key
-       or --amount all: the balance minus the refund reserve
+       or --amount all: the balance minus the reserves kept back
 
 Minimum: a deposit below the venue's minimum may be ignored by the venue and lost
-for good. Set it on the destination (--min-amount): payouts below it are refused.
+for good. Every destination states it (--min-amount, or --no-minimum when the venue
+has none): payouts below it are refused.
 
-Refund reserve: '--amount all' keeps the destination's reserve in the wallet, so
-refunds still inside their window can be paid (default: the gateway's suggestion,
-the refundable balance of the wallet's payments in that token).
+Reserves: every payout keeps back, by default, the refund reserve (the refundable
+balance of the wallet's payments in that token, so refunds still inside their
+window can be paid) and, on a chain whose gas is paid in this token (Arc's USDC),
+the gas reserve (gas for those refunds and the captures the wallet still owes).
+'payouts destinations reserves <id>' shows them; --no-refund-reserve /
+--no-gas-reserve on 'send' and 'prepare' skip one for a single payout, at the risk
+of a later refund or capture failing.
 
 A payout goes pending → submitted → confirmed (or failed: its error_code says
 why). One pending payout per destination. A deactivated account is read-only: it

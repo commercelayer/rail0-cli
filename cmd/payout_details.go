@@ -10,8 +10,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// The merchant's attestation that a payout destination's details are right, and the
-// amount conversion its two amount flags need. Shared by `payouts destinations add`
+// The merchant's attestation that a payout destination's details are right, the
+// amount conversion its minimum needs, and how destinations and their reserves print. Shared by `payouts destinations add`
 // and `payouts destinations update`.
 
 // payoutConfirmDetails is --confirm-details: the NON-INTERACTIVE way to accept the
@@ -80,7 +80,7 @@ func wrapIndented(text string, indent, width int) string {
 	return strings.Join(lines, "\n")
 }
 
-// payoutAmountUnits converts a --reserve / --min-amount decimal ("10.00") to the base
+// payoutAmountUnits converts a --min-amount decimal ("10.00") to the base
 // units the gateway stores, with the decimals of the destination's token. "" stays ""
 // (the caller decides what an empty value means).
 //
@@ -93,6 +93,9 @@ func payoutAmountUnits(ctx context.Context, flag, value string, chainID int, tok
 	if value == "" {
 		return "", nil
 	}
+	if err := checkNotNegative(flag, value); err != nil {
+		return "", err
+	}
 	decimals, ok := tokenDecimals(ctx, chainID, token)
 	if !ok {
 		return "", fmt.Errorf("unknown token %s on %s — its decimals are needed to convert %s (see 'rail0 tokens')",
@@ -103,6 +106,98 @@ func payoutAmountUnits(ctx context.Context, flag, value string, chainID int, tok
 		return "", fmt.Errorf("%s: %w (use a decimal in token units, e.g. 10.00)", flag, err)
 	}
 	return units, nil
+}
+
+// payoutMinimumGuidance is how to state a destination's minimum deposit, shared by
+// every local refusal of a missing or blank one and by the prompt.
+const payoutMinimumGuidance = "look up the minimum deposit on the venue's deposit page (with the network and token " +
+	"of this destination) and pass it as --min-amount <decimal>, or --no-minimum when the venue has none"
+
+// errPayoutMinimumMissing is the local refusal of a destination with no minimum stated
+// — the gateway would answer 422 minimum_required. Its code is the gateway's, so an
+// agent reads the same machine code whichever side refused.
+func errPayoutMinimumMissing(what string) error {
+	return newUsageError("minimum_required", "%s: %s", what, payoutMinimumGuidance)
+}
+
+// errPayoutMinimumConflict is the local refusal of both answers at once — the
+// gateway's 422 minimum_conflict, with its code.
+func errPayoutMinimumConflict() error {
+	return newUsageError("minimum_conflict",
+		"--min-amount and --no-minimum are mutually exclusive: pass the venue's minimum, or --no-minimum when it has none")
+}
+
+// errPayoutLabelMissing is the local refusal of a destination with no label, or a
+// blank one — the gateway would answer 422 label_required, so the code is the same.
+func errPayoutLabelMissing(what string) error {
+	return newUsageError("label_required",
+		"%s: name the destination with --label <name>, unique in the account (ignoring case)", what)
+}
+
+// payoutNoMinimumAnswer is what the minimum prompt takes for "the venue has none" —
+// a word, not a figure: "0" is an ordinary minimum, and "none" is the flag no_minimum.
+const payoutNoMinimumAnswer = "none"
+
+// payoutMinimumLabel renders a destination's minimum deposit for a prompt: none is the
+// merchant's explicit "the venue has none" (no_minimum), an empty figure without it a
+// legacy destination that never stated one; anything else is an amount
+// (payoutAmountLabel).
+func payoutMinimumLabel(ctx context.Context, units string, none bool, chainID int, token, symbol string) string {
+	switch {
+	case none:
+		return "none (no minimum at this venue)"
+	case units == "":
+		return "not set"
+	}
+	return payoutAmountLabel(ctx, units, chainID, token, symbol)
+}
+
+// payoutDestinationView is a destination as the CLI prints it: the gateway's fields,
+// unchanged, plus "minimum" — the one field a reader cannot get from min_amount
+// alone, since a null min_amount means either "the venue has none" (no_minimum) or
+// "never stated" (a destination registered before the minimum was asked).
+type payoutDestinationView struct {
+	*rail0.PayoutDestination
+	Minimum string `json:"minimum,omitempty"`
+}
+
+// viewPayoutDestination wraps a destination for output; nil in, nil out. The figure
+// is the gateway's min_amount_formatted, so a listing costs no token-catalogue read.
+func viewPayoutDestination(d *rail0.PayoutDestination) *payoutDestinationView {
+	if d == nil {
+		return nil
+	}
+	v := &payoutDestinationView{PayoutDestination: d}
+	switch {
+	case ui.IsQuiet():
+	case d.NoMinimum:
+		v.Minimum = "none"
+	case d.MinAmount == "":
+		v.Minimum = "not set"
+	case d.MinAmountFormatted != "":
+		v.Minimum = strings.TrimSpace(d.MinAmountFormatted + " " + d.TokenSymbol)
+	default:
+		v.Minimum = string(d.MinAmount) + " base units"
+	}
+	return v
+}
+
+// viewPayoutDestinations wraps a page of destinations for output.
+func viewPayoutDestinations(ds []rail0.PayoutDestination) []*payoutDestinationView {
+	out := make([]*payoutDestinationView, 0, len(ds))
+	for i := range ds {
+		out = append(out, viewPayoutDestination(&ds[i]))
+	}
+	return out
+}
+
+// checkNotNegative refuses a negative amount flag up front, before any request: the
+// decimal conversion would refuse it too, but only after the token lookup.
+func checkNotNegative(flag, value string) error {
+	if strings.HasPrefix(strings.TrimSpace(value), "-") {
+		return newUsageError("usage_error", "%s may not be negative (use a decimal in token units, e.g. 10.00)", flag)
+	}
+	return nil
 }
 
 // payoutAmountLabel renders a base-unit amount of a destination's token for a prompt:
@@ -120,4 +215,65 @@ func payoutAmountLabel(ctx context.Context, units string, chainID int, token, sy
 		return units + " base units of " + symbol
 	}
 	return rail0.FormatAmount(units, decimals) + " " + symbol
+}
+
+// payoutReservesView is a destination's reserves as a person reads them on a
+// terminal: every figure in token units with its symbol, the refund reserve with the
+// number of payments it covers, and the gas lines only on a chain whose gas is paid in
+// this very token (elsewhere they are "0" and say nothing).
+type payoutReservesView struct {
+	DestinationID string `json:"destination_id"`
+	Network       string `json:"network"`
+	Token         string `json:"token"`
+	Balance       string `json:"balance"`
+	RefundReserve string `json:"refund_reserve"`
+	GasReserve    string `json:"gas_reserve,omitempty"`
+	GasAllowance  string `json:"gas_allowance,omitempty"`
+	Available     string `json:"available"`
+}
+
+// viewPayoutReserves renders GET /payout_destinations/{id}/reserves for output. Machine
+// output (--json, a pipe, --agent) gets the gateway's record unchanged, base units and
+// counts included, so a script reads the same fields as the API; a terminal gets
+// payoutReservesView. nil in, nil out.
+func viewPayoutReserves(r *rail0.PayoutReserves) any {
+	if r == nil || ui.IsMachineOutput() || ui.IsQuiet() {
+		return r
+	}
+	return humanPayoutReserves(r)
+}
+
+// humanPayoutReserves is the terminal form of the reserves (payoutReservesView).
+func humanPayoutReserves(r *rail0.PayoutReserves) *payoutReservesView {
+	amount := func(formatted, units string) string {
+		if formatted == "" {
+			return units + " base units"
+		}
+		return strings.TrimSpace(formatted + " " + r.TokenSymbol)
+	}
+	v := &payoutReservesView{
+		DestinationID: r.DestinationID,
+		Network:       chainLabel(r.ChainID),
+		Token:         tokenLabel(r.TokenSymbol, r.Token),
+		Balance:       amount(r.BalanceFormatted, r.Balance),
+		RefundReserve: fmt.Sprintf("%s (%s)", amount(r.RefundReserveFormatted, r.RefundReserve),
+			plural(r.RefundablePayments, "refundable payment", "refundable payments")),
+		Available: amount(r.AvailableFormatted, r.Available),
+	}
+	if r.NativeGas {
+		v.GasReserve = fmt.Sprintf("%s (%s, %s + %s)", amount(r.GasReserveFormatted, r.GasReserve),
+			plural(r.GasRefunds, "refund", "refunds"),
+			plural(r.OpenAuthorizations, "open authorization", "open authorizations"),
+			plural(r.BaseCaptures, "new capture", "new captures"))
+		v.GasAllowance = amount(r.GasAllowanceFormatted, r.GasAllowance)
+	}
+	return v
+}
+
+// plural renders "1 refund" / "3 refunds".
+func plural(n int, one, many string) string {
+	if n == 1 {
+		return "1 " + one
+	}
+	return fmt.Sprintf("%d %s", n, many)
 }

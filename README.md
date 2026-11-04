@@ -1873,11 +1873,15 @@ rail0 payouts send --destination <destination_id> --proof -p @merchant-key --wai
 # 3. once the venue shows the proof CREDITED (not just mined)
 rail0 payouts destinations confirm <destination_id>
 
-# 4. pay out — a decimal, or all: the balance minus the refund reserve
+# 4. pay out — a decimal, or all: the balance minus the reserves kept back
 rail0 payouts send --destination <destination_id> --amount 250.00 -p @merchant-key
 ```
 
 A destination is bound to **one chain and one token**: an EVM address is the same string on every chain, but a venue credits only the network it issued the address for. Generate the deposit address at the venue with the network set to `--chain`.
+
+#### Label
+
+Every destination has a **label** (`--label` / `-l`), **required** and **unique in the account, ignoring case**: two live destinations may not share one (`409 payout_destination_label_taken`); deleting a destination frees its label. It is trimmed before it is sent, and a blank one is refused. `destinations add` without a label prompts for it on a terminal, and is a usage error (`label_required`) without one or with `--agent`, before any request; `update --label ""` (or only spaces) is refused locally the same way.
 
 #### Confirming the details (`--confirm-details`)
 
@@ -1887,31 +1891,57 @@ A destination is bound to **one chain and one token**: an EVM address is the sam
 
 and need your explicit consent: a y/N prompt (default **no**) on a terminal, or `--confirm-details` without one or with `--agent`. Without it nothing is sent. `--yes` does **not** count — a script that passes it everywhere must not attest, by accident, to having checked a page nobody looked at. The gateway records the attestation (version, who, when) in the destination's audit trail.
 
-#### Minimum and refund reserve
+#### Minimum
 
 `--min-amount` is the venue's minimum deposit. A venue may ignore a deposit below it, and that deposit can be lost for good — so payouts below it are refused (`payout_below_minimum`) and the proof is raised to it. Raising it above the destination's latest proof takes the verification away: the destination needs a new proof.
 
-`--reserve` is what `send --amount all` leaves in the wallet, so refunds still inside their window can be paid. Unset (or `--reserve ""`), the gateway keeps its suggestion: the refundable balance of the wallet's payments in that token (`suggested_reserve` on the destination).
+The minimum is **required**, and stated explicitly: `destinations add` takes `--min-amount <decimal>` (the figure — never negative; `0` is an ordinary figure) **or** `--no-minimum` when the venue has none (sent as `no_minimum: true`, never as a `0`). Passing neither prompts for it on a terminal — an empty answer is not accepted, type `none` if the venue has none — and is a usage error (`minimum_required`) without one or with `--agent`, before any request; passing both is a usage error (`minimum_conflict`). On `update`, `--min-amount ""` is refused locally: `--no-minimum` states the venue has none (and removes a figure), `--min-amount <decimal>` sets a figure (and clears `--no-minimum`); like any change of the minimum, either asks for the details confirmation. Destinations show it in their `minimum` field: the figure, `none` (the merchant stated the venue has none), or `not set` — a destination registered before the minimum was asked; state it with `update`:
 
-Both are **decimals in token units** (`10.00`), converted with the token's decimals, like every other amount flag.
+```sh
+rail0 payouts destinations update <destination_id> --min-amount 10 --confirm-details
+rail0 payouts destinations update <destination_id> --no-minimum --confirm-details   # the venue has none
+```
+
+It is a **decimal in token units** (`10.00`), converted with the token's decimals, like every other amount flag.
+
+#### Reserves (decided at payout time)
+
+A destination stores no reserve: every payout decides, when it is prepared, what it keeps back in the wallet. Both reserves are kept **by default**:
+
+- the **refund reserve** — the refundable balance of the wallet's payments in that token still inside their refund window (a refund is pulled from the payee wallet, so an emptied wallet fails it);
+- the **gas reserve** — only on a chain whose gas is paid in this very token (Arc's USDC): the gas for those refunds and for the captures the wallet still owes. On such a chain the transfer's own gas allowance is kept back too.
+
+They bound `--amount all` and a typed amount alike. `send` and `prepare` take `--no-refund-reserve` / `--no-gas-reserve` to skip one **for that payout only** (sent as `keep_refund_reserve` / `keep_gas_reserve: false`) — a later refund, or a later capture or refund without the gas to pay for it, **may then fail**. The payout records what it kept back (`refund_reserve`, `gas_reserve`), and the `send` / `submit` prompts show it.
+
+```sh
+rail0 payouts destinations reserves <destination_id>          # balance, both reserves, gas allowance, available
+rail0 payouts destinations reserves <destination_id> --json   # the gateway's record (base units and counts)
+rail0 payouts send --destination <destination_id> --amount all --no-refund-reserve -p @merchant-key
+```
+
+`available` is what `--amount all` moves with both reserves kept. The figures are computed now (balance and fees read from the chain) and can move by the time you send.
 
 #### `payouts destinations` — list (also `destinations list`)
 
 ```sh
 rail0 payouts destinations --status verified
 rail0 payouts destinations get <destination_id>
-rail0 payouts destinations update <destination_id> --label "Exchange (main)" --reserve 50
+rail0 payouts destinations --include-deleted               # deleted ones too (deleted_at set)
+rail0 payouts destinations update <destination_id> --label "Exchange (main)"
 rail0 payouts destinations update <destination_id> --min-amount 25 --confirm-details
+rail0 payouts destinations update <destination_id> --no-minimum --confirm-details
 rail0 payouts destinations disable <destination_id>     # reversible; any wallet of the account
 rail0 payouts destinations enable <destination_id>      # keeps the verification it had
 rail0 payouts destinations events <destination_id>      # its audit trail and its payouts'
+rail0 payouts destinations reserves <destination_id>    # what a payout would keep back now
+rail0 payouts destinations delete <destination_id>      # asks y/N (--yes to skip); cannot be undone
 ```
 
-`disable` settles the destination's pending payout first: an unsigned one fails `cancelled`; a **signed** one refuses the switch-off (`409 payout_already_signed`) because its transaction may still be mined. `confirm` asks y/N (`--yes` to skip) — confirm only after you see the deposit at the venue: a transfer can be mined and never credited.
+`delete` (only the destination's own wallet) removes it from the lists and frees its payment method — one destination per token and chain — so another address can be registered there, and its label; the record is kept — `get` and `events` still read it, with `deleted_at` set and status `disabled`, and its payouts keep naming it — but it takes no further change and cannot be re-enabled. `delete` and `disable` both settle the destination's pending payout first: an unsigned one fails `cancelled`; a **signed** one refuses the switch-off (`409 payout_already_signed`) because its transaction may still be mined. `confirm` asks y/N (`--yes` to skip) — confirm only after you see the deposit at the venue: a transfer can be mined and never credited.
 
 #### `payouts send`
 
-Prepare → verify → sign → submit in one step, with the destination wallet's key (`-p`, `@name`, `RAIL0_PRIVATE_KEY`, or a hidden prompt). Before signing it shows the amount, token, deposit address, network and sending wallet and asks to confirm (y/N); `--yes` skips it and is required without a terminal. With `--amount all` or `--proof` the gateway computes the amount; to see the exact figure first, use `prepare` + `submit`. A payout to a disabled or not-yet-verified destination is refused before the prompt.
+Prepare → verify → sign → submit in one step, with the destination wallet's key (`-p`, `@name`, `RAIL0_PRIVATE_KEY`, or a hidden prompt). Before signing it shows the amount, token, deposit address, network, sending wallet and the reserves kept back (or skipped, with `--no-refund-reserve` / `--no-gas-reserve`) and asks to confirm (y/N); `--yes` skips it and is required without a terminal. With `--amount all` or `--proof` the gateway computes the amount; to see the exact figure first, use `prepare` + `submit`. A payout to a disabled or not-yet-verified destination is refused before the prompt.
 
 The result is the payout, `submitted` with its `transaction_hash` (`-q` prints the hash); it turns `confirmed` once its block is final. A node refusal (502) leaves it `pending` and signed: `payouts resend <id>`.
 

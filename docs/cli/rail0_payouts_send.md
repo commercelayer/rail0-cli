@@ -12,14 +12,25 @@ With -w/--wait the command instead follows it until "confirmed" (the result) or
 "failed" (an error); see --wait below.
 
 --amount is a decimal in token units (250.00), or "all": the wallet's balance minus
-the destination's refund reserve, computed by the gateway. --proof sends the proof
-transfer instead (1 token unit, raised to the destination's minimum) — the step
-before 'payouts destinations confirm'. An unverified destination takes the proof
-only.
+the reserves kept back, computed by the gateway. --proof sends the proof transfer
+instead (1 token unit, raised to the destination's minimum) — the step before
+'payouts destinations confirm'. An unverified destination takes the proof only.
+
+Reserves: every payout keeps two reserves back in the wallet by default, decided
+when it is prepared ('payouts destinations reserves <id>' shows them beforehand):
+  - the refund reserve: the refundable balance of the wallet's payments in this
+    token still inside their refund window (a refund is pulled from the wallet);
+  - the gas reserve, only on a chain whose gas is paid in this very token (Arc's
+    USDC): the gas for those refunds and for the captures the wallet still owes.
+    On such a chain the transfer's own gas allowance is kept back too.
+They bound "all" and a typed amount alike. --no-refund-reserve / --no-gas-reserve
+skip one for this payout only: a later refund, or a later capture or refund
+without the gas to pay for it, may then FAIL. The payout records what it kept back
+(refund_reserve, gas_reserve).
 
 Before signing, the command shows what will be sent — amount, token, deposit
-address, network, from — and asks to confirm (y/N); --yes skips the prompt and is
-required without a terminal. With "all" or --proof the gateway sets the amount: to
+address, network, from, and the reserves kept back — and asks to confirm (y/N);
+--yes skips the prompt and is required without a terminal. With "all" or --proof the gateway sets the amount: to
 see the exact figure before signing, run 'payouts prepare' and then
 'payouts submit <id>', which shows it.
 
@@ -49,14 +60,17 @@ rail0 payouts send [flags]
   rail0 payouts send --destination <destination_id> --proof -p @merchant-key --wait
   rail0 payouts send --destination <destination_id> --amount 250.00 -p @merchant-key
   rail0 payouts send --destination <destination_id> --amount all -p @merchant-key --yes
+  rail0 payouts send --destination <destination_id> --amount all --no-refund-reserve -p @merchant-key
 ```
 
 ### Options
 
 ```
-  -a, --amount string        Decimal in token units (e.g. 250.00), or 'all' for the balance minus the refund reserve
+  -a, --amount string        Decimal in token units (e.g. 250.00), or 'all' for the balance minus the reserves kept back
   -d, --destination string   Destination id ('rail0 payouts destinations')
   -h, --help                 help for send
+      --no-gas-reserve       Do not keep the gas reserve back for this payout (native-gas chains; a later refund or capture may fail)
+      --no-refund-reserve    Do not keep the refund reserve back for this payout (a later refund may fail)
   -p, --private-key string   The destination wallet's key: 0x hex, @name for an OS-keychain key ('rail0 keys add'), or RAIL0_PRIVATE_KEY
       --proof                Send the proof transfer (the gateway sets its amount) instead of a payout
       --timeout duration     Max time to wait when --wait is set; unset, 10× the chain's measured p90 settlement, kept within 5m–15m (default 15m0s)

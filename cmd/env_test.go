@@ -261,10 +261,17 @@ func TestEnvSwitchClearsSettingsTheTargetDoesNotDefine(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	for _, key := range []string{"chain", "chain-id", "token"} {
-		if v, ok := cfg.Settings[key]; ok && v != "" {
-			t.Errorf("%s survived the switch to production as %q", key, v)
-		}
+	// production declares no admin-url: the development one must not survive.
+	if v, ok := cfg.Settings["admin-url"]; ok && v != "" {
+		t.Errorf("admin-url survived the switch to production as %q", v)
+	}
+	if v, ok := cfg.Settings["chain-id"]; ok && v != "" {
+		t.Errorf("chain-id survived the switch to production as %q", v)
+	}
+	// Its own chain and token: Arc (mainnet, by the production gateway) and USDC.
+	if cfg.Settings["chain"] != "arc" || cfg.Settings["token"] != "USDC" {
+		t.Errorf("production must set chain arc and token USDC, got chain=%q token=%q",
+			cfg.Settings["chain"], cfg.Settings["token"])
 	}
 	if got := cfg.Settings["base-url"]; got != config.DefaultBaseURL {
 		t.Errorf("base-url = %q, want the production gateway", got)
@@ -328,8 +335,8 @@ func TestEnvSwitchDeclinedChangesNothing(t *testing.T) {
 }
 
 // A config written before slugs holds chain-id. Switching to an environment that
-// declares chain restates it as chain — silently, since nothing is lost — while
-// switching to production (no chain) treats the legacy key as stale like any other.
+// declares chain (every one, production included) restates it as chain — silently,
+// since nothing is lost.
 func TestEnvSwitchReplacesTheLegacyChainID(t *testing.T) {
 	isolate(t)
 	if err := (&config.Config{Settings: map[string]string{
@@ -341,8 +348,8 @@ func TestEnvSwitchReplacesTheLegacyChainID(t *testing.T) {
 	if stale := staleAfterSwitch(cfg, environments[1]); len(stale) > 0 {
 		t.Errorf("development -> staging must not prompt for the superseded chain-id, got %v", stale)
 	}
-	if stale := staleAfterSwitch(cfg, environments[2]); !slices.Contains(stale, "chain-id") {
-		t.Errorf("-> production must list chain-id as stale, got %v", stale)
+	if stale := staleAfterSwitch(cfg, environments[2]); slices.Contains(stale, "chain-id") {
+		t.Errorf("-> production declares chain too: chain-id must be restated, not stale, got %v", stale)
 	}
 	if err := switchEnv("staging", false); err != nil {
 		t.Fatalf("switch staging: %v", err)

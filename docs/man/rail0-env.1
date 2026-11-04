@@ -19,16 +19,16 @@ it writes that environment's settings to the config file, so every command uses
 them.
 
 .PP
-The bundle is base-url plus, on development and staging, admin-url, chain (the
-slug arc, resolved by the environment's gateway to its Arc network) and token —
-so a switch moves the admin app, the default chain and the token as well as the
-gateway. 'env 
---details' prints what it ended up with.
+The bundle is base-url, chain (the slug arc, resolved by the environment's gateway
+to its Arc network: Arc Testnet on development and staging, Arc mainnet on
+production) and token (USDC), plus admin-url on development and staging — so a
+switch moves the default chain and the token, and the admin app, as well as the
+gateway. 'env  --details' prints what it ended up with.
 
 .PP
 After a switch the environment-managed settings are exactly the target's: a key
-the target does not declare is REMOVED, so production (base-url alone) does not
-inherit the chain and token of the environment you came from. A switch that would
+the target does not declare is REMOVED, so production (no admin-url yet) does not
+keep the admin app of the environment you came from. A switch that would
 clear something names the values and asks first; --yes skips the prompt, and
 without a terminal the switch refuses rather than hanging.
 

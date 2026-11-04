@@ -27,11 +27,12 @@ type environment struct {
 // parameter means adding its key/value to each entry here (and registering the
 // key in configKeys).
 //
-// development and staging carry a chain and a token; production does not. That is
-// not an omission: both non-production environments serve testnets, so Arc Testnet
-// (4 confirmations, the quickest active one) is a safe default there, while the
-// production chain set is a deployment decision and inventing one here would send
-// a real payment to a chain nobody chose.
+// Every environment carries a chain and a token. development and staging serve
+// testnets, so `arc` resolves to Arc Testnet there; production serves mainnets, and
+// its chain set is a deployment decision made on 2026-11-04: Arc mainnet only,
+// accepting USDC and EURC. So production defaults to `arc` (the gateway resolves the
+// slug to Arc mainnet, 5042) and USDC. production has no admin-url yet: the
+// production admin has no domain, and a URL invented here would open the wrong app.
 var environments = []environment{
 	{name: "development", settings: map[string]string{
 		"base-url":  "http://localhost:9292",
@@ -45,7 +46,11 @@ var environments = []environment{
 		"chain":     "arc",
 		"token":     "USDC",
 	}},
-	{name: "production", settings: map[string]string{"base-url": config.DefaultBaseURL}},
+	{name: "production", settings: map[string]string{
+		"base-url": config.DefaultBaseURL,
+		"chain":    "arc",
+		"token":    "USDC",
+	}},
 }
 
 // supersededKeys maps a legacy env-managed key to the key that replaced it. A switch to
@@ -133,7 +138,7 @@ func envManagedKeys() []string {
 // the switch.
 //
 // They survived because applying an environment only ever wrote its own keys and
-// never removed any. production declares just base-url, so moving there from
+// never removed any. production then declared just base-url, so moving there from
 // development left chain-id 5042002 (now chain arc) and token USDC in place: pointed at the
 // production gateway with an Arc Testnet default still armed, inherited in
 // silence because nothing wrote it at that moment. An environment is meant to be
@@ -194,15 +199,15 @@ Run bare to list the selectable environments, with the current one marked; add
 it writes that environment's settings to the config file, so every command uses
 them.
 
-The bundle is base-url plus, on development and staging, admin-url, chain (the
-slug arc, resolved by the environment's gateway to its Arc network) and token —
-so a switch moves the admin app, the default chain and the token as well as the
-gateway. 'env <name>
---details' prints what it ended up with.
+The bundle is base-url, chain (the slug arc, resolved by the environment's gateway
+to its Arc network: Arc Testnet on development and staging, Arc mainnet on
+production) and token (USDC), plus admin-url on development and staging — so a
+switch moves the default chain and the token, and the admin app, as well as the
+gateway. 'env <name> --details' prints what it ended up with.
 
 After a switch the environment-managed settings are exactly the target's: a key
-the target does not declare is REMOVED, so production (base-url alone) does not
-inherit the chain and token of the environment you came from. A switch that would
+the target does not declare is REMOVED, so production (no admin-url yet) does not
+keep the admin app of the environment you came from. A switch that would
 clear something names the values and asks first; --yes skips the prompt, and
 without a terminal the switch refuses rather than hanging.
 

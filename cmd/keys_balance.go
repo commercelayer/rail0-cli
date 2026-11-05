@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/big"
 	"strconv"
@@ -250,6 +251,10 @@ func readBalances(ctx context.Context, r *chainread.Reader, chain *rail0.Blockch
 		tokens = active
 	case keysBalanceToken != "" && !evmAddressPattern.MatchString(keysBalanceToken):
 		addr, decimals, _, err := lookupTokenAddress(ctx, chain.ChainID, keysBalanceToken)
+		if errors.Is(err, errNoTokensOnChain) {
+			// A balance read needs no gateway: the token's address works on any chain.
+			return nil, fmt.Errorf("%w, or pass the token's 0x address to --token", err)
+		}
 		if err != nil {
 			return nil, err
 		}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"math/big"
 	"net/http"
 	"net/http/httptest"
@@ -211,5 +212,34 @@ func TestKeysBalanceNativeSymbolOfAChainTheGatewayDoesNotList(t *testing.T) {
 		if got := nativeSymbol(&c.chain); got != c.want {
 			t.Errorf("nativeSymbol(%d) = %q, want %q", c.chain.ChainID, got, c.want)
 		}
+	}
+}
+
+// A symbol on a chain the environment's gateway does not serve (Arc mainnet read with
+// --rpc-url while the CLI points at staging) used to fail as "unknown token "USDC" on
+// chain 5042 — available: " with nothing after the colon. It now says why and how out.
+func TestKeysBalanceTokenSymbolOnAChainTheGatewayDoesNotServe(t *testing.T) {
+	resetKeysBalanceFlags(t)
+	seedArcTokens(t) // USDC on Arc Testnet only
+	node := fakeArcNode(t)
+	defer node.Close()
+	reader, err := chainread.New([]string{node.URL}, chainread.DefaultTimeout)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+
+	keysBalanceToken = "USDC"
+	_, err = readBalances(context.Background(), reader, &rail0.Blockchain{ChainID: 5042}, common.Address{})
+	if !errors.Is(err, errNoTokensOnChain) {
+		t.Fatalf("want errNoTokensOnChain, got %v", err)
+	}
+	for _, want := range []string{"does not serve that chain", "rail0 env", "0x address"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q lacks %q", err, want)
+		}
+	}
+	if strings.Contains(err.Error(), "available: ") {
+		t.Errorf("error still lists an empty set: %q", err)
 	}
 }

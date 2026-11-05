@@ -101,8 +101,17 @@ func lookupTokenAddress(ctx context.Context, chainID int, symbol string) (string
 			return string(t.Address), t.Decimals, syms, nil
 		}
 	}
+	if len(syms) == 0 {
+		return "", 0, syms, fmt.Errorf("%w: %s — the gateway of this environment does not serve that chain (switch with 'rail0 env' or --base-url)", errNoTokensOnChain, chainLabel(chainID))
+	}
 	return "", 0, syms, fmt.Errorf("unknown token %q on %s — available: %s", symbol, chainLabel(chainID), strings.Join(syms, ", "))
 }
+
+// errNoTokensOnChain: the current gateway lists no active token on the chain at all,
+// so "unknown token X — available: " (an empty list) would only puzzle. It happens
+// when the chain is outside the environment, e.g. Arc mainnet read with --rpc-url
+// while the CLI points at the staging (testnet) gateway.
+var errNoTokensOnChain = errors.New("no tokens listed on")
 
 // assertAmountPrecision rejects a human amount carrying more decimal places than
 // the token supports — the gateway would reject it (422 invalid_amount), so we

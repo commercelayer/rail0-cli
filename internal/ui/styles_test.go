@@ -37,3 +37,11 @@ func TestStatusStyle(t *testing.T) {
 		})
 	}
 }
+
+// The download bar is filled in the rail0.xyz accent green (256-colour 73, #5fafaf,
+// nearest to the site's dark-theme #5cc0b2), not the spinner's pink.
+func TestBarStyleIsTheSiteGreen(t *testing.T) {
+	if got, want := BarStyle.GetForeground(), lipgloss.Color("73"); !reflect.DeepEqual(got, want) {
+		t.Errorf("BarStyle foreground = %#v, want %#v", got, want)
+	}
+}

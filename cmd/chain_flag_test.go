@@ -124,7 +124,7 @@ func TestEveryChainCommandTakesChain(t *testing.T) {
 		paymentsCreateCmd, paymentsListCmd, tokensCmd, walletsCmd, walletsBalancesCmd,
 		walletTokensAddCmd, walletTokensEnableCmd, walletTokensDisableCmd,
 		analyticsSummaryCmd, analyticsTimeseriesCmd, analyticsBreakdownCmd,
-		payoutDestinationsAddCmd, keysBalanceCmd,
+		payoutDestinationsAddCmd, balanceCmd,
 	} {
 		if c.Flags().Lookup("chain") == nil || c.Flags().Lookup("chain-id") == nil {
 			t.Errorf("%s: --chain and --chain-id must both be registered", c.CommandPath())
@@ -136,12 +136,16 @@ func TestConfiguredChainResolvesASlugAndReadsTheLegacyKey(t *testing.T) {
 	clearConfigEnv(t)
 	seedChainCatalog(t, testChains...)
 
-	if _, _, ok, err := configuredChainID(context.Background()); ok || err != nil {
-		t.Fatalf("nothing set: ok=%v err=%v", ok, err)
+	// Nothing set: the environment's default chain, a slug, resolved.
+	if id, origin, ok, err := configuredChainID(context.Background()); !ok || err != nil || id != 5042002 || origin != "production default" {
+		t.Fatalf("nothing set: %d %q ok=%v err=%v", id, origin, ok, err)
 	}
 
-	// A config written before slugs: chain-id alone.
-	if err := (&config.Config{Settings: map[string]string{"chain-id": "84532"}}).Save(); err != nil {
+	// A config written before slugs: chain-id alone, in the file — which outranks
+	// the environment's default chain.
+	cfg := &config.Config{}
+	cfg.SetEnvSetting("production", "chain-id", "84532")
+	if err := cfg.Save(); err != nil {
 		t.Fatal(err)
 	}
 	if id, origin, ok, err := configuredChainID(context.Background()); !ok || err != nil || id != 84532 || origin != "config file" {
@@ -149,7 +153,8 @@ func TestConfiguredChainResolvesASlugAndReadsTheLegacyKey(t *testing.T) {
 	}
 
 	// chain wins over chain-id in the same place, and a slug is resolved.
-	if err := (&config.Config{Settings: map[string]string{"chain": "arc", "chain-id": "84532"}}).Save(); err != nil {
+	cfg.SetEnvSetting("production", "chain", "arc")
+	if err := cfg.Save(); err != nil {
 		t.Fatal(err)
 	}
 	if id, _, _, err := configuredChainID(context.Background()); err != nil || id != 5042002 {

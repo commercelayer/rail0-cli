@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"math/big"
 	"net/http"
 	"net/http/httptest"
@@ -13,6 +14,7 @@ import (
 
 	rail0 "github.com/commercelayer/rail0-go"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/rail0/cli/internal/chainread"
 	"github.com/rail0/cli/internal/config"
 )
 
@@ -57,7 +59,7 @@ func fakeArcNode(t *testing.T) *httptest.Server {
 func resetKeysBalanceFlags(t *testing.T) {
 	t.Helper()
 	t.Cleanup(func() {
-		keysBalanceChainID, keysBalanceRPCURL, keysBalanceToken, keysBalanceTokens = 0, "", "", false
+		balanceChainID, balanceRPCURL, balanceToken, balanceTokens = 0, "", "", false
 	})
 }
 
@@ -84,8 +86,8 @@ func TestKeysBalanceReadsThroughTheGatewaysPublicRPC(t *testing.T) {
 		PublicRPCURLs: []string{"http://127.0.0.1:1/down", node.URL}})
 	seedArcTokens(t)
 
-	keysBalanceChainID = 5042002
-	keysBalanceTokens = true
+	balanceChainID = 5042002
+	balanceTokens = true
 	chain, reader, err := balanceReader(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -113,8 +115,8 @@ func TestKeysBalanceRPCURLNamesTheChainAndMustAgreeWithChain(t *testing.T) {
 	defer node.Close()
 	seedChainCatalog(t)
 
-	keysBalanceRPCURL = node.URL
-	keysBalanceToken = arcUSDC // not in any catalog: described on-chain
+	balanceRPCURL = node.URL
+	balanceToken = arcUSDC // not in any catalog: described on-chain
 	chain, reader, err := balanceReader(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -128,17 +130,22 @@ func TestKeysBalanceRPCURLNamesTheChainAndMustAgreeWithChain(t *testing.T) {
 		t.Errorf("on-chain token row = %+v, %v", rows, err)
 	}
 
-	keysBalanceChainID = 84532
+	balanceChainID = 84532
 	if _, _, err := balanceReader(context.Background()); err == nil || !isUsageError(err) {
 		t.Errorf("a --chain disagreeing with the node must be refused, got %v", err)
 	}
 }
 
-func TestKeysBalanceNeedsAChain(t *testing.T) {
+// Without --chain the environment's default chain applies (every environment has
+// one), resolved against the gateway: a gateway that does not list it is an error
+// naming the default and where it came from, not a bare "--chain is required".
+func TestKeysBalanceWithoutAChainUsesTheDefault(t *testing.T) {
 	clearConfigEnv(t)
 	resetKeysBalanceFlags(t)
-	if _, _, err := balanceReader(context.Background()); err == nil || !strings.Contains(err.Error(), "--chain is required") {
-		t.Errorf("want the chain-required error, got %v", err)
+	seedChainCatalog(t)
+	_, _, err := balanceReader(context.Background())
+	if err == nil || !strings.Contains(err.Error(), `default chain "arc" (production default)`) {
+		t.Errorf("want the default chain named, got %v", err)
 	}
 }
 
@@ -146,7 +153,7 @@ func TestKeysBalanceChainWithoutRPCEndpoints(t *testing.T) {
 	clearConfigEnv(t)
 	resetKeysBalanceFlags(t)
 	seedChainCatalog(t, rail0.Blockchain{ChainID: 5042002, Slug: "arc", Name: "Arc Testnet"})
-	keysBalanceChainID = 5042002
+	balanceChainID = 5042002
 	if _, _, err := balanceReader(context.Background()); err == nil || !strings.Contains(err.Error(), "--rpc-url") {
 		t.Errorf("want a pointer to --rpc-url, got %v", err)
 	}
@@ -180,5 +187,95 @@ func TestPrintBalancesQuiet(t *testing.T) {
 	})
 	if two != "native USDC 15\n"+arcUSDC+" USDC 7\n" {
 		t.Errorf("several = %q", two)
+	}
+}
+
+// On Arc the gas coin is USDC: the default read shows the native row (18 decimals)
+// AND the USDC ERC-20 row (6 decimals), so the scale payments use is on screen. Any
+// other chain keeps the native row alone.
+func TestKeysBalanceDefaultOnArcShowsBothScales(t *testing.T) {
+	resetKeysBalanceFlags(t)
+	node := fakeArcNode(t)
+	defer node.Close()
+	reader, err := chainread.New([]string{node.URL}, chainread.DefaultTimeout)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+
+	rows, err := readBalances(context.Background(), reader, &rail0.Blockchain{ChainID: 5042002, NativeSymbol: "USDC"}, common.Address{})
+	if err != nil || len(rows) != 2 {
+		t.Fatalf("Arc default rows = %+v, %v", rows, err)
+	}
+	if rows[0].Asset != "native" || rows[0].Decimals != 18 || rows[0].BalanceHuman != "1.5 USDC" {
+		t.Errorf("native row = %+v", rows[0])
+	}
+	if !strings.EqualFold(rows[1].Asset, arcUSDC) || rows[1].Decimals != 6 || rows[1].BalanceHuman != "2.5 USDC" {
+		t.Errorf("ERC-20 row = %+v", rows[1])
+	}
+
+	rows, err = readBalances(context.Background(), reader, &rail0.Blockchain{ChainID: 84532, NativeSymbol: "ETH"}, common.Address{})
+	if err != nil || len(rows) != 1 || rows[0].Asset != "native" {
+		t.Errorf("a non-Arc chain must keep the native row alone, got %+v, %v", rows, err)
+	}
+}
+
+// A chain the gateway does not list (Arc mainnet read with --rpc-url from a testnet
+// environment) still names its gas coin when it is a well-known chain.
+func TestKeysBalanceNativeSymbolOfAChainTheGatewayDoesNotList(t *testing.T) {
+	resetKeysBalanceFlags(t)
+	node := fakeArcNode(t)
+	defer node.Close()
+	reader, err := chainread.New([]string{node.URL}, chainread.DefaultTimeout)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+
+	rows, err := readBalances(context.Background(), reader, &rail0.Blockchain{ChainID: 5042}, common.Address{})
+	// The default read on Arc also adds the USDC ERC-20 row (see the test above).
+	if err != nil || len(rows) != 2 || rows[0].Symbol != "USDC" || rows[0].BalanceHuman != "1.5 USDC" {
+		t.Errorf("Arc mainnet native row = %+v, %v", rows, err)
+	}
+	for _, c := range []struct {
+		chain rail0.Blockchain
+		want  string
+	}{
+		{rail0.Blockchain{ChainID: 5042002, NativeSymbol: "USDC"}, "USDC"},
+		{rail0.Blockchain{ChainID: 8453}, "ETH"},
+		{rail0.Blockchain{ChainID: 999999}, "native"},
+	} {
+		if got := nativeSymbol(&c.chain); got != c.want {
+			t.Errorf("nativeSymbol(%d) = %q, want %q", c.chain.ChainID, got, c.want)
+		}
+	}
+}
+
+// A symbol on a chain the environment's gateway does not serve (Arc mainnet read with
+// --rpc-url while the CLI points at staging) used to fail as "unknown token "USDC" on
+// chain 5042 — available: " with nothing after the colon. It now says why and how out.
+func TestKeysBalanceTokenSymbolOnAChainTheGatewayDoesNotServe(t *testing.T) {
+	resetKeysBalanceFlags(t)
+	seedArcTokens(t) // USDC on Arc Testnet only
+	node := fakeArcNode(t)
+	defer node.Close()
+	reader, err := chainread.New([]string{node.URL}, chainread.DefaultTimeout)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+
+	balanceToken = "USDC"
+	_, err = readBalances(context.Background(), reader, &rail0.Blockchain{ChainID: 5042}, common.Address{})
+	if !errors.Is(err, errNoTokensOnChain) {
+		t.Fatalf("want errNoTokensOnChain, got %v", err)
+	}
+	for _, want := range []string{"does not serve that chain", "--base-url", "0x address"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q lacks %q", err, want)
+		}
+	}
+	if strings.Contains(err.Error(), "available: ") {
+		t.Errorf("error still lists an empty set: %q", err)
 	}
 }

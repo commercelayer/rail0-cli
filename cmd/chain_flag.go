@@ -164,7 +164,7 @@ func resolveChainRef(ctx context.Context, ref string) (int, error) {
 // lookupChain is resolveChainRef returning the whole catalog entry. A numeric ref that
 // the catalog does not list (or a catalog that cannot be fetched) yields a bare entry
 // carrying just the id, so callers that only need the id behave as before; callers that
-// need the entry's details (keys balance: RPC URLs, native symbol) check them.
+// need the entry's details (balance: RPC URLs, native symbol) check them.
 func lookupChain(ctx context.Context, ref string) (*rail0.Blockchain, error) {
 	ref = strings.TrimSpace(ref)
 	if n, err := strconv.Atoi(ref); err == nil {
@@ -191,15 +191,17 @@ func lookupChain(ctx context.Context, ref string) (*rail0.Blockchain, error) {
 	return c, nil
 }
 
-// configuredChain is the stored default chain: the `chain` key (slug or id, what
-// `rail0 env` writes) or the legacy numeric `chain-id`. An env var outranks a config
-// file value across the two keys, as it does for every single key — so a
-// RAIL0_CHAIN_ID exported in CI still wins over the `chain: arc` an env switch stored.
+// configuredChain is the default chain in effect: the `chain` key (a slug or an id;
+// every environment defaults it to arc) or the legacy numeric `chain-id`. The one
+// set in the higher-priority place wins across the two keys, as it does for every
+// single key — so a RAIL0_CHAIN_ID exported in CI still wins over a stored `chain:
+// arc`, and a `chain-id` stored in the config file wins over the environment's
+// default chain. Set in the same place, `chain` wins.
 func configuredChain() (value, origin string, ok bool) {
 	v, o, ok := configuredSetting(configKeys["chain"])
 	lv, lo, lok := configuredSetting(configKeys["chain-id"])
 	switch {
-	case ok && lok && o == "config file" && lo != "config file":
+	case ok && lok && originRank(lo) > originRank(o):
 		return lv, lo, true
 	case ok:
 		return v, o, true

@@ -2,11 +2,11 @@
 .TH "RAIL0" "1" "Aug 2026" "rail0 CLI" ""
 
 .SH NAME
-rail0-keys-balance - Read an address's on-chain balance straight from the chain (like cast balance)
+rail0-balance - Read an address's on-chain balance straight from the chain (like cast balance)
 
 
 .SH SYNOPSIS
-\fBrail0 keys balance  [flags]\fP
+\fBrail0 balance  [flags]\fP
 
 
 .SH DESCRIPTION
@@ -20,17 +20,18 @@ never printed. A name that is not a saved key is tried in the address book
 ('rail0 aliases').
 
 .PP
---chain picks the chain by slug (arc, base, …) or id, resolved by the current
-environment's gateway ('rail0 env'), which also publishes the chain's keyless RPC
-endpoints: they are tried in order, each with a timeout, until one answers. Without
---chain the configured default chain applies ('rail0 config set chain'). --rpc-url
+--chain picks the chain by slug (arc, base, …) or id, resolved by the configured
+gateway, which also publishes the chain's keyless RPC endpoints: they are tried in
+order, each with a timeout, until one answers. Without --chain the configured
+default chain applies ('rail0 config', default arc). --rpc-url
 reads from that node instead (its eth_chainId names the chain; --chain is then
 optional and, if passed, must agree).
 
 .PP
 Default output is the native balance, in wei and in units (18 decimals, symbol from
-the chain). NOTE: on Arc the native gas token is USDC with 18 decimals, while the
-USDC ERC-20 (--token USDC) uses 6 — the same money, two different scales.
+the chain). On Arc, mainnet and testnet, the gas coin IS USDC: the default then also
+prints the USDC ERC-20 row (6 decimals, the scale payments use), with a note that
+the two rows are the same money on two scales.
 
 .PP
 --token reads one ERC-20: a symbol (USDC) from the gateway's token list for the
@@ -45,7 +46,7 @@ the native coin and the ERC-20 are both USDC).
 
 .SH OPTIONS
 \fB-c\fP, \fB--chain\fP=
-	Chain to read (default: 'rail0 config' chain): a slug (arc, base, …) or a chain id; the environment's gateway decides testnet vs mainnet
+	Chain to read (default: the configured chain, arc): a slug (arc, base, …) or a chain id; the environment's gateway decides testnet vs mainnet
 
 .PP
 \fB-h\fP, \fB--help\fP[=false]
@@ -91,13 +92,13 @@ the native coin and the ERC-20 are both USDC).
 
 .SH EXAMPLE
 .EX
-  rail0 keys balance 0xABCD… --chain arc
-  rail0 keys balance @payer --chain arc --token USDC
-  rail0 keys balance payer --tokens
-  rail0 keys balance 0xABCD… --token 0x3600000000000000000000000000000000000000
-  rail0 keys balance 0xABCD… --rpc-url https://rpc.example.org -q
+  rail0 balance 0xABCD… --chain arc
+  rail0 balance @payer --chain arc --token USDC
+  rail0 balance payer --tokens
+  rail0 balance 0xABCD… --token 0x3600000000000000000000000000000000000000
+  rail0 balance 0xABCD… --rpc-url https://rpc.example.org -q
 .EE
 
 
 .SH SEE ALSO
-\fBrail0-keys(1)\fP
+\fBrail0(1)\fP

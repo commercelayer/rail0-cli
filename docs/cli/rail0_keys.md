@@ -21,8 +21,8 @@ so a list could only report a copy of the names kept alongside the config — an
 that copy drifts. Ask about one key at a time with 'rail0 keys address <name>',
 which reads the keychain itself and cannot go stale.
 
-'rail0 keys balance <name|address>' reads an address's balance straight from the
-chain's public RPC endpoints.
+'rail0 balance <name|address>' reads an address's on-chain balance straight from
+the chain, and takes a saved key's name.
 
 ### Examples
 
@@ -31,7 +31,7 @@ chain's public RPC endpoints.
   rail0 keys add payer
   rail0 payments create -p @payer …
   rail0 keys address payer
-  rail0 keys balance payer --chain arc
+  rail0 balance payer
   rail0 keys rm payer
 ```
 
@@ -57,7 +57,6 @@ chain's public RPC endpoints.
 * [rail0](rail0.md)	 - CLI for the RAIL0 stablecoin payment protocol
 * [rail0 keys add](rail0_keys_add.md)	 - Save a signing key in the OS keychain (prompts for the key; names must be unique)
 * [rail0 keys address](rail0_keys_address.md)	 - Show the EVM address derived from a saved key (the address, never the key)
-* [rail0 keys balance](rail0_keys_balance.md)	 - Read an address's on-chain balance straight from the chain (like cast balance)
 * [rail0 keys generate](rail0_keys_generate.md)	 - Create a new wallet key pair locally and print its address and private key
 * [rail0 keys rm](rail0_keys_rm.md)	 - Remove a saved signing key from the OS keychain
 

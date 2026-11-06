@@ -17,9 +17,9 @@ Who actually needs this:
   merchants   yes. The action commands (authorize, capture, refund, …) and
               every account view read the session.
 
-The session is a JWT cached per gateway under the OS cache dir, so switching
-'rail0 env' switches session with it rather than logging you out. The token is
-never written to the config file. 'auth status' prints who you are and when it
+The session is a JWT cached per gateway under the OS cache dir, so changing the
+gateway changes session with it rather than logging you out. The token is never
+written to the config file. 'auth status' prints who you are and when it
 expires; 'rail0 token' prints the token itself.
 
 ### Examples

@@ -33,7 +33,7 @@ rotate is reported rather than silently honoured. Keys are scoped to the payment
 - [Installation](#installation) — [install script](#install-script-macos-and-linux--recommended) · [manual download](#manual-download-any-platform-windows-included) · [from source](#build-from-source-contributors) · [`rail0 update`](#updating-rail0-update) · [`rail0 init`](#guided-setup-rail0-init)
 - [**Your first payment**](#your-first-payment) — the guided path
 - [Shell completion](#shell-completion)
-- [Configuration](#configuration) — [defaults](#persisted-defaults-config) · [environments](#environments-env) · [`--chain`](#chains---chain-slugid) · [address book](#address-book-aliases) · [signing keys](#signing-keys-os-keychain) · [new wallet](#new-wallet-keys-generate) · [`keys balance`](#keys-balance-addressnamename--on-chain-balance-like-cast-balance)
+- [Configuration](#configuration) — [defaults](#persisted-defaults-config) · [`--chain`](#chains---chain-slugid) · [address book](#address-book-aliases) · [signing keys](#signing-keys-os-keychain) · [new wallet](#new-wallet-keys-generate) · [`balance`](#on-chain-balance-balance)
 - [Signing modes](#signing-modes) — who signs what, and when
 - [Commands](#commands) — the full reference, including [repairing a webhook](#repairing-a-webhook-that-stopped-delivering) and [payouts](#payouts)
 - [Full flow examples](#full-flow-examples) — authorize/capture, charge, refund
@@ -172,10 +172,10 @@ Walks the four steps a first payment needs, each skippable: pick a gateway (writ
 (referenced later as `@name`), optionally sign in with it. Safe to re-run on a
 half-configured machine.
 
-It composes the existing commands rather than reimplementing them, so `rail0 env`,
+It composes the existing commands rather than reimplementing them, so
 `rail0 health`, `rail0 keys add` and `rail0 auth login` are exactly what it runs — and
 `keys add`'s refusal to overwrite an orphaned keychain entry still applies. In a
-script, run those four directly; `init` is interactive and says so instead of hanging
+script, run those directly; `init` is interactive and says so instead of hanging
 on a prompt.
 
 The gateway is checked **before** the key and the sign-in on purpose: both are wasted
@@ -220,10 +220,10 @@ rail0 init
 ```
 
 Four questions — gateway, reachability check, an optional key, an optional
-sign-in — each skippable, safe to re-run. If you'd rather not be asked:
+sign-in — each skippable, safe to re-run. If you'd rather not be asked, the CLI
+talks to the production gateway out of the box:
 
 ```sh
-rail0 env development     # or staging / production — writes base-url once
 rail0 health              # confirm it answers before going further
 ```
 
@@ -368,10 +368,10 @@ rail0 completion bash > /etc/bash_completion.d/rail0  # bash
 rail0 completion fish > ~/.config/fish/completions/rail0.fish
 ```
 
-Beyond commands and flags: `keys rm` / `keys address` / `keys balance` complete the
+Beyond commands and flags: `keys rm` / `keys address` / `balance` complete the
 saved key names, the address flags (`--from`, `--to`, `--address`, `--payer`,
 `--payee`) complete the address book as `@name`, `--chain` completes the current
-gateway's chain slugs, `rail0 env <TAB>` completes the environment names, and the
+gateway's chain slugs, and the
 finite enums (`--status`, `--mode`, `--by`, `--interval`, `--until`) complete their
 accepted values.
 
@@ -402,11 +402,11 @@ error: one wins silently in the order **`--quiet`  >  `--pretty`  >  `--json`** 
 
 A file the CLI cannot parse is **ignored, with a warning naming it** — commands keep working on flags, env vars and defaults, so nothing is blocked. Reads refuse rather than act on settings they could not read.
 
-Any command that *writes* the config replaces it: `config set`, `config unset`, `env <name>`, `aliases add`/`rm`, `keys add`/`rm`. They say on stderr that the old contents are gone — which they are, since keys inside unparseable YAML cannot be recovered by any means. So the fastest repair is simply to pick an environment again:
+Any command that *writes* the config replaces it: `config set`, `config unset`, `aliases add`/`rm`, `keys add`/`rm`. They say on stderr that the old contents are gone — which they are, since keys inside unparseable YAML cannot be recovered by any means. So the fastest repair is simply to set something again:
 
 ```sh
-rail0 config path      # where it lives, if you'd rather look first
-rail0 env staging      # rewrites the file, valid
+rail0 config path          # where it lives, if you'd rather look first
+rail0 config set chain arc # rewrites the file, valid
 ```
 
 ### Amounts and expiries in the output
@@ -526,36 +526,39 @@ to log out) and the command warns that the token was NOT revoked.
 ### Persisted defaults (`config`)
 
 Persist non-sensitive defaults in the config file so you don't repeat them on
-every command. Run bare to list the settings that are **set**, with each value and
-where it comes from (flag, env var or config file); a key set nowhere is not listed,
-because it has no value. (Secrets like private keys are never stored here.)
+every command. The gateway, the chain and the token have **built-in defaults** — the
+production gateway, `arc`, `USDC` — so out of the box a payment command needs neither
+`-c` nor `-t`; `config set` stores your own value over a default, `config unset`
+removes it and the default applies again. Run bare to list the settings in effect,
+with each value and where it comes from (flag, env var, config file or default); a key
+with no default and no value is not listed. (Secrets like private keys are never stored
+here.)
 
 ```sh
-rail0 config                                  # list the settings that are set + origin (flag/env/file)
-rail0 config set base-url http://localhost:9292
+rail0 config                                  # list the settings in effect + origin
 rail0 config set chain arc                     # fills --chain/-c when omitted (slug or id)
-rail0 config set token USDC                    # fills --token/-t when omitted
-rail0 config get chain                         # value + origin; an unset key is an error
-rail0 config unset chain
+rail0 config set token EURC                    # fills --token/-t when omitted
+rail0 config get chain                         # value + origin; a key with no value is an error
+rail0 config unset token                       # back to the default
+rail0 config set output pretty
 rail0 config path                              # config file location
 ```
 
-| Key | Fills | Env var | When not set |
+| Key | Fills | Env var | Default |
 | --- | --- | --- | --- |
 | `base-url` | `--base-url` | `RAIL0_BASE_URL` | `https://api.rail0.xyz` |
-| `chain` | `--chain` / `-c` | `RAIL0_CHAIN` | the matching flag must be passed |
+| `chain` | `--chain` / `-c` | `RAIL0_CHAIN` | `arc` |
 | `chain-id` | legacy numeric form of `chain` | `RAIL0_CHAIN_ID` | — |
-| `token` | `--token` / `-t` | `RAIL0_TOKEN_SYMBOL` | the matching flag must be passed |
-| `admin-url` | — (the page `rail0 open` opens) | `RAIL0_ADMIN_URL` | the current environment's (development, staging) |
+| `token` | `--token` / `-t` | `RAIL0_TOKEN_SYMBOL` | `USDC` |
+| `admin-url` | — (the page `rail0 open` opens) | `RAIL0_ADMIN_URL` | — |
 | `output` | `--json` / `--pretty` / `--quiet` | `RAIL0_OUTPUT` | `auto` |
 | `http-timeout` | — (per-request timeout, seconds) | `RAIL0_HTTP_TIMEOUT` | `30` |
 
-A stored value is the lowest-priority source, so the matching flag or env var still
-overrides it for a single command. The last column is what the CLI does when the key
-is set nowhere — the CLI's behaviour, not a value of the key, which is why the listing
-does not show it. When `payments create` fills the chain or the token from a stored
-setting, it says so on stderr ("Using Arc Testnet (5042002) (config file) — pass -c/-t
-to override…"), so a refusal never names a chain you did not type without telling you
+A stored value is the lowest-priority source but the default, so the matching flag or
+env var still overrides it for a single command: **flag > env var > config file >
+default**. When `payments create` fills the chain or the token from a stored setting or
+a default, it says so on stderr ("Using Arc (5042) (production default) — pass -c/-t to
+override…"), so a refusal never names a chain you did not type without telling you
 where it came from.
 
 **Addresses and signing keys are not settable here**, and that is deliberate. Each
@@ -571,102 +574,24 @@ differs every time, and a default there would silently price a payment.
 and a constant one is worse than none.
 
 `chain` takes a slug (`arc`) or a chain id, resolved against the current gateway
-when a command uses it. Configs written before slugs hold the numeric `chain-id`; it is
-still read (`chain` wins when both are set in the same place, and an env var outranks
-the config file across the two, so an exported `RAIL0_CHAIN_ID` still overrides a
-stored `chain`). The next `rail0 env development|staging` rewrites it as `chain: arc`.
+when a command uses it. The legacy numeric `chain-id` is still read (`chain` wins when
+both are set in the same place; across the two, the one set in the higher-priority
+place wins, so an exported `RAIL0_CHAIN_ID` overrides a stored `chain`, and a stored
+`chain-id` overrides the default `chain`).
 
 Note that `token`'s env var is `RAIL0_TOKEN_SYMBOL`, not `RAIL0_TOKEN` — that name was
 a session-token source until it was removed, and reusing it would make a stale
 exported JWT arrive as a payment token symbol.
-
-### Environments (`env`)
-
-Switch a whole bundle of settings at once instead of setting each key by hand:
-
-| Environment | base-url | admin-url | chain | token |
-| --- | --- | --- | --- | --- |
-| `development` | `http://localhost:9292` | `http://localhost:3000` | `arc` | `USDC` |
-| `staging` | `https://rail0-gateway-staging.fly.dev` | `https://rail0-admin-staging.fly.dev` | `arc` | `USDC` |
-| `production` | `https://api.rail0.xyz` | — | — | — |
-
-Production carries no admin URL, chain or token, and that is not an omission: the two other
-environments serve testnets, so Arc Testnet (4 confirmations, the quickest active one)
-is a safe default there, while the production chain set is a deployment decision —
-inventing one here would send a real payment to a chain nobody chose.
-
-```sh
-rail0 env                 # list the environments, marking the current one
-rail0 env -d              # ...with the parameters each one declares
-rail0 env staging         # switch to staging (writes its settings to the config file)
-rail0 env staging -d      # ...and also print the resulting parameters
-rail0 env current         # show the active environment
-rail0 env current -d      # ...with every parameter's effective value + origin
-```
-
-A switch writes the config file, so it is **refused** while `--base-url` or
-`RAIL0_BASE_URL` points somewhere else: either one outranks the file, and the switch
-would change nothing the commands use. Unset the override, then switch. Base URLs are
-compared the way sessions are stored, so a trailing `/` or a different case does not
-make the current gateway look like a different one.
-
-After a switch the environment-managed settings are **exactly** the target's: a key
-the target does not declare is **removed**, not left behind. Applying an environment
-used to only write its own keys, so moving from `development` to `production` — which
-declares base-url alone — kept `chain-id: 5042002` and `token: USDC` armed: the
-production gateway with an Arc Testnet default still loaded, inherited in silence
-because nothing wrote it at that moment.
-
-Because that discards stored values, a switch that would clear something **names them
-and asks first**:
-
-```
-Switching to "production" clears settings it does not define:
-  chain = arc
-  token = USDC
-Clear them and switch? [y/N]:
-```
-
-The prompt appears **only** when there is something to lose — one that appeared every
-time is one you would clear by reflex. Declining changes nothing at all, including the
-session on the gateway you were leaving: the question is asked before any of it. Pass
-`--yes` in a script (without it, and with no terminal, the switch refuses rather than
-hanging), and `cleared` is reported in the result so `-q`/`--json` callers see it too.
-
-Settings outside the bundle — `output`, `http-timeout` — are your own preferences and
-a switch never touches them.
-
-Switching **ends the session on the gateway you are leaving**: its token is revoked
-(denylist) and the local copy removed, so the file left behind is worthless. Sessions are
-per gateway, so a switch used to simply orphan the old token — a bearer credential on
-disk, valid for up to 24h, for a session nobody is watching. The result says which of the
-three happened: `previous_session: none | revoked | abandoned` (`abandoned` carries a
-detail, e.g. the old gateway was unreachable — the switch still proceeds, because moving
-away from a down environment is a normal reason to switch).
-
-The result also reports **`logged_in`**, and prints the login hint when it is false.
-Sessions are per gateway, so arriving unauthenticated is the normal outcome of a
-switch — it used to be silent, and surfaced later as a `401` that looked like the
-switch had broken something.
-
-`env <name>` writes the environment's settings through the same config file as
-`config set`, so precedence is unchanged — `--base-url` / `RAIL0_BASE_URL` still
-override for a single command. `env current` reports the environment the
-*effective* configuration matches (so it's accurate even if you set a value with
-`config set`), or `custom` if it matches none. The match is on `base-url` alone: the
-gateway is what identifies an environment, and the other parameters are conveniences
-the switch also writes — comparing those too would report `custom` for someone who
-merely changed chain after `env staging`.
 
 ### Chains (`--chain <slug|id>`)
 
 Every command that takes a chain takes `--chain` (`-c` where it had one): a **slug**
 (`arc`, `base`, `optimism`, `arbitrum`, `polygon`, `avalanche`, `sonic`, `ethereum`, …)
 or a numeric **chain id**. A slug is shared by a chain's testnet and mainnet, and a
-gateway serves one network class — staging and development testnets, production
-mainnets — so the slug is resolved against the current environment's gateway
+gateway serves one network class — testnets on a staging gateway, mainnets on
+production — so the slug is resolved against the configured gateway
 (`GET /blockchains`, once per command) and picks the right network on its own:
-`--chain arc` is Arc Testnet on staging and Arc on production.
+`--chain arc` is Arc Testnet on a staging gateway and Arc on production.
 
 ```sh
 rail0 tokens --chain arc
@@ -683,7 +608,7 @@ rail0 wallets balances @merchant --chain 84532     # an id still works, no looku
 
 Commands with `--chain`: `payments create`, `payments list`,
 `analytics summary|timeseries|breakdown`, `tokens`, `wallets`, `wallets balances`,
-`wallets tokens add|enable|disable`, `payouts destinations add`, `keys balance`.
+`wallets tokens add|enable|disable`, `payouts destinations add`, `balance`.
 
 ### Address book (aliases)
 
@@ -739,23 +664,24 @@ anyway — otherwise the name would be neither addable nor removable. `keys addr
 ```sh
 rail0 keys add payer            # prompts for the key (hidden), saves it as "payer"
 rail0 keys address payer        # shows the derived 0x address (never the key)
-rail0 keys balance payer --chain arc   # on-chain balance of that address
+rail0 balance payer             # on-chain balance of that address
 rail0 keys rm payer             # remove
 
-rail0 payments create -F @buyer -T @payee -t USDC -a 1.00 -c arc -p @payer
+rail0 payments create -F @buyer -T @payee -a 1.00 -p @payer
 ```
 
-#### `keys balance <address|@name|name>` — on-chain balance (like `cast balance`)
+### On-chain balance (`balance`)
 
-Reads a balance straight from the chain's RPC nodes: no session, nothing signed. The
-argument is a `0x` address or a saved key name (`@` optional — the address is derived,
-the key is never printed); a name that is not a saved key is tried in the address book.
+`rail0 balance <address|@name|name>` reads a balance straight from the chain's RPC
+nodes (like `cast balance`): no session, nothing signed. The argument is a `0x` address
+or a saved key name (`@` optional — the address is derived, the key is never printed);
+a name that is not a saved key is tried in the address book.
 
 ```sh
-rail0 keys balance 0xABCD… --chain arc               # native balance
-rail0 keys balance @payer --chain arc --token USDC   # one ERC-20 (symbol or 0x address)
-rail0 keys balance payer --tokens                    # native + every active rail0 token (default chain)
-rail0 keys balance 0xABCD… --rpc-url https://rpc.example.org -q
+rail0 balance 0xABCD…                           # native balance on the default chain (arc)
+rail0 balance @payer --token USDC               # one ERC-20 (symbol or 0x address)
+rail0 balance payer --tokens --chain base       # native + every active rail0 token
+rail0 balance 0xABCD… --rpc-url https://rpc.example.org -q
 ```
 
 | Flag | Short | Description |
@@ -933,8 +859,7 @@ refuses rather than blocking on a hidden prompt). That covers every fund-moving
 on-chain op — `capture`, `charge`, `void`, `release`, `refund`, `dispute`,
 `dispute close` — and, identically, `auth revoke-all`, `keys rm`, `wallets delete`
 (and `wallets update --active false`, the same operation), `wallets tokens disable`,
-`webhooks delete`, `webhooks rotate-secret`, and an `env` switch that would clear
-settings. A sweep test asserts the whole
+`webhooks delete` and `webhooks rotate-secret`. A sweep test asserts the whole
 surface, so a new fund-moving command cannot ship ungated.
 
 `webhooks rotate-secret` is gated for a reason that is easy to miss: it is not
@@ -981,7 +906,7 @@ rail0 auth login -p 0xYourPrivateKey…
 rail0 auth login -p @merchant-key -t   # also print the token + its expiry
 ```
 
-The cache is **per gateway**, so switching with [`rail0 env`](#environments-env) switches session along with it rather than logging you out — come back and the earlier session is still there, if it has not expired.
+The cache is **per gateway**, so pointing the CLI at another gateway switches session along with it rather than logging you out — come back and the earlier session is still there, if it has not expired.
 
 On success the command prints the session (address, expiry) but **not** the raw token. Pass `--token` / `-t` to also print the token itself along with its duration and expiry timestamp, or fetch it later with [`rail0 token`](#token).
 
@@ -999,8 +924,7 @@ rail0 auth status
 
 Revoke the session on the gateway and remove the cached JWT. The result says what
 happened: `session` is `none` (nothing was stored), `revoked`, or `abandoned` (removed
-locally but not revoked — `session_detail` says why), the same vocabulary `env` uses
-for `previous_session`.
+locally but not revoked — `session_detail` says why).
 
 ```sh
 rail0 auth logout
@@ -1280,7 +1204,7 @@ Exactly one of `--account` / `--address` is required (mirrors the gateway's `GET
 
 List the supported blockchains. Every command's `--chain` takes a chain's `slug` or
 its `chain_id` (see [Chains](#chains---chain-slugid)); `public_rpc_urls` are keyless RPC
-endpoints for reading the chain directly (`rail0 keys balance`).
+endpoints for reading the chain directly (`rail0 balance`).
 
 Filter with `--symbol` / `-s` (the chain's native symbol) and/or `--network-type` / `-n`
 (`testnet` | `mainnet`); both match case-insensitively.
@@ -1432,9 +1356,8 @@ Opens the rail0 admin app in the browser: its home page, or — given a payment'
 console's page for it instead (it needs an admin session in the browser); `--print`
 only prints the URL, as the command also does with no terminal or with `--agent`.
 
-The address is the `admin-url` setting (`RAIL0_ADMIN_URL`), or else the one the current
-environment declares — development and staging have one, production does not: there,
-set it with `rail0 config set admin-url https://…`.
+The address is the `admin-url` setting: `RAIL0_ADMIN_URL`, or
+`rail0 config set admin-url https://…`.
 
 ```sh
 rail0 open                        # the admin's home page
@@ -1858,6 +1781,8 @@ rail0 payments wait <rail0Id> --until captured
 
 ### Payouts
 
+> **Hidden for now.** Payouts are not part of rail0's first phase: the gateway answers every payout route `404 unknown_route` unless it runs with `RAIL0_FEATURE_PAYOUTS` on. So `rail0 payouts` is left out of `--help`, shell completion and the generated reference (`docs/cli`, `docs/man`). It still runs when typed, against a gateway that has the feature on, and everything below describes it as it is.
+
 Move a merchant wallet's tokens to a deposit address at a venue of your own — an exchange account, Circle Mint, another wallet you control. The gateway builds an unsigned ERC-20 `transfer` from the wallet to a registered **destination**; the CLI checks it is exactly that transfer (the destination's token and chain, its address, the amount, value 0, from your key's wallet) and signs it locally. The gateway never holds funds or keys and never talks to the venue. Every payout command needs a login; reads cover the whole account, writes act for the wallet you sign in with, which must be the destination's. A **deactivated account is read-only**: it cannot prepare, send or change payouts or destinations (`403 account_deactivated`).
 
 #### First payout to a new venue
@@ -2116,6 +2041,17 @@ rail0 payments capture "$ID" -a 10 -p @merchant-key --yes --wait   # exit 11 = s
 
 A release is an approved pull request: merging it is what builds and publishes the
 binaries. Never push a `v*` tag by hand.
+
+**Pull requests do not target `main` one by one: they go into a milestone.** The next
+release has a GitHub milestone ("Next release") and a branch, `milestone/next`, cut from
+`main` (milestone branches always start with `milestone/`). Change pull requests target `milestone/next` and carry the milestone; CI runs on
+them, and the developer merges into the branch only what is meant to ship. One pull
+request, `milestone/next` → `main`, carries the release, so a single approval covers the
+whole milestone. Run `bin/release-prepare` on `milestone/next` (clean, pushed, containing
+`origin/main`, its pull request into `main` open): the pull requests merged into the
+branch decide the version and fill the notes, together with anything merged on `main`
+since the last tag. After the release merges, delete `milestone/next`, cut it again from
+`main` and move the open milestone's pull requests onto it.
 
 1. `bin/release-prepare`, on an up-to-date, clean `main`. It computes the version from the titles of the pull requests merged since the last tag
    (Conventional Commits): a breaking change — `!` after the type, as in `feat(api)!:`, or a

@@ -14,10 +14,17 @@ download verifies. The r0 alias follows, since it is a link to the same file.
 If rail0 lives in a directory you cannot write to (e.g. /usr/local/bin, where
 'make install' puts it), run it with sudo.
 
+Installed with Homebrew, rail0 never replaces itself: it tells you to run
+'brew upgrade rail0', so Homebrew keeps track of the installed version.
+
 Interactive sessions also check for a new release once a day and offer to install
 it. The check never runs in CI, with --json or --quiet (or a stored 'output' default
 of json or quiet, unless another output flag is passed), when stdin or stderr is not
 a terminal, or with RAIL0_NO_UPDATE_CHECK=1.
+
+Installed with Homebrew, rail0 never replaces itself: this command reports the new
+release and says to run 'brew upgrade rail0'. A build from the homebrew-core formula
+also skips the daily check, since Homebrew owns its updates.
 
 ```
 rail0 update [flags]

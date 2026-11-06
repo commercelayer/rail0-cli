@@ -364,20 +364,27 @@ func notWritable(dir string, err error) error {
 	return err
 }
 
+// Packager names the package manager that BUILT this binary, stamped at build time
+// (-ldflags "-X github.com/rail0/cli/internal/selfupdate.Packager=Homebrew"); empty for
+// a GitHub release binary or a local build. A package manager that builds from source —
+// a homebrew-core formula — sets it, which makes the binary package-managed wherever it
+// is installed, and also turns off the automatic update check (cmd.maybeOfferUpdate):
+// the package manager owns updates, so the binary must not phone home to offer one.
+var Packager string
+
 // ManagedBy names the package manager that owns the binary at exePath, or "" when none
-// does. Only Homebrew for now: its casks live under …/Caskroom/ and formulas under
-// …/Cellar/, on macOS and Linux alike.
-//
-// DORMANT: rail0 is not distributed through Homebrew today (the tap and the GoReleaser
-// cask were removed until the repository is public), so no official install lands under
-// those paths. The guard stays because it costs nothing, protects a self-built brew
-// install, and is exactly what a restored tap will need.
+// does: Packager when the build was stamped, else Homebrew for a binary under its
+// …/Caskroom/ (the commercelayer/tap cask, `brew install commercelayer/tap/rail0`) or
+// …/Cellar/ (a formula), on macOS and Linux alike.
 //
 // Such a binary must not be replaced in place. The package manager records the version
 // it installed; swapping the file behind its back leaves `brew list` and `brew upgrade`
 // believing the old version is there, and the next `brew upgrade` would silently put it
 // back. The upgrade has to go through the package manager instead.
 func ManagedBy(exePath string) string {
+	if Packager != "" {
+		return Packager
+	}
 	p := filepath.ToSlash(exePath)
 	if strings.Contains(p, "/Caskroom/") || strings.Contains(p, "/Cellar/") {
 		return "Homebrew"

@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/big"
 	"strconv"
@@ -199,6 +200,32 @@ func balanceReader(ctx context.Context) (*rail0.Blockchain, *chainread.Reader, e
 	return chain, reader, nil
 }
 
+// knownNativeSymbols names the gas coin of well-known chains, mainnets and their
+// testnets, for a chain the gateway does not list: --rpc-url on Arc mainnet (5042)
+// against a testnet environment printed "native" where the coin is USDC.
+var knownNativeSymbols = map[int]string{
+	5042: "USDC", 5042002: "USDC", // Arc: USDC is the gas coin (18 decimals natively)
+	1: "ETH", 11155111: "ETH", // Ethereum, Sepolia
+	8453: "ETH", 84532: "ETH", // Base
+	42161: "ETH", 421614: "ETH", // Arbitrum
+	10: "ETH", 11155420: "ETH", // Optimism
+	137: "POL", 80002: "POL", // Polygon, Amoy
+	43114: "AVAX", 43113: "AVAX", // Avalanche, Fuji
+	42220: "CELO", 11142220: "CELO", // Celo, Celo Sepolia
+}
+
+// nativeSymbol is the chain's gas coin: the gateway's catalog first, then the
+// well-known chains, else "native".
+func nativeSymbol(chain *rail0.Blockchain) string {
+	if chain.NativeSymbol != "" {
+		return chain.NativeSymbol
+	}
+	if s, ok := knownNativeSymbols[chain.ChainID]; ok {
+		return s
+	}
+	return "native"
+}
+
 // readBalances reads what the flags ask for: the native balance (default, and first
 // under --tokens), one token (--token), or every active rail0 token of the chain
 // (--tokens). Token symbols and decimals come from the gateway's token list when the
@@ -211,11 +238,7 @@ func readBalances(ctx context.Context, r *chainread.Reader, chain *rail0.Blockch
 		if err != nil {
 			return nil, fmt.Errorf("native balance: %w", err)
 		}
-		symbol := chain.NativeSymbol
-		if symbol == "" {
-			symbol = "native"
-		}
-		rows = append(rows, newBalanceRow("native", symbol, nativeDecimals, wei))
+		rows = append(rows, newBalanceRow("native", nativeSymbol(chain), nativeDecimals, wei))
 	}
 
 	var tokens []rail0.Token
@@ -228,6 +251,10 @@ func readBalances(ctx context.Context, r *chainread.Reader, chain *rail0.Blockch
 		tokens = active
 	case balanceToken != "" && !evmAddressPattern.MatchString(balanceToken):
 		addr, decimals, _, err := lookupTokenAddress(ctx, chain.ChainID, balanceToken)
+		if errors.Is(err, errNoTokensOnChain) {
+			// A balance read needs no gateway: the token's address works on any chain.
+			return nil, fmt.Errorf("%w, or pass the token's 0x address to --token", err)
+		}
 		if err != nil {
 			return nil, err
 		}

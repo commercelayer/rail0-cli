@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"math/big"
 	"net/http"
 	"net/http/httptest"
@@ -13,6 +14,7 @@ import (
 
 	rail0 "github.com/commercelayer/rail0-go"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/rail0/cli/internal/chainread"
 	"github.com/rail0/cli/internal/config"
 )
 
@@ -185,5 +187,64 @@ func TestPrintBalancesQuiet(t *testing.T) {
 	})
 	if two != "native USDC 15\n"+arcUSDC+" USDC 7\n" {
 		t.Errorf("several = %q", two)
+	}
+}
+
+// A chain the gateway does not list (Arc mainnet read with --rpc-url from a testnet
+// environment) still names its gas coin when it is a well-known chain.
+func TestKeysBalanceNativeSymbolOfAChainTheGatewayDoesNotList(t *testing.T) {
+	resetKeysBalanceFlags(t)
+	node := fakeArcNode(t)
+	defer node.Close()
+	reader, err := chainread.New([]string{node.URL}, chainread.DefaultTimeout)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+
+	rows, err := readBalances(context.Background(), reader, &rail0.Blockchain{ChainID: 5042}, common.Address{})
+	if err != nil || len(rows) != 1 || rows[0].Symbol != "USDC" || rows[0].BalanceHuman != "1.5 USDC" {
+		t.Errorf("Arc mainnet native row = %+v, %v", rows, err)
+	}
+	for _, c := range []struct {
+		chain rail0.Blockchain
+		want  string
+	}{
+		{rail0.Blockchain{ChainID: 5042002, NativeSymbol: "USDC"}, "USDC"},
+		{rail0.Blockchain{ChainID: 8453}, "ETH"},
+		{rail0.Blockchain{ChainID: 999999}, "native"},
+	} {
+		if got := nativeSymbol(&c.chain); got != c.want {
+			t.Errorf("nativeSymbol(%d) = %q, want %q", c.chain.ChainID, got, c.want)
+		}
+	}
+}
+
+// A symbol on a chain the environment's gateway does not serve (Arc mainnet read with
+// --rpc-url while the CLI points at staging) used to fail as "unknown token "USDC" on
+// chain 5042 — available: " with nothing after the colon. It now says why and how out.
+func TestKeysBalanceTokenSymbolOnAChainTheGatewayDoesNotServe(t *testing.T) {
+	resetKeysBalanceFlags(t)
+	seedArcTokens(t) // USDC on Arc Testnet only
+	node := fakeArcNode(t)
+	defer node.Close()
+	reader, err := chainread.New([]string{node.URL}, chainread.DefaultTimeout)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+
+	balanceToken = "USDC"
+	_, err = readBalances(context.Background(), reader, &rail0.Blockchain{ChainID: 5042}, common.Address{})
+	if !errors.Is(err, errNoTokensOnChain) {
+		t.Fatalf("want errNoTokensOnChain, got %v", err)
+	}
+	for _, want := range []string{"does not serve that chain", "--base-url", "0x address"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q lacks %q", err, want)
+		}
+	}
+	if strings.Contains(err.Error(), "available: ") {
+		t.Errorf("error still lists an empty set: %q", err)
 	}
 }

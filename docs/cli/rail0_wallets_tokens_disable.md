@@ -19,15 +19,15 @@ rail0 wallets tokens disable <wallet> <token> [flags]
 ### Examples
 
 ```
-  rail0 wallets tokens disable 0xABCD… USDC --chain-id 84532
+  rail0 wallets tokens disable 0xABCD… USDC --chain base
 ```
 
 ### Options
 
 ```
-      --chain-id int   Narrow <token> to one chain when the wallet holds it on several
-  -h, --help           help for disable
-  -y, --yes            Skip the confirmation prompt (required to run non-interactively)
+      --chain chain   Narrow <token> to one chain when the wallet holds it on several: a slug (arc, base, …) or a chain id; the environment's gateway decides testnet vs mainnet
+  -h, --help          help for disable
+  -y, --yes           Skip the confirmation prompt (required to run non-interactively)
 ```
 
 ### Options inherited from parent commands

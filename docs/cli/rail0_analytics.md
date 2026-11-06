@@ -11,7 +11,7 @@ Read the account's sales analytics.
   timeseries  — order counts bucketed by day, week or month
   breakdown   — the same counts grouped by token, chain, mode, status or operation
 
-All three take the same filters (--mode, --status, --token, --chain-id, --from,
+All three take the same filters (--mode, --status, --token, --chain, --from,
 --to, --payee). By default the figures cover the whole account — every wallet it
 owns; --payee restricts them to ONE of the account's wallets (a 0x address or an
 @alias). A wallet the account does not own is refused with 403.

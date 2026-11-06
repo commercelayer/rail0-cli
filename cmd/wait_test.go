@@ -654,9 +654,9 @@ func TestSettlementWaitTimeout(t *testing.T) {
 func seedChainCatalog(t *testing.T, chains ...rail0.Blockchain) {
 	t.Helper()
 	chainCatalogOnce.Do(func() {})
-	previous := chainCatalogList
-	chainCatalogList = chains
-	t.Cleanup(func() { chainCatalogList = previous })
+	previous, previousErr := chainCatalogList, chainCatalogErr
+	chainCatalogList, chainCatalogErr = chains, nil
+	t.Cleanup(func() { chainCatalogList, chainCatalogErr = previous, previousErr })
 }
 
 // The default is read from the payment's chain in the cached catalog; --timeout,

@@ -19,7 +19,7 @@ rail0 tokens [flags]
 
 ```
   rail0 tokens
-  rail0 tokens --chain-id 5042002
+  rail0 tokens --chain arc
   rail0 tokens --symbol USDC
   rail0 tokens --active           # only what a new payment can use
 ```
@@ -28,7 +28,7 @@ rail0 tokens [flags]
 
 ```
       --active          Filter by active flag (--active, or --active=false for retired only); omit for every token
-  -c, --chain-id int    Filter by EVM chain ID (e.g. 5042002)
+  -c, --chain chain     Filter by chain: a slug (arc, base, …) or a chain id; the environment's gateway decides testnet vs mainnet
   -h, --help            help for tokens
   -s, --symbol string   Filter by token symbol (case-insensitive, e.g. USDC)
 ```

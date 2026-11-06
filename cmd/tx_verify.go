@@ -186,7 +186,7 @@ func expectedBaseUnits(ctx context.Context, chainID int, token, humanAmount stri
 	decimals, ok := tokenDecimals(ctx, chainID, token)
 	if !ok {
 		return "", fmt.Errorf("refusing to sign: the decimals of token %s on chain %d could not be resolved, "+
-			"so the authorization's amount cannot be checked — see 'rail0 tokens --chain-id %d'", token, chainID, chainID)
+			"so the authorization's amount cannot be checked — see 'rail0 tokens --chain %d'", token, chainID, chainID)
 	}
 	units, err := rail0.ToBaseUnits(humanAmount, decimals)
 	if err != nil {

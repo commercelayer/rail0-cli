@@ -10,7 +10,7 @@
 > **Tempi:** ogni operazione on-chain con `--wait` richiede **~1 minuto** su Arc.
 > Mentre aspetti, passa all'admin e fai vedere la transazione *in flight*.
 
-> La config CLI ha già `chain-id 5042002` e `token USDC`, quindi `-c` e `-t` si possono omettere.
+> La config CLI ha già `chain arc` (o il vecchio `chain-id 5042002`) e `token USDC`, quindi `-c` e `-t` si possono omettere.
 
 ---
 
@@ -49,7 +49,7 @@ echo "P2=$P2  P3=$P3"
 ```bash
 rail0 health
 rail0 chains
-rail0 tokens --chain-id 5042002
+rail0 tokens --chain arc
 rail0 payment-methods --address @payee
 rail0 auth status
 rail0 account
@@ -58,7 +58,7 @@ rail0 account
 Saldi on-chain in tempo reale del wallet merchant:
 
 ```bash
-rail0 wallets balances @payee --chain-id 5042002 --symbol USDC
+rail0 wallets balances @payee --chain arc --symbol USDC
 ```
 
 ---

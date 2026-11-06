@@ -29,7 +29,7 @@ rail0 payments authorize <rail0Id> [flags]
 ```
   # 1. Payer creates and signs the payment in one step
   rail0 payments create --from @buyer --to @merchant \
-    --token USDC --amount 1.00 --chain-id 5042002 -p @payer
+    --token USDC --amount 1.00 --chain arc -p @payer
 
   # 2. Payee authorizes, and waits for the chain to confirm it
   rail0 payments authorize <rail0Id> -p @merchant-key --wait

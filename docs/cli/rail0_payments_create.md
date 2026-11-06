@@ -26,7 +26,7 @@ rail0 payments create [flags]
 
 ```
   rail0 payments create \
-    -F @buyer -T @merchant -t USDC -a 10.50 -c 5042002 \
+    -F @buyer -T @merchant -t USDC -a 10.50 -c arc \
     -p @buyer-key
 ```
 
@@ -34,7 +34,7 @@ rail0 payments create [flags]
 
 ```
   -a, --amount string             Amount as a decimal in token units (e.g. '1.00' for 1 USDC); the gateway converts to base units
-  -c, --chain-id int              EVM chain ID as listed in GET /blockchains (e.g. 5042002)
+  -c, --chain chain               Chain of the payment, as listed by 'rail0 chains': a slug (arc, base, …) or a chain id; the environment's gateway decides testnet vs mainnet
   -C, --charge                    Create with mode=charge (immediate transfer, no escrow); default is authorize (escrow then capture)
   -d, --description string        Optional reconciliation note (e.g. order id / invoice); prompted when omitted on a terminal
   -F, --from string               Payer wallet address (from) (0x-prefixed, funds are pulled from here)

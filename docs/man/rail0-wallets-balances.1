@@ -15,12 +15,12 @@ Read a wallet's live on-chain balances across the configured chains.
 .PP
 Each chain reports the native gas-token balance and the active token balances,
 or an error if that chain's RPC was unreachable (reported per chain, so one dead
-RPC never hides the others). Use --chain-id / --symbol to narrow the result.
+RPC never hides the others). Use --chain / --symbol to narrow the result.
 
 
 .SH OPTIONS
-\fB--chain-id\fP=0
-	Restrict to one chain id
+\fB--chain\fP=
+	Restrict to one chain: a slug (arc, base, …) or a chain id; the environment's gateway decides testnet vs mainnet
 
 .PP
 \fB-h\fP, \fB--help\fP[=false]
@@ -58,7 +58,7 @@ RPC never hides the others). Use --chain-id / --symbol to narrow the result.
 
 .SH EXAMPLE
 .EX
-  rail0 wallets balances 0xABCD… --chain-id 84532 --symbol USDC
+  rail0 wallets balances 0xABCD… --chain base --symbol USDC
 .EE
 
 

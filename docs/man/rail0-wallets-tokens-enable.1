@@ -11,14 +11,14 @@ rail0-wallets-tokens-enable - Re-enable a holding the wallet already has
 
 .SH DESCRIPTION
 Re-enable an existing, disabled holding.  is the token's symbol or 0x
-address (add --chain-id when the wallet holds that symbol on several chains), or
+address (add --chain when the wallet holds that symbol on several chains), or
 the token id shown as token_id by 'rail0 wallets'. A token the wallet has never
 held is not enabled here — use 'wallets tokens add'.
 
 
 .SH OPTIONS
-\fB--chain-id\fP=0
-	Narrow  to one chain when the wallet holds it on several
+\fB--chain\fP=
+	Narrow  to one chain when the wallet holds it on several: a slug (arc, base, …) or a chain id; the environment's gateway decides testnet vs mainnet
 
 .PP
 \fB-h\fP, \fB--help\fP[=false]
@@ -52,7 +52,7 @@ held is not enabled here — use 'wallets tokens add'.
 
 .SH EXAMPLE
 .EX
-  rail0 wallets tokens enable 0xABCD… USDC --chain-id 84532
+  rail0 wallets tokens enable 0xABCD… USDC --chain base
 .EE
 
 

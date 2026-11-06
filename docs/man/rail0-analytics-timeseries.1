@@ -19,8 +19,8 @@ instead of a number that looks addable.
 
 
 .SH OPTIONS
-\fB--chain-id\fP=0
-	Filter by EVM chain ID
+\fB--chain\fP=
+	Filter by chain: a slug (arc, base, …) or a chain id; the environment's gateway decides testnet vs mainnet
 
 .PP
 \fB--from\fP=""
@@ -83,7 +83,7 @@ instead of a number that looks addable.
 .SH EXAMPLE
 .EX
   rail0 analytics timeseries
-  rail0 analytics timeseries --interval month --chain-id 5042002 --token 0x3600…
+  rail0 analytics timeseries --interval month --chain arc --token 0x3600…
 .EE
 
 

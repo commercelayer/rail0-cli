@@ -24,9 +24,9 @@ key to manage its tokens.
 ### Examples
 
 ```
-  rail0 wallets tokens add 0xABCD… --chain-id 84532 --token USDC --default
-  rail0 wallets tokens disable 0xABCD… USDC --chain-id 84532
-  rail0 wallets tokens enable 0xABCD… USDC --chain-id 84532
+  rail0 wallets tokens add 0xABCD… --chain base --token USDC --default
+  rail0 wallets tokens disable 0xABCD… USDC --chain base
+  rail0 wallets tokens enable 0xABCD… USDC --chain base
 ```
 
 ### Options

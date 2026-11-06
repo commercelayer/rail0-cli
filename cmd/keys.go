@@ -18,7 +18,7 @@ import (
 // OS keychain; each key is one entry keyed by its name.
 const keyringService = "rail0-cli"
 
-// keysCmd groups the generate/add/rm/address verbs. It deliberately does NOT list the
+// keysCmd groups the generate/add/rm/address/balance verbs. It deliberately does NOT list the
 // saved keys: an OS keychain cannot be enumerated, so any listing could only
 // replay the name index in the config file — a copy, which drifts. Delete the
 // config, or copy one between machines, and that listing confidently reports
@@ -47,11 +47,15 @@ RAIL0_PRIVATE_KEY there.
 There is no listing of saved keys, by design: a keychain cannot be enumerated,
 so a list could only report a copy of the names kept alongside the config — and
 that copy drifts. Ask about one key at a time with 'rail0 keys address <name>',
-which reads the keychain itself and cannot go stale.`,
+which reads the keychain itself and cannot go stale.
+
+'rail0 keys balance <name|address>' reads an address's balance straight from the
+chain's public RPC endpoints.`,
 	Example: `  rail0 keys generate
   rail0 keys add payer
   rail0 payments create -p @payer …
   rail0 keys address payer
+  rail0 keys balance payer --chain arc
   rail0 keys rm payer`,
 }
 

@@ -67,6 +67,8 @@ func TestEveryDestructiveCommandHasTheYesFlag(t *testing.T) {
 		paymentsDisputeCmd:      {"payments", "dispute"},
 		paymentsDisputeCloseCmd: {"payments", "dispute", "close"},
 		webhooksDeleteCmd:       {"webhooks", "delete"},
+		payoutsSendCmd:          {"payouts", "send"},
+		payoutsSubmitCmd:        {"payouts", "submit"},
 		webhooksRotateSecretCmd: {"webhooks", "rotate-secret"},
 		walletsDeleteCmd:        {"wallets", "delete"},
 		walletTokensDisableCmd:  {"wallets", "tokens", "disable"},
@@ -272,8 +274,8 @@ func TestWebhooksRedeliverNeedsBothIDs(t *testing.T) {
 	}
 }
 
-// Every --topic completes the topic vocabulary, the warning topic included
-// (rail0-gateway#366) — completion only: the gateway is what validates a topic.
+// Every --topic completes the topic vocabulary, the warning topic and the payout
+// topics included (rail0-gateway#366) — completion only: the gateway is what validates a topic.
 func TestTopicFlagsCompleteTheVocabulary(t *testing.T) {
 	for _, c := range []*cobra.Command{webhooksCreateCmd, webhooksUpdateCmd, webhooksListCmd, webhooksEventCallbacksCmd} {
 		complete, ok := c.GetFlagCompletionFunc("topic")
@@ -282,11 +284,12 @@ func TestTopicFlagsCompleteTheVocabulary(t *testing.T) {
 			continue
 		}
 		got, _ := complete(c, nil, "")
-		if !slices.Contains(got, "payments.authorization_expiring") || !slices.Contains(got, "payments.captured") {
+		if !slices.Contains(got, "payments.authorization_expiring") || !slices.Contains(got, "payments.captured") ||
+			!slices.Contains(got, "payouts.failed") {
 			t.Errorf("%s --topic completions = %v, want the full vocabulary", c.CommandPath(), got)
 		}
 	}
-	if len(webhookTopics) != 13 {
-		t.Errorf("webhookTopics has %d entries, want the SDK's 13", len(webhookTopics))
+	if len(webhookTopics) != 16 {
+		t.Errorf("webhookTopics has %d entries, want the SDK's 16 (13 payment, 3 payout)", len(webhookTopics))
 	}
 }

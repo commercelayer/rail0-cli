@@ -14,7 +14,7 @@ Returns all payments where your wallet is payer or payee.
 Requires authentication — run 'rail0 auth login -p 0xKey…' first.
 
 .PP
-Filter with --status, --mode, --payer, --payee, --token, --chain-id, --disputed,
+Filter with --status, --mode, --payer, --payee, --token, --chain, --disputed,
 --operation, --rail0-id, --reference / --reference-origin, --min-amount / --max-amount, and --created-from /
 --created-to (ISO-8601). --operation keeps payments carrying at least one
 transaction of that operation — '--operation dispute' finds every payment ever
@@ -29,7 +29,7 @@ any request.
 .PP
 --min-amount / --max-amount are DECIMALS in token units ('1.00'), like every other
 amount flag. Converting them to the base units the gateway filters on needs the
-token's decimals, so both --chain-id and --token are required with them — and an
+token's decimals, so both --chain and --token are required with them — and an
 amount range only means something within one token anyway.
 
 .PP
@@ -56,8 +56,8 @@ decimals.
 	Fetch every page (ignores --page)
 
 .PP
-\fB--chain-id\fP=0
-	Filter by EVM chain ID
+\fB--chain\fP=
+	Filter by chain: a slug (arc, base, …) or a chain id; the environment's gateway decides testnet vs mainnet
 
 .PP
 \fB--created-from\fP=""
@@ -89,11 +89,11 @@ decimals.
 
 .PP
 \fB--max-amount\fP=""
-	Maximum amount as a decimal in token units (inclusive); needs --chain-id and --token
+	Maximum amount as a decimal in token units (inclusive); needs --chain and --token
 
 .PP
 \fB--min-amount\fP=""
-	Minimum amount as a decimal in token units (inclusive); needs --chain-id and --token
+	Minimum amount as a decimal in token units (inclusive); needs --chain and --token
 
 .PP
 \fB--mode\fP=""
@@ -179,9 +179,9 @@ decimals.
   rail0 payments list --sort -created_at
   rail0 payments list --status authorized --mode charge
   rail0 payments list --status authorized,partially_captured
-  rail0 payments list --chain-id 5042002 --disputed
+  rail0 payments list --chain arc --disputed
   rail0 payments list --all --csv > payments.csv          # every matching payment, as CSV
-  rail0 payments list --chain-id 5042002 --token 0x3600… --min-amount 1.00 --created-from 2026-01-01T00:00:00Z
+  rail0 payments list --chain arc --token 0x3600… --min-amount 1.00 --created-from 2026-01-01T00:00:00Z
   rail0 payments list --scope all --has-error                # admin: every payment with an error, any account
   rail0 payments list --scope all --expiring-within 24h      # admin: holds lapsing within a day
   rail0 payments list --scope all --account 019e748b-…       # admin: one merchant's incoming payments

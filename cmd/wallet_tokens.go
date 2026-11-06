@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strconv"
 	"strings"
 
 	rail0 "github.com/commercelayer/rail0-go"
@@ -36,9 +35,9 @@ wallet then accepts nothing, and the next holding enabled becomes the default.
 These commands act only on the wallet you signed in with: another wallet of the
 account is refused (403 not_your_wallet). 'rail0 auth login' with that wallet's
 key to manage its tokens.`,
-	Example: `  rail0 wallets tokens add 0xABCD… --chain-id 84532 --token USDC --default
-  rail0 wallets tokens disable 0xABCD… USDC --chain-id 84532
-  rail0 wallets tokens enable 0xABCD… USDC --chain-id 84532`,
+	Example: `  rail0 wallets tokens add 0xABCD… --chain base --token USDC --default
+  rail0 wallets tokens disable 0xABCD… USDC --chain base
+  rail0 wallets tokens enable 0xABCD… USDC --chain base`,
 }
 
 var (
@@ -53,11 +52,11 @@ var walletTokensAddCmd = &cobra.Command{
 	Long: `Accept a token, on one chain, on a wallet (by id, 0x address or @alias).
 
 An upsert: a holding that was disabled is re-enabled rather than duplicated.
---token is a symbol (USDC) resolved on --chain-id, or the token's 0x address.
+--token is a symbol (USDC) resolved on --chain, or the token's 0x address.
 --default makes it the wallet's default method, demoting the previous one;
---chain-id falls back to the configured default ('rail0 config set chain-id').`,
-	Example: `  rail0 wallets tokens add 0xABCD… --chain-id 84532 --token USDC
-  rail0 wallets tokens add 0xABCD… --chain-id 84532 --token 0x036C… --default`,
+--chain falls back to the configured default ('rail0 config set chain').`,
+	Example: `  rail0 wallets tokens add 0xABCD… --chain base --token USDC
+  rail0 wallets tokens add 0xABCD… --chain base --token 0x036C… --default`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		account, err := currentAccountID()
@@ -101,10 +100,10 @@ var walletTokensEnableCmd = &cobra.Command{
 	Use:   "enable <wallet> <token>",
 	Short: "Re-enable a holding the wallet already has",
 	Long: `Re-enable an existing, disabled holding. <token> is the token's symbol or 0x
-address (add --chain-id when the wallet holds that symbol on several chains), or
+address (add --chain when the wallet holds that symbol on several chains), or
 the token id shown as token_id by 'rail0 wallets'. A token the wallet has never
 held is not enabled here — use 'wallets tokens add'.`,
-	Example: `  rail0 wallets tokens enable 0xABCD… USDC --chain-id 84532`,
+	Example: `  rail0 wallets tokens enable 0xABCD… USDC --chain base`,
 	Args:    cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runWalletTokenAction(args[0], args[1], func(c *rail0.Client, account, wallet, tokenID string) (any, error) {
@@ -124,7 +123,7 @@ Buyers stop being offered this method at once and no new payment can use it;
 payments already created with it are unaffected. The wallet's DEFAULT method
 cannot be disabled — make another one the default first ('wallets tokens add …
 --default').`,
-	Example: `  rail0 wallets tokens disable 0xABCD… USDC --chain-id 84532`,
+	Example: `  rail0 wallets tokens disable 0xABCD… USDC --chain base`,
 	Args:    cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := confirmDestructive(fmt.Sprintf(
@@ -137,16 +136,20 @@ cannot be disabled — make another one the default first ('wallets tokens add �
 	},
 }
 
-// walletTokenChain is --chain-id, falling back to the configured default. 0 when
+// walletTokenChain is --chain, falling back to the configured default. 0 when
 // neither is set — an error for `add`, "any chain" for the holding lookup.
 func walletTokenChain() (int, error) {
 	if walletTokenChainID != 0 {
 		return walletTokenChainID, nil
 	}
-	if n, err := strconv.Atoi(configuredDefault("chain-id")); err == nil && n != 0 {
-		return n, nil
+	id, _, ok, err := configuredChainID(context.Background())
+	if err != nil {
+		return 0, err
 	}
-	return 0, errors.New("--chain-id is required (or set a default with 'rail0 config set chain-id <id>')")
+	if !ok {
+		return 0, errChainRequired()
+	}
+	return id, nil
 }
 
 // runWalletTokenAction resolves <token> to the holding's token id and runs the
@@ -222,16 +225,16 @@ func matchHolding(w rail0.WalletWithTokens, tokenArg string) (string, error) {
 	for _, h := range matches {
 		chains = append(chains, chainLabel(h.Token.ChainID))
 	}
-	return "", fmt.Errorf("wallet %s holds %s on several chains (%s) — pass --chain-id",
+	return "", fmt.Errorf("wallet %s holds %s on several chains (%s) — pass --chain",
 		w.Address, tokenArg, strings.Join(chains, ", "))
 }
 
 func init() {
-	walletTokensAddCmd.Flags().IntVar(&walletTokenChainID, "chain-id", 0, "Chain of the token (default: the configured chain-id)")
+	addChainFlag(walletTokensAddCmd, &walletTokenChainID, "", "Chain of the token (default: the configured chain)")
 	walletTokensAddCmd.Flags().StringVarP(&walletTokenToken, "token", "t", "", "Token symbol (e.g. USDC) or 0x address (default: the configured token)")
 	walletTokensAddCmd.Flags().BoolVar(&walletTokenDefault, "default", false, "Make it the wallet's default payment method")
 	for _, c := range []*cobra.Command{walletTokensEnableCmd, walletTokensDisableCmd} {
-		c.Flags().IntVar(&walletTokenChainID, "chain-id", 0, "Narrow <token> to one chain when the wallet holds it on several")
+		addChainFlag(c, &walletTokenChainID, "", "Narrow <token> to one chain when the wallet holds it on several")
 	}
 	addYesFlag(walletTokensDisableCmd)
 	walletTokensCmd.AddCommand(walletTokensAddCmd, walletTokensEnableCmd, walletTokensDisableCmd)

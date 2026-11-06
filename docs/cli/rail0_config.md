@@ -1,6 +1,6 @@
 ## rail0 config
 
-Manage persisted CLI defaults (base-url, chain-id, token, output, http-timeout)
+Manage persisted CLI defaults (base-url, chain, token, output, http-timeout)
 
 ### Synopsis
 
@@ -22,7 +22,8 @@ you the retyping without making the parties or the signer implicit.
 Settable keys (env var) — and what the CLI does when the key is not set:
   admin-url     Admin app URL that 'rail0 open' opens (RAIL0_ADMIN_URL) — not set: the matching flag must be passed
   base-url      RAIL0 gateway base URL (RAIL0_BASE_URL) — not set: the CLI uses https://api.rail0.xyz
-  chain-id      Default EVM chain ID for --chain-id/-c (RAIL0_CHAIN_ID) — not set: the matching flag must be passed
+  chain         Default chain for --chain/-c: a slug (arc) or a chain id (RAIL0_CHAIN) — not set: the matching flag must be passed
+  chain-id      Legacy numeric default chain; superseded by chain (RAIL0_CHAIN_ID) — not set: the matching flag must be passed
   http-timeout  Per-request HTTP timeout in seconds (RAIL0_HTTP_TIMEOUT) — not set: the CLI uses 30
   output        Default output mode: auto, json, pretty or quiet (RAIL0_OUTPUT) — not set: the CLI uses auto
   token         Default token symbol for --token/-t (e.g. USDC) (RAIL0_TOKEN_SYMBOL) — not set: the matching flag must be passed
@@ -36,10 +37,10 @@ rail0 config [flags]
 ```
   rail0 config
   rail0 config set base-url http://localhost:9292
-  rail0 config set chain-id 5042002
+  rail0 config set chain arc
   rail0 config set token USDC
-  rail0 config get chain-id
-  rail0 config unset chain-id
+  rail0 config get chain
+  rail0 config unset chain
 ```
 
 ### Options

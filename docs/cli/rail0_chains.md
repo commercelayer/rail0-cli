@@ -1,10 +1,15 @@
 ## rail0 chains
 
-List supported blockchains (chain IDs used in --chain-id)
+List supported blockchains (the slugs and chain IDs --chain takes)
 
 ### Synopsis
 
 List the blockchains supported by the environment.
+
+Each chain has a slug (arc, base, …) shared by its testnet and its mainnet: a
+gateway serves one network class, so --chain <slug> on any command picks the
+chain of the environment you are pointed at ('rail0 env'). public_rpc_urls are
+keyless RPC endpoints for reading the chain directly ('rail0 keys balance').
 
 Filter with --symbol (the chain's native symbol, e.g. ETH / USDC / CELO) and/or
 --network-type (testnet | mainnet). Both match case-insensitively; combine them

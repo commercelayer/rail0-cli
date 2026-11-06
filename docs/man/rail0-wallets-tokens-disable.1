@@ -21,8 +21,8 @@ cannot be disabled — make another one the default first ('wallets tokens add �
 
 
 .SH OPTIONS
-\fB--chain-id\fP=0
-	Narrow  to one chain when the wallet holds it on several
+\fB--chain\fP=
+	Narrow  to one chain when the wallet holds it on several: a slug (arc, base, …) or a chain id; the environment's gateway decides testnet vs mainnet
 
 .PP
 \fB-h\fP, \fB--help\fP[=false]
@@ -60,7 +60,7 @@ cannot be disabled — make another one the default first ('wallets tokens add �
 
 .SH EXAMPLE
 .EX
-  rail0 wallets tokens disable 0xABCD… USDC --chain-id 84532
+  rail0 wallets tokens disable 0xABCD… USDC --chain base
 .EE
 
 

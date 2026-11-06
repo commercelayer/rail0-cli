@@ -44,6 +44,11 @@ Topics (-t/--topic completes them):
                                    AUTHORIZATION_EXPIRING_NOTICE window, 24h by
                                    default). The status does not change; a window
                                    that already closed sends payments.expired.
+  payouts.confirmed                a payout's transfer was mined with the expected
+                                   ERC-20 Transfer
+  payouts.failed                   a payout failed — its error_code says how
+                                   (reverted, dropped, cancelled, …)
+  payout_destinations.verified     a payout destination was confirmed
 
 ### Examples
 

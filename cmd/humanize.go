@@ -264,7 +264,7 @@ func amountLabel(ctx context.Context, p *rail0.Payment, base string) string {
 // everywhere else is a decimal — so `--min-amount 1.00` silently meant one
 // millionth of a USDC and matched everything. (#103)
 //
-// Both --chain-id and --token are required with them, and that is not a limitation
+// Both --chain and --token are required with them, and that is not a limitation
 // worked around: the conversion needs the token's decimals, and an amount range
 // across tokens with different scales does not describe anything. Refusing is better
 // than guessing a scale for a filter whose whole job is to be exact.
@@ -274,7 +274,7 @@ func amountFilters(ctx context.Context, min, max string, chainID int, token stri
 	}
 	if chainID == 0 || token == "" {
 		return "", "", fmt.Errorf(
-			"--min-amount/--max-amount are decimals in token units and need --chain-id and --token to convert; pass both")
+			"--min-amount/--max-amount are decimals in token units and need --chain and --token to convert; pass both")
 	}
 	decimals, ok := tokenDecimals(ctx, chainID, token)
 	if !ok {

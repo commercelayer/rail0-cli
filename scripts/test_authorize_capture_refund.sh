@@ -17,7 +17,7 @@
 # Usage:
 #   ./scripts/test_authorize_capture_refund.sh
 #
-# Overrides: RAIL0_API_URL CHAIN_ID TOKEN AMOUNT ACCOUNT_ID PAYEE BUYER_ADDRESS
+# Overrides: RAIL0_API_URL CHAIN (or CHAIN_ID) TOKEN AMOUNT ACCOUNT_ID PAYEE BUYER_ADDRESS
 #            BUYER_PRIVATE_KEY ACCOUNT_PRIVATE_KEY WAIT_TIMEOUT RAIL0
 
 set -euo pipefail
@@ -25,10 +25,12 @@ set -euo pipefail
 # ── Configuration ─────────────────────────────────────────────────────────────
 
 API_URL="${RAIL0_API_URL:-http://localhost:9292}"
-# --chain-id is an integer EVM chain id, never a slug. Arc Testnet is the default
+# --chain takes a slug (arc, base, …) or a chain id, as listed by `rail0 chains`;
+# CHAIN_ID (the numeric override this script used to take) is still honoured. Arc
+# Testnet is the default
 # because it needs 4 confirmations against Base Sepolia's 60 — the difference
 # between a script that finishes in a minute and one that looks hung.
-CHAIN_ID="${CHAIN_ID:-5042002}"
+CHAIN="${CHAIN:-${CHAIN_ID:-arc}}"
 TOKEN="${TOKEN:-USDC}"
 AMOUNT="${AMOUNT:-1.00}"
 BUYER_ADDRESS="${BUYER_ADDRESS:-0xe3DD5ea618F74De4C95B0ff0EbF9921A06a694c4}"
@@ -78,7 +80,21 @@ ok "Logged in"
 
 # ── Resolve payee ─────────────────────────────────────────────────────────────
 
-step "Resolve payee for $TOKEN on chain $CHAIN_ID"
+# The payee lookup matches the numeric chain_id payment-methods carries, so the slug
+# is resolved to it from the gateway's own catalog.
+step "Resolve chain $CHAIN"
+CHAIN_ID=$("$RAIL0" chains "${BASE[@]}" | CHAIN="$CHAIN" python3 -c '
+import json, os, sys
+want = os.environ["CHAIN"]
+for c in json.load(sys.stdin):
+    if c.get("slug") == want or str(c.get("chain_id")) == want:
+        print(c["chain_id"])
+        raise SystemExit
+raise SystemExit(f"unknown chain {want!r}: see rail0 chains")
+')
+ok "Chain: $CHAIN ($CHAIN_ID)"
+
+step "Resolve payee for $TOKEN on chain $CHAIN"
 PAYEE="${PAYEE:-$(CHAIN_ID="$CHAIN_ID" TOKEN="$TOKEN" ACCOUNT_ID="$ACCOUNT_ID" \
   "$RAIL0" payment-methods --account "$ACCOUNT_ID" "${BASE[@]}" | python3 -c '
 import json, os, sys
@@ -98,7 +114,7 @@ ok "Payee: $PAYEE"
 # -q prints just the rail0_id, so no JSON parsing is needed to chain the steps.
 step "1. Create payment and sign (payer)"
 RAIL0_ID=$(run payments create \
-  -F "$BUYER_ADDRESS" -T "$PAYEE" -t "$TOKEN" -a "$AMOUNT" -c "$CHAIN_ID" \
+  -F "$BUYER_ADDRESS" -T "$PAYEE" -t "$TOKEN" -a "$AMOUNT" -c "$CHAIN" \
   -p "$BUYER_PRIVATE_KEY" -q)
 ok "rail0_id: $RAIL0_ID"
 

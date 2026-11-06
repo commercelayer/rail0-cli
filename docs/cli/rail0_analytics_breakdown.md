@@ -29,7 +29,7 @@ rail0 analytics breakdown [flags]
 
 ```
       --by string       Group by: token, chain, mode, status or operation (required)
-      --chain-id int    Filter by EVM chain ID
+      --chain chain     Filter by chain: a slug (arc, base, …) or a chain id; the environment's gateway decides testnet vs mainnet
       --from string     Only payments created at/after this ISO-8601 time
   -h, --help            help for breakdown
       --mode string     Filter by mode: authorize or charge

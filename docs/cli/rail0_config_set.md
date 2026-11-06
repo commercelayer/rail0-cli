@@ -31,5 +31,5 @@ rail0 config set <key> <value> [flags]
 
 ### SEE ALSO
 
-* [rail0 config](rail0_config.md)	 - Manage persisted CLI defaults (base-url, chain-id, token, output, http-timeout)
+* [rail0 config](rail0_config.md)	 - Manage persisted CLI defaults (base-url, chain, token, output, http-timeout)
 

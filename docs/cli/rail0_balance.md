@@ -1,4 +1,4 @@
-## rail0 keys balance
+## rail0 balance
 
 Read an address's on-chain balance straight from the chain (like cast balance)
 
@@ -12,10 +12,10 @@ without the @: its address is derived from the keychain entry, the key itself is
 never printed. A name that is not a saved key is tried in the address book
 ('rail0 aliases').
 
---chain picks the chain by slug (arc, base, …) or id, resolved by the current
-environment's gateway ('rail0 env'), which also publishes the chain's keyless RPC
-endpoints: they are tried in order, each with a timeout, until one answers. Without
---chain the configured default chain applies ('rail0 config set chain'). --rpc-url
+--chain picks the chain by slug (arc, base, …) or id, resolved by the configured
+gateway, which also publishes the chain's keyless RPC endpoints: they are tried in
+order, each with a timeout, until one answers. Without --chain the configured
+default chain applies ('rail0 config', default arc). --rpc-url
 reads from that node instead (its eth_chainId names the chain; --chain is then
 optional and, if passed, must agree).
 
@@ -33,23 +33,23 @@ reads the native balance plus every active rail0 token of the chain.
 the native coin and the ERC-20 are both USDC).
 
 ```
-rail0 keys balance <address|@name|name> [flags]
+rail0 balance <address|@name|name> [flags]
 ```
 
 ### Examples
 
 ```
-  rail0 keys balance 0xABCD… --chain arc
-  rail0 keys balance @payer --chain arc --token USDC
-  rail0 keys balance payer --tokens
-  rail0 keys balance 0xABCD… --token 0x3600000000000000000000000000000000000000
-  rail0 keys balance 0xABCD… --rpc-url https://rpc.example.org -q
+  rail0 balance 0xABCD… --chain arc
+  rail0 balance @payer --chain arc --token USDC
+  rail0 balance payer --tokens
+  rail0 balance 0xABCD… --token 0x3600000000000000000000000000000000000000
+  rail0 balance 0xABCD… --rpc-url https://rpc.example.org -q
 ```
 
 ### Options
 
 ```
-  -c, --chain chain      Chain to read (default: 'rail0 config' chain): a slug (arc, base, …) or a chain id; the environment's gateway decides testnet vs mainnet
+  -c, --chain chain      Chain to read (default: the configured chain, arc): a slug (arc, base, …) or a chain id; the environment's gateway decides testnet vs mainnet
   -h, --help             help for balance
       --rpc-url string   Read from this JSON-RPC endpoint instead of the gateway's public ones (its eth_chainId names the chain)
   -t, --token string     ERC-20 to read: a symbol from 'rail0 tokens' (USDC) or a 0x token address
@@ -69,5 +69,5 @@ rail0 keys balance <address|@name|name> [flags]
 
 ### SEE ALSO
 
-* [rail0 keys](rail0_keys.md)	 - Generate signing keys locally and manage them in the OS keychain
+* [rail0](rail0.md)	 - CLI for the RAIL0 stablecoin payment protocol
 

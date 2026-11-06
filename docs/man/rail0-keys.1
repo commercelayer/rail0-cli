@@ -31,8 +31,8 @@ that copy drifts. Ask about one key at a time with 'rail0 keys address \&',
 which reads the keychain itself and cannot go stale.
 
 .PP
-\&'rail0 keys balance \&' reads an address's balance straight from the
-chain's public RPC endpoints.
+\&'rail0 balance \&' reads an address's on-chain balance straight from
+the chain, and takes a saved key's name.
 
 
 .SH OPTIONS
@@ -71,10 +71,10 @@ chain's public RPC endpoints.
   rail0 keys add payer
   rail0 payments create -p @payer …
   rail0 keys address payer
-  rail0 keys balance payer --chain arc
+  rail0 balance payer
   rail0 keys rm payer
 .EE
 
 
 .SH SEE ALSO
-\fBrail0(1)\fP, \fBrail0-keys-add(1)\fP, \fBrail0-keys-address(1)\fP, \fBrail0-keys-balance(1)\fP, \fBrail0-keys-generate(1)\fP, \fBrail0-keys-rm(1)\fP
+\fBrail0(1)\fP, \fBrail0-keys-add(1)\fP, \fBrail0-keys-address(1)\fP, \fBrail0-keys-generate(1)\fP, \fBrail0-keys-rm(1)\fP

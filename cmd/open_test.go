@@ -3,6 +3,8 @@ package cmd
 import (
 	"strings"
 	"testing"
+
+	"github.com/rail0/cli/internal/config"
 )
 
 // The page `rail0 open` builds: the admin's home, or a payment's page — the merchant's
@@ -34,16 +36,18 @@ func TestAdminPageURL(t *testing.T) {
 	}
 }
 
-// admin-url wins when set; otherwise the environment the gateway identifies supplies
-// one (development, staging); production declares none, so the error says how to set it.
+// admin-url wins when set; otherwise the active environment's default applies
+// (development, staging); production has none, so the error says how to set it.
 func TestAdminURLResolution(t *testing.T) {
-	dir := t.TempDir() // an empty config: no stored admin-url or base-url
+	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", dir)
 	t.Setenv("HOME", dir)
 	t.Setenv("RAIL0_ADMIN_URL", "")
-	t.Setenv("RAIL0_BASE_URL", "https://rail0-gateway-staging.fly.dev")
+	if err := (&config.Config{Environment: "staging"}).Save(); err != nil {
+		t.Fatal(err)
+	}
 	if got, err := adminURL(); err != nil || got != "https://rail0-admin-staging.fly.dev" {
-		t.Errorf("staging gateway: adminURL() = %q, %v", got, err)
+		t.Errorf("staging: adminURL() = %q, %v", got, err)
 	}
 
 	t.Setenv("RAIL0_ADMIN_URL", "https://admin.example.com/")
@@ -52,7 +56,9 @@ func TestAdminURLResolution(t *testing.T) {
 	}
 
 	t.Setenv("RAIL0_ADMIN_URL", "")
-	t.Setenv("RAIL0_BASE_URL", "https://api.rail0.xyz")
+	if err := (&config.Config{Environment: "production"}).Save(); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := adminURL(); err == nil || !strings.Contains(err.Error(), "config set admin-url") {
 		t.Errorf("production without admin-url should say how to set it, got %v", err)
 	}

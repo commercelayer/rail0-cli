@@ -43,12 +43,12 @@ Use 'rail0 <command> --help' for detailed usage of any command.
 * [rail0 aliases](rail0_aliases.md)	 - Address book — list saved addresses, or manage them with add/rm
 * [rail0 analytics](rail0_analytics.md)	 - Account sales analytics: summary, timeseries, breakdown (requires login)
 * [rail0 auth](rail0_auth.md)	 - Authenticate with the RAIL0 gateway using SIWE
+* [rail0 balance](rail0_balance.md)	 - Read an address's on-chain balance straight from the chain (like cast balance)
 * [rail0 chains](rail0_chains.md)	 - List supported blockchains (the slugs and chain IDs --chain takes)
 * [rail0 config](rail0_config.md)	 - Manage persisted CLI defaults (base-url, chain, token, output, http-timeout)
 * [rail0 disputes](rail0_disputes.md)	 - List every dispute on your payments (requires login)
-* [rail0 env](rail0_env.md)	 - Switch the active environment (development/staging/production) in one shot
 * [rail0 health](rail0_health.md)	 - Report gateway health (liveness/readiness)
-* [rail0 init](rail0_init.md)	 - Guided first-run setup: environment, key, sign-in
+* [rail0 init](rail0_init.md)	 - Guided first-run setup: gateway, key, sign-in
 * [rail0 keys](rail0_keys.md)	 - Generate signing keys locally and manage them in the OS keychain
 * [rail0 open](rail0_open.md)	 - Open the admin app in the browser, on a payment's page when given its id
 * [rail0 payment-methods](rail0_payment-methods.md)	 - Discover a merchant's accepted wallets/tokens (public, no login)

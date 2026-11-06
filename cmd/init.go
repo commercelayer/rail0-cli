@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"github.com/charmbracelet/huh"
+	"github.com/rail0/cli/internal/config"
 	"github.com/spf13/cobra"
 )
 
@@ -18,27 +19,27 @@ import (
 // actually reachable. Each is one command, and each is obvious ONLY once you know the
 // model. (#105)
 //
-// It composes the existing commands rather than reimplementing them — switchEnv,
-// keysAddCmd, authLoginCmd, Health.Get — so there is exactly one behaviour per step
+// It composes the existing commands rather than reimplementing them — switchEnv
+// (the hidden `env`), keysAddCmd, authLoginCmd, Health.Get — so there is exactly one behaviour per step
 // and `keys add`'s refusal to overwrite an orphaned keychain entry (#70) still applies
 // here. Every step can be skipped, so a partly-configured machine can run it again.
 var initCmd = &cobra.Command{
 	Use:   "init",
-	Short: "Guided first-run setup: environment, key, sign-in",
+	Short: "Guided first-run setup: gateway, key, sign-in",
 	Long: `Walk through the setup a first payment needs, in one command:
 
-  1. choose an environment (writes base-url, so every later command uses it)
+  1. choose a gateway (remembered, so every later command uses it)
   2. check the gateway answers
   3. optionally save a signing key in the OS keychain (referenced later as @name)
   4. optionally sign in with it (SIWE), caching a session for that gateway
 
 Each step can be skipped, so it is safe to re-run on a machine that is already
-half-configured. Nothing here is irreversible: the same steps are 'rail0 env',
-'rail0 health', 'rail0 keys add' and 'rail0 auth login', and the setup can be
-undone with 'rail0 keys rm' / 'rail0 auth logout'.
+half-configured. Nothing here is irreversible: the gateway choice, 'rail0 health',
+'rail0 keys add' and 'rail0 auth login' are the steps, and the setup can be undone
+with 'rail0 keys rm' / 'rail0 auth logout'.
 
-Interactive by design — it asks questions. In a script, run those four commands
-directly instead.`,
+Interactive by design — it asks questions. In a script, run 'rail0 health',
+'rail0 keys add' and 'rail0 auth login' directly instead.`,
 	Example: `  rail0 init`,
 	Args:    cobra.NoArgs,
 	RunE: func(_ *cobra.Command, _ []string) error {
@@ -47,24 +48,28 @@ directly instead.`,
 		// script needs anyway.
 		if !interactive() {
 			return newUsageError("interactive_only",
-				"'rail0 init' is interactive; in a script use: rail0 env <name> && rail0 health && "+
+				"'rail0 init' is interactive; in a script use: rail0 health && "+
 					"rail0 keys add <name> && rail0 auth login -p @<name>")
 		}
 
 		ctx := context.Background()
 
 		// ── 1. Environment ────────────────────────────────────────────────────
+		// The gateway each environment points at is shown as it would resolve for
+		// this user (a stored base-url over the default), since that is what the
+		// choice selects.
+		cfg, err := config.Load()
+		if err != nil {
+			return err
+		}
 		names := make([]huh.Option[string], 0, len(environments))
 		for _, e := range environments {
-			names = append(names, huh.NewOption(fmt.Sprintf("%s — %s", e.name, e.settings["base-url"]), e.name))
+			names = append(names, huh.NewOption(fmt.Sprintf("%s — %s", e.name, envEffective(cfg, e)["base-url"]), e.name))
 		}
-		env := detectEnv()
-		if env == "custom" {
-			env = environments[0].name
-		}
+		env := activeEnvOf(cfg)
 		if err := huh.NewSelect[string]().
 			Title("Which gateway?").
-			Description("Written to the config file as base-url; --base-url still overrides it per command.").
+			Description("Remembered in the config file; --base-url still overrides it per command.").
 			Options(names...).
 			Value(&env).
 			Run(); err != nil {
@@ -185,7 +190,7 @@ Set up. From here:
   rail0 payments create -F @me -T @merchant -t USDC -a 1.00 -c arc -p %s
   rail0 payments list                 # your payments, as payer or payee
 
-'rail0 <command> --help' has the detail; 'rail0 env current -d' shows what this wrote.
+'rail0 <command> --help' has the detail; 'rail0 config' shows the settings in effect.
 `, ref)
 }
 

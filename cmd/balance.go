@@ -15,17 +15,17 @@ import (
 )
 
 var (
-	keysBalanceChainID int
-	keysBalanceRPCURL  string
-	keysBalanceToken   string
-	keysBalanceTokens  bool
+	balanceChainID int
+	balanceRPCURL  string
+	balanceToken   string
+	balanceTokens  bool
 )
 
 // nativeDecimals is the scale of every EVM chain's native coin (wei). Arc included: its
 // native gas token is USDC with 18 decimals, while the USDC ERC-20 there has 6.
 const nativeDecimals = 18
 
-var keysBalanceCmd = &cobra.Command{
+var balanceCmd = &cobra.Command{
 	Use:   "balance <address|@name|name>",
 	Short: "Read an address's on-chain balance straight from the chain (like cast balance)",
 	Long: `Read the native and/or ERC-20 balance of an address directly from the chain's
@@ -36,10 +36,10 @@ without the @: its address is derived from the keychain entry, the key itself is
 never printed. A name that is not a saved key is tried in the address book
 ('rail0 aliases').
 
---chain picks the chain by slug (arc, base, …) or id, resolved by the current
-environment's gateway ('rail0 env'), which also publishes the chain's keyless RPC
-endpoints: they are tried in order, each with a timeout, until one answers. Without
---chain the configured default chain applies ('rail0 config set chain'). --rpc-url
+--chain picks the chain by slug (arc, base, …) or id, resolved by the configured
+gateway, which also publishes the chain's keyless RPC endpoints: they are tried in
+order, each with a timeout, until one answers. Without --chain the configured
+default chain applies ('rail0 config', default arc). --rpc-url
 reads from that node instead (its eth_chainId names the chain; --chain is then
 optional and, if passed, must agree).
 
@@ -54,11 +54,11 @@ reads the native balance plus every active rail0 token of the chain.
 -q prints the raw value in wei / base units; with several assets, one
 "<asset> <symbol> <value>" line each (asset = native or the token address — on Arc
 the native coin and the ERC-20 are both USDC).`,
-	Example: `  rail0 keys balance 0xABCD… --chain arc
-  rail0 keys balance @payer --chain arc --token USDC
-  rail0 keys balance payer --tokens
-  rail0 keys balance 0xABCD… --token 0x3600000000000000000000000000000000000000
-  rail0 keys balance 0xABCD… --rpc-url https://rpc.example.org -q`,
+	Example: `  rail0 balance 0xABCD… --chain arc
+  rail0 balance @payer --chain arc --token USDC
+  rail0 balance payer --tokens
+  rail0 balance 0xABCD… --token 0x3600000000000000000000000000000000000000
+  rail0 balance 0xABCD… --rpc-url https://rpc.example.org -q`,
 	Args:              cobra.ExactArgs(1),
 	ValidArgsFunction: completeKeyNames,
 	RunE: func(_ *cobra.Command, args []string) error {
@@ -73,7 +73,7 @@ the native coin and the ERC-20 are both USDC).`,
 		}
 		defer reader.Close()
 
-		view := &keyBalanceView{Address: holder.Hex(), Key: keyName, ChainID: chain.ChainID, Chain: chain.Slug, ChainName: chain.Name}
+		view := &balanceView{Address: holder.Hex(), Key: keyName, ChainID: chain.ChainID, Chain: chain.Slug, ChainName: chain.Name}
 		fetch := func() (any, error) {
 			rows, err := readBalances(ctx, reader, chain, holder)
 			if err != nil {
@@ -93,8 +93,8 @@ the native coin and the ERC-20 are both USDC).`,
 	},
 }
 
-// keyBalanceView is the result: who, on which chain, and one row per asset read.
-type keyBalanceView struct {
+// balanceView is the result: who, on which chain, and one row per asset read.
+type balanceView struct {
 	Address   string       `json:"address"`
 	Key       string       `json:"key,omitempty"`
 	ChainID   int          `json:"chain_id"`
@@ -147,8 +147,8 @@ func balanceHolder(arg string) (common.Address, string, error) {
 // The catalog entry gives the slug, name and native symbol; for a --rpc-url chain the
 // gateway does not list (or cannot be reached) those stay empty and the read still works.
 func balanceReader(ctx context.Context) (*rail0.Blockchain, *chainread.Reader, error) {
-	if keysBalanceRPCURL != "" {
-		reader, err := chainread.New([]string{keysBalanceRPCURL}, chainread.DefaultTimeout)
+	if balanceRPCURL != "" {
+		reader, err := chainread.New([]string{balanceRPCURL}, chainread.DefaultTimeout)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -161,16 +161,16 @@ func balanceReader(ctx context.Context) (*rail0.Blockchain, *chainread.Reader, e
 			reader.Close()
 			return nil, nil, fmt.Errorf("--rpc-url: implausible chain id %s", id)
 		}
-		if keysBalanceChainID != 0 && int64(keysBalanceChainID) != id.Int64() {
+		if balanceChainID != 0 && int64(balanceChainID) != id.Int64() {
 			reader.Close()
 			return nil, nil, newUsageError("flag_conflict",
-				"--rpc-url serves chain %s, but --chain names %s", id, chainLabel(keysBalanceChainID))
+				"--rpc-url serves chain %s, but --chain names %s", id, chainLabel(balanceChainID))
 		}
 		chain, _ := lookupChain(ctx, id.String())
 		return chain, reader, nil
 	}
 
-	chainID := keysBalanceChainID
+	chainID := balanceChainID
 	if chainID == 0 {
 		id, _, ok, err := configuredChainID(ctx)
 		if err != nil {
@@ -206,7 +206,7 @@ func balanceReader(ctx context.Context) (*rail0.Blockchain, *chainread.Reader, e
 // itself (symbol(), decimals()).
 func readBalances(ctx context.Context, r *chainread.Reader, chain *rail0.Blockchain, holder common.Address) ([]balanceRow, error) {
 	var rows []balanceRow
-	if keysBalanceToken == "" {
+	if balanceToken == "" {
 		wei, err := r.NativeBalance(ctx, holder)
 		if err != nil {
 			return nil, fmt.Errorf("native balance: %w", err)
@@ -220,30 +220,30 @@ func readBalances(ctx context.Context, r *chainread.Reader, chain *rail0.Blockch
 
 	var tokens []rail0.Token
 	switch {
-	case keysBalanceTokens:
+	case balanceTokens:
 		active, err := activeTokens(ctx, chain.ChainID)
 		if err != nil {
 			return nil, fmt.Errorf("fetch tokens: %w", err)
 		}
 		tokens = active
-	case keysBalanceToken != "" && !evmAddressPattern.MatchString(keysBalanceToken):
-		addr, decimals, _, err := lookupTokenAddress(ctx, chain.ChainID, keysBalanceToken)
+	case balanceToken != "" && !evmAddressPattern.MatchString(balanceToken):
+		addr, decimals, _, err := lookupTokenAddress(ctx, chain.ChainID, balanceToken)
 		if err != nil {
 			return nil, err
 		}
-		tokens = []rail0.Token{{Address: rail0.Address(addr), Decimals: decimals, Symbol: strings.ToUpper(keysBalanceToken), ChainID: chain.ChainID}}
-	case keysBalanceToken != "":
-		t := rail0.Token{Address: rail0.Address(keysBalanceToken), ChainID: chain.ChainID, Decimals: -1}
+		tokens = []rail0.Token{{Address: rail0.Address(addr), Decimals: decimals, Symbol: strings.ToUpper(balanceToken), ChainID: chain.ChainID}}
+	case balanceToken != "":
+		t := rail0.Token{Address: rail0.Address(balanceToken), ChainID: chain.ChainID, Decimals: -1}
 		if catalog, err := tokenCatalog(ctx); err == nil {
 			for _, c := range catalog {
-				if c.ChainID == chain.ChainID && strings.EqualFold(string(c.Address), keysBalanceToken) {
+				if c.ChainID == chain.ChainID && strings.EqualFold(string(c.Address), balanceToken) {
 					t = c
 					break
 				}
 			}
 		}
 		if t.Decimals < 0 || t.Symbol == "" {
-			symbol, decimals, err := r.TokenMeta(ctx, common.HexToAddress(keysBalanceToken))
+			symbol, decimals, err := r.TokenMeta(ctx, common.HexToAddress(balanceToken))
 			if err != nil {
 				return nil, err
 			}
@@ -283,11 +283,10 @@ func printBalancesQuiet(rows []balanceRow) {
 }
 
 func init() {
-	addChainFlag(keysBalanceCmd, &keysBalanceChainID, "c", "Chain to read (default: 'rail0 config' chain)")
-	f := keysBalanceCmd.Flags()
-	f.StringVar(&keysBalanceRPCURL, "rpc-url", "", "Read from this JSON-RPC endpoint instead of the gateway's public ones (its eth_chainId names the chain)")
-	f.StringVarP(&keysBalanceToken, "token", "t", "", "ERC-20 to read: a symbol from 'rail0 tokens' (USDC) or a 0x token address")
-	f.BoolVar(&keysBalanceTokens, "tokens", false, "Read the native balance plus every active rail0 token of the chain")
-	keysBalanceCmd.MarkFlagsMutuallyExclusive("token", "tokens")
-	keysCmd.AddCommand(keysBalanceCmd)
+	addChainFlag(balanceCmd, &balanceChainID, "c", "Chain to read (default: the configured chain, arc)")
+	f := balanceCmd.Flags()
+	f.StringVar(&balanceRPCURL, "rpc-url", "", "Read from this JSON-RPC endpoint instead of the gateway's public ones (its eth_chainId names the chain)")
+	f.StringVarP(&balanceToken, "token", "t", "", "ERC-20 to read: a symbol from 'rail0 tokens' (USDC) or a 0x token address")
+	f.BoolVar(&balanceTokens, "tokens", false, "Read the native balance plus every active rail0 token of the chain")
+	balanceCmd.MarkFlagsMutuallyExclusive("token", "tokens")
 }

@@ -45,8 +45,9 @@ reads from that node instead (its eth_chainId names the chain; --chain is then
 optional and, if passed, must agree).
 
 Default output is the native balance, in wei and in units (18 decimals, symbol from
-the chain). NOTE: on Arc the native gas token is USDC with 18 decimals, while the
-USDC ERC-20 (--token USDC) uses 6 — the same money, two different scales.
+the chain). On Arc, mainnet and testnet, the gas coin IS USDC: the default then also
+prints the USDC ERC-20 row (6 decimals, the scale payments use), with a note that
+the two rows are the same money on two scales.
 
 --token reads one ERC-20: a symbol (USDC) from the gateway's token list for the
 chain, or a 0x address, whose symbol() and decimals() are read on-chain. --tokens
@@ -81,6 +82,9 @@ the native coin and the ERC-20 are both USDC).`,
 				return nil, err
 			}
 			view.Balances = rows
+			if _, ok := nativeERC20[chain.ChainID]; ok && balanceToken == "" && !balanceTokens {
+				view.Note = nativeERC20Note
+			}
 			return view, nil
 		}
 		if ui.IsQuiet() && !agentMode() {
@@ -102,6 +106,7 @@ type balanceView struct {
 	Chain     string       `json:"chain,omitempty"`
 	ChainName string       `json:"chain_name,omitempty"`
 	Balances  []balanceRow `json:"balances"`
+	Note      string       `json:"note,omitempty"`
 }
 
 // balanceRow is one asset's balance: "native" or the token's address, the raw value
@@ -200,6 +205,17 @@ func balanceReader(ctx context.Context) (*rail0.Blockchain, *chainread.Reader, e
 	return chain, reader, nil
 }
 
+// nativeERC20 is the ERC-20 interface of the gas coin, on the chains that have one:
+// Arc's USDC, mainnet (5042) and testnet (5042002), at the same address. Its balance
+// is the native balance at 6 decimals instead of 18.
+var nativeERC20 = map[int]string{
+	5042:    "0x3600000000000000000000000000000000000000",
+	5042002: "0x3600000000000000000000000000000000000000",
+}
+
+// nativeERC20Note is printed beside the two rows, so they do not read as two amounts.
+const nativeERC20Note = "on Arc the native USDC (18 decimals) and the USDC ERC-20 (6 decimals) are the same balance"
+
 // knownNativeSymbols names the gas coin of well-known chains, mainnets and their
 // testnets, for a chain the gateway does not list: --rpc-url on Arc mainnet (5042)
 // against a testnet environment printed "native" where the coin is USDC.
@@ -249,6 +265,14 @@ func readBalances(ctx context.Context, r *chainread.Reader, chain *rail0.Blockch
 			return nil, fmt.Errorf("fetch tokens: %w", err)
 		}
 		tokens = active
+	case balanceToken == "":
+		// On Arc the gas coin IS USDC, and the same balance is also the USDC ERC-20 at
+		// 6 decimals — the scale payments, the admin and the gateway use. Showing the
+		// native row alone (18 decimals) read as a different amount; the default shows
+		// both, one under the other.
+		if addr, ok := nativeERC20[chain.ChainID]; ok {
+			tokens = []rail0.Token{{Address: rail0.Address(addr), Symbol: "USDC", Decimals: 6, ChainID: chain.ChainID}}
+		}
 	case balanceToken != "" && !evmAddressPattern.MatchString(balanceToken):
 		addr, decimals, _, err := lookupTokenAddress(ctx, chain.ChainID, balanceToken)
 		if errors.Is(err, errNoTokensOnChain) {

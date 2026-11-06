@@ -20,8 +20,9 @@ reads from that node instead (its eth_chainId names the chain; --chain is then
 optional and, if passed, must agree).
 
 Default output is the native balance, in wei and in units (18 decimals, symbol from
-the chain). NOTE: on Arc the native gas token is USDC with 18 decimals, while the
-USDC ERC-20 (--token USDC) uses 6 — the same money, two different scales.
+the chain). On Arc, mainnet and testnet, the gas coin IS USDC: the default then also
+prints the USDC ERC-20 row (6 decimals, the scale payments use), with a note that
+the two rows are the same money on two scales.
 
 --token reads one ERC-20: a symbol (USDC) from the gateway's token list for the
 chain, or a 0x address, whose symbol() and decimals() are read on-chain. --tokens

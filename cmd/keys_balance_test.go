@@ -234,7 +234,7 @@ func TestKeysBalanceTokenSymbolOnAChainTheGatewayDoesNotServe(t *testing.T) {
 	if !errors.Is(err, errNoTokensOnChain) {
 		t.Fatalf("want errNoTokensOnChain, got %v", err)
 	}
-	for _, want := range []string{"does not serve that chain", "rail0 env", "0x address"} {
+	for _, want := range []string{"does not serve that chain", "--base-url", "0x address"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error %q lacks %q", err, want)
 		}

@@ -102,7 +102,7 @@ func lookupTokenAddress(ctx context.Context, chainID int, symbol string) (string
 		}
 	}
 	if len(syms) == 0 {
-		return "", 0, syms, fmt.Errorf("%w: %s — the gateway of this environment does not serve that chain (switch with 'rail0 env' or --base-url)", errNoTokensOnChain, chainLabel(chainID))
+		return "", 0, syms, fmt.Errorf("%w: %s — the gateway of this environment does not serve that chain (point --base-url at a gateway that does)", errNoTokensOnChain, chainLabel(chainID))
 	}
 	return "", 0, syms, fmt.Errorf("unknown token %q on %s — available: %s", symbol, chainLabel(chainID), strings.Join(syms, ", "))
 }

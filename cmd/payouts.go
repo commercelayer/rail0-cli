@@ -40,8 +40,13 @@ var (
 )
 
 var payoutsCmd = &cobra.Command{
-	Use:   "payouts",
-	Short: "Send a wallet's tokens to your own venue (lists when run bare; requires login)",
+	Use: "payouts",
+	// Hidden while payouts are not part of rail0's first phase: the gateway answers
+	// every payout route 404 unless RAIL0_FEATURE_PAYOUTS is on, so the commands stay
+	// out of help, completion and the reference docs. Still runnable when typed, for
+	// a gateway that has the feature on.
+	Hidden: true,
+	Short:  "Send a wallet's tokens to your own venue (lists when run bare; requires login)",
 	Long: `Pay out: move a merchant wallet's tokens to a deposit address at a venue of your
 own — an exchange account, Circle Mint, another wallet you control. Run bare to
 list the account's payouts.

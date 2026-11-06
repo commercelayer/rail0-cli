@@ -588,12 +588,12 @@ Switch a whole bundle of settings at once instead of setting each key by hand:
 | --- | --- | --- | --- | --- |
 | `development` | `http://localhost:9292` | `http://localhost:3000` | `arc` | `USDC` |
 | `staging` | `https://rail0-gateway-staging.fly.dev` | `https://rail0-admin-staging.fly.dev` | `arc` | `USDC` |
-| `production` | `https://api.rail0.xyz` | — | — | — |
+| `production` | `https://api.rail0.xyz` | — | `arc` | `USDC` |
 
-Production carries no admin URL, chain or token, and that is not an omission: the two other
-environments serve testnets, so Arc Testnet (4 confirmations, the quickest active one)
-is a safe default there, while the production chain set is a deployment decision —
-inventing one here would send a real payment to a chain nobody chose.
+`arc` is the same slug everywhere, and the environment's gateway decides which Arc it
+means: Arc Testnet on development and staging, **Arc mainnet** (5042) on production —
+rail0's production chain, accepting USDC and EURC. Production has no admin URL yet: the
+production admin has no domain, and an invented one would open the wrong app.
 
 ```sh
 rail0 env                 # list the environments, marking the current one
@@ -613,7 +613,7 @@ make the current gateway look like a different one.
 After a switch the environment-managed settings are **exactly** the target's: a key
 the target does not declare is **removed**, not left behind. Applying an environment
 used to only write its own keys, so moving from `development` to `production` — which
-declares base-url alone — kept `chain-id: 5042002` and `token: USDC` armed: the
+then declared base-url alone — kept `chain-id: 5042002` and `token: USDC` armed: the
 production gateway with an Arc Testnet default still loaded, inherited in silence
 because nothing wrote it at that moment.
 
@@ -622,8 +622,7 @@ and asks first**:
 
 ```
 Switching to "production" clears settings it does not define:
-  chain = arc
-  token = USDC
+  admin-url = http://localhost:3000
 Clear them and switch? [y/N]:
 ```
 
@@ -1857,6 +1856,8 @@ rail0 payments wait <rail0Id> --until captured
 ---
 
 ### Payouts
+
+> **Hidden for now.** Payouts are not part of rail0's first phase: the gateway answers every payout route `404 unknown_route` unless it runs with `RAIL0_FEATURE_PAYOUTS` on. So `rail0 payouts` is left out of `--help`, shell completion and the generated reference (`docs/cli`, `docs/man`). It still runs when typed, against a gateway that has the feature on, and everything below describes it as it is.
 
 Move a merchant wallet's tokens to a deposit address at a venue of your own — an exchange account, Circle Mint, another wallet you control. The gateway builds an unsigned ERC-20 `transfer` from the wallet to a registered **destination**; the CLI checks it is exactly that transfer (the destination's token and chain, its address, the amount, value 0, from your key's wallet) and signs it locally. The gateway never holds funds or keys and never talks to the venue. Every payout command needs a login; reads cover the whole account, writes act for the wallet you sign in with, which must be the destination's. A **deactivated account is read-only**: it cannot prepare, send or change payouts or destinations (`403 account_deactivated`).
 

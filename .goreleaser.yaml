@@ -84,6 +84,48 @@ changelog:
       - "^test:"
       - "^chore:"
 
+# Homebrew: a cask in commercelayer/homebrew-tap, so `brew install commercelayer/tap/rail0`
+# and `brew upgrade` work. A cask, not a formula: GoReleaser deprecated `brews` (it built
+# formulas out of prebuilt binaries, which Homebrew no longer wants in formulas).
+#
+# GoReleaser only WRITES the cask (dist/homebrew/Casks/rail0.rb); it never pushes it. The
+# release is still a draft at this point and its download URLs answer 404, so a cask
+# pushed now would hand `brew upgrade` a broken URL until the workflow publishes. The
+# workflow pushes the file to the tap after publishing (release.yml, "Update the Homebrew
+# tap"), with HOMEBREW_TAP_TOKEN; without that secret it skips the tap and the release
+# goes ahead.
+homebrew_casks:
+  - name: rail0
+    ids: [rail0]
+    repository:
+      owner: commercelayer
+      name: homebrew-tap
+    directory: Casks
+    skip_upload: true
+    homepage: "https://github.com/commercelayer/rail0-cli"
+    description: "Command-line client for the RAIL0 stablecoin payment gateway"
+    binaries: [rail0]
+    # The short alias `make install` and install.sh create, so every install path names
+    # the CLI the same way. A second binary stanza on the same file: Homebrew links it twice.
+    custom_block: |
+      binary "rail0", target: "r0"
+    completions:
+      bash: completions/rail0.bash
+      zsh: completions/_rail0
+      fish: completions/rail0.fish
+    manpages:
+      - man/man1/rail0.1
+    hooks:
+      post:
+        # The binary is not notarized, so macOS would quarantine it on download and
+        # refuse the first run ("cannot be opened because the developer cannot be
+        # verified"). Homebrew is the trust decision here; lift the flag it would set.
+        # install_steps is Homebrew's declarative DSL (GoReleaser >= 2.19), not Ruby.
+        install_steps: |
+          on_macos do
+            run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{ .StagedPath }}/rail0"]
+          end
+
 release:
   github:
     owner: commercelayer

@@ -30,7 +30,7 @@ rotate is reported rather than silently honoured. Keys are scoped to the payment
 ## Contents
 
 - [Requirements](#requirements)
-- [Installation](#installation) — [install script](#install-script-macos-and-linux--recommended) · [manual download](#manual-download-any-platform-windows-included) · [from source](#build-from-source-contributors) · [`rail0 update`](#updating-rail0-update) · [`rail0 init`](#guided-setup-rail0-init)
+- [Installation](#installation) — **[step by step for macOS, Linux and Windows](INSTALL.md)** · [install script](#install-script-macos-and-linux--recommended) · [manual download](#manual-download-any-platform-windows-included) · [from source](#build-from-source-contributors) · [`rail0 update`](#updating-rail0-update) · [`rail0 init`](#guided-setup-rail0-init)
 - [**Your first payment**](#your-first-payment) — the guided path
 - [Shell completion](#shell-completion)
 - [Configuration](#configuration) — [defaults](#persisted-defaults-config) · [`--chain`](#chains---chain-slugid) · [address book](#address-book-aliases) · [signing keys](#signing-keys-os-keychain) · [new wallet](#new-wallet-keys-generate) · [`balance`](#on-chain-balance-balance)
@@ -53,8 +53,12 @@ rotate is reported rather than silently honoured. Keys are scoped to the payment
 ## Installation
 
 Three ways to install a release, all the same static binary with nothing else to set
-up. Every release (see [Releasing](#releasing)) publishes them for macOS and Linux
-(amd64 and arm64) and Windows (amd64).
+up. Every release (see [Releasing](#releasing)) publishes it for macOS, Linux and
+Windows, each on amd64 and arm64.
+
+**Step-by-step instructions for each platform** — the install script, a manual download,
+PowerShell on Windows, macOS's quarantine flag, containers, updating and uninstalling —
+are in **[INSTALL.md](INSTALL.md)**. A summary follows.
 
 ### Install script (macOS and Linux) — recommended
 
@@ -80,8 +84,10 @@ It runs in any POSIX `sh`, including minimal containers. Optional variables:
 ### Manual download (any platform, Windows included)
 
 Grab the archive for your platform from
-[Releases](https://github.com/commercelayer/rail0-cli/releases). On Windows it is a
-`.zip`. Verify it against `checksums.txt` from the same release, then put `rail0` on
+[Releases](https://github.com/commercelayer/rail0-cli/releases): macOS, Linux and
+Windows, each for Intel/AMD (`amd64`) and ARM (`arm64`). On Windows it is a `.zip`; a
+PowerShell snippet that downloads, verifies and installs it is in
+[INSTALL.md](INSTALL.md#windows). Verify it against `checksums.txt` from the same release, then put `rail0` on
 your `PATH`.
 
 Each archive also carries the **shell completions** (`completions/`), the **man pages**

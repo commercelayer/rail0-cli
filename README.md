@@ -80,8 +80,8 @@ It runs in any POSIX `sh`, including minimal containers. Optional variables:
 ### Manual download (any platform, Windows included)
 
 Grab the archive for your platform from
-[Releases](https://github.com/commercelayer/rail0-cli/releases). On Windows it is a
-`.zip`. Verify it against `checksums.txt` from the same release, then put `rail0` on
+[Releases](https://github.com/commercelayer/rail0-cli/releases): macOS, Linux and
+Windows, each for Intel/AMD (`amd64`) and ARM (`arm64`). On Windows it is a `.zip`. Verify it against `checksums.txt` from the same release, then put `rail0` on
 your `PATH`.
 
 Each archive also carries the **shell completions** (`completions/`), the **man pages**

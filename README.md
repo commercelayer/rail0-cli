@@ -2067,7 +2067,10 @@ since the last tag. After the release merges, delete `milestone/next`, cut it ag
    It then bumps `VERSION`, writes the release notes from the pull
    requests merged since the last tag, and opens `chore(release): vX.Y.Z`. If `go.mod`
    requires an older rail0-go than the latest tag (or a pseudo-version) it says so and
-   offers the bump. `--dry-run`
+   offers the bump. Whenever the rail0-go that `go.mod` requires differs from the last
+   tag's — that bump, or a pull request that moved it without naming rail0-go in its title
+   — the release notes get `- **deps:** rail0-go vX.Y.Z (was vA.B.C)` first under
+   *Changed*. `--dry-run`
    prints all of it and writes nothing.
 
    **Or on a feature branch**, to release a change in the same review: run it on a clean

@@ -35,7 +35,7 @@ need uname
 case "$(uname -s)" in
   Darwin) os=darwin ;;
   Linux) os=linux ;;
-  *) fail "unsupported OS '$(uname -s)'. On Windows, download the .zip from $RELEASES_URL" ;;
+  *) fail "unsupported OS '$(uname -s)'. On Windows, see https://github.com/commercelayer/rail0-cli/blob/main/INSTALL.md#windows" ;;
 esac
 
 case "$(uname -m)" in

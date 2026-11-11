@@ -113,3 +113,6 @@ jobs:
       # a throwaway repository (no network, no GitHub), refusals and one full run included.
       - name: bin/release-prepare
         run: bin/release-prepare-test
+      # The CLI's own part of the script: the release notes' line for a rail0-go change.
+      - name: bin/release-prepare (rail0-go note)
+        run: bin/release-prepare-sdk-test

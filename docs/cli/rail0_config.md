@@ -6,14 +6,15 @@ Manage persisted CLI defaults (base-url, chain, token, output, http-timeout)
 
 Manage persisted CLI defaults stored in the config file.
 
-Run bare to list the settings that are SET, with each value and where it comes from
-(flag, env var or config file). A key that is set nowhere is not listed: it has no
-value, and the CLI does what the key reference below says for an unset key.
-Resolution precedence is: flag  >  env var  >  config file.
+Run bare to list the settings in effect, with each value and where it comes from:
+a flag, an env var, the config file, or the built-in default (base-url, chain and
+token have one, so they are always listed; admin-url, output and http-timeout only
+once set). Resolution precedence is: flag  >  env var  >  config file  >  default.
 
 A stored default fills in the matching flag when you omit it, so the chain and the
-token can be set once instead of on every command. 'rail0 env <name>' sets both in
-one shot along with the gateway.
+token can be set once instead of on every command: 'config set chain arc' and
+'config set token USDC' make every payment command use them until you pass -c/-t.
+'config unset' removes your value and the built-in default applies again.
 
 Addresses and signing keys are NOT settable here: use the alias book ('rail0 aliases
 add') and the OS keychain ('rail0 keys add', passed as @name), which already spare
@@ -36,11 +37,11 @@ rail0 config [flags]
 
 ```
   rail0 config
-  rail0 config set base-url http://localhost:9292
   rail0 config set chain arc
   rail0 config set token USDC
   rail0 config get chain
   rail0 config unset chain
+  rail0 config set output pretty
 ```
 
 ### Options
@@ -66,5 +67,5 @@ rail0 config [flags]
 * [rail0 config get](rail0_config_get.md)	 - Show a setting's value and origin; an unset key is an error
 * [rail0 config path](rail0_config_path.md)	 - Print the config file path
 * [rail0 config set](rail0_config_set.md)	 - Persist a setting to the config file
-* [rail0 config unset](rail0_config_unset.md)	 - Remove a setting from the config file
+* [rail0 config unset](rail0_config_unset.md)	 - Remove a setting from the config file (the built-in default, if any, applies again)
 

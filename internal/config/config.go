@@ -1,5 +1,6 @@
-// Package config manages the CLI's on-disk configuration: currently a global
-// address book (name → wallet address) referenced as "@name" on address flags.
+// Package config manages the CLI's on-disk configuration: the active environment
+// and its per-environment settings, the global settings, the address book (name →
+// wallet address, referenced as "@name" on address flags) and the keychain index.
 //
 // The file lives in the OS config dir (config.yaml). It is optional — every
 // command works without it. The JWT session token is NOT stored here; it stays
@@ -36,11 +37,53 @@ type Config struct {
 	// itself — and the only cost of a stale entry here is a wrong suggestion at
 	// the TAB key. Do not reintroduce a reader that treats it as truth. (#139)
 	Keys []string `yaml:"keys,omitempty"`
-	// Settings holds persisted CLI defaults (e.g. "base-url"), managed by the
-	// `config` command. Resolution precedence in the commands is
-	// flag > env > this file > built-in default. Only non-sensitive values are
-	// ever stored here — never private keys or tokens (CLAUDE.md rule 8).
+	// Environment names the ACTIVE environment (development, staging, production):
+	// the one every command resolves its per-environment settings against. Empty
+	// means production, which is what the published CLI talks to. Written by the
+	// environment switch, read by every command.
+	Environment string `yaml:"environment,omitempty"`
+	// Environments holds the per-environment settings the user has set
+	// (environments.<name>.<key>: base-url, admin-url, chain, token), managed by
+	// `config set` against the active environment. Only what the user changed is
+	// here — each environment's built-in defaults live in the binary and apply
+	// beneath these. Only non-sensitive values are ever stored here — never
+	// private keys or tokens (CLAUDE.md rule 8).
+	Environments map[string]map[string]string `yaml:"environments,omitempty"`
+	// Settings holds the persisted CLI defaults that are the same in every
+	// environment (output, http-timeout), managed by the `config` command.
+	// Resolution precedence in the commands is flag > env > this file > built-in
+	// default. Only non-sensitive values are ever stored here — never private keys
+	// or tokens (CLAUDE.md rule 8).
 	Settings map[string]string `yaml:"settings,omitempty"`
+}
+
+// EnvSetting returns the user's stored value of key for environment env, if any.
+func (c *Config) EnvSetting(env, key string) (string, bool) {
+	v, ok := c.Environments[env][key]
+	return v, ok && v != ""
+}
+
+// SetEnvSetting stores key=value for environment env, creating the maps as needed.
+func (c *Config) SetEnvSetting(env, key, value string) {
+	if c.Environments == nil {
+		c.Environments = map[string]map[string]string{}
+	}
+	if c.Environments[env] == nil {
+		c.Environments[env] = map[string]string{}
+	}
+	c.Environments[env][key] = value
+}
+
+// UnsetEnvSetting removes key from environment env, dropping an emptied block so the
+// file does not accumulate `staging: {}` entries.
+func (c *Config) UnsetEnvSetting(env, key string) {
+	delete(c.Environments[env], key)
+	if len(c.Environments[env]) == 0 {
+		delete(c.Environments, env)
+	}
+	if len(c.Environments) == 0 {
+		c.Environments = nil
+	}
 }
 
 // Path returns the config file path (config.yaml in the OS config dir).

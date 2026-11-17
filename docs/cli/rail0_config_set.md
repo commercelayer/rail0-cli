@@ -9,7 +9,7 @@ rail0 config set <key> <value> [flags]
 ### Examples
 
 ```
-  rail0 config set base-url http://localhost:9292
+  rail0 config set chain arc
 ```
 
 ### Options

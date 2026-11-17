@@ -17,6 +17,7 @@ import "charm.land/lipgloss/v2"
 //	 82 — green for a terminal success status (see StatusStyle)
 //	226 — bright yellow for a non-terminal `status` (high-visibility); terminal states use 82/203 (see StatusStyle)
 //	212 — pink for the loading spinner
+//	 73 — rail0.xyz accent green for the download bar
 //	238 — dim gray for the --pretty table separator
 //
 // LabelStyle.Width(22) pads every --pretty label to a fixed column so values
@@ -35,6 +36,10 @@ var (
 	SpinStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("212"))
 	HeaderStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Bold(true)
 	DimStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("238"))
+	// BarStyle fills the download bar ('rail0 update') with the rail0.xyz accent green:
+	// the site's dark-theme --accent #5cc0b2, as its nearest 256-colour index (73,
+	// #5fafaf) like every other style here, so terminals without truecolor show it too.
+	BarStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("73"))
 )
 
 // StatusStyle renders a resource's `status` value with a colour that mirrors the

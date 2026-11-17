@@ -59,7 +59,7 @@ func (p *ProgressBar) draw(done, total int64, now time.Time) {
 	if total > 0 {
 		frac := min(float64(done)/float64(total), 1)
 		filled := int(frac * float64(p.width))
-		b.WriteString(SpinStyle.Render(strings.Repeat("█", filled)))
+		b.WriteString(BarStyle.Render(strings.Repeat("█", filled)))
 		b.WriteString(DimStyle.Render(strings.Repeat("░", p.width-filled)))
 		fmt.Fprintf(&b, " %3d%%  %s/%s", int(frac*100), megabytes(done), megabytes(total))
 	} else {

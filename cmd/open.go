@@ -24,11 +24,10 @@ var paymentIDPattern = eventCallbackPaymentIDPattern
 
 // openCmd opens the admin app in the browser: its home, or one payment's page.
 //
-// The admin's address comes from the admin-url setting, or — when that is not set —
-// from the environment the gateway setting identifies (development and staging declare
-// one), so a config written before admin-url existed still works after `env staging`
-// without a second switch. Production declares none, for the reason production
-// declares no chain: an address nobody chose is not a default.
+// The admin's address is the admin-url setting, resolved like every per-environment
+// key: a flag-less value from RAIL0_ADMIN_URL, the config file, or the active
+// environment's default (development and staging have one). Production has none:
+// an address nobody chose is not a default.
 var openCmd = &cobra.Command{
 	Use:   "open [rail0Id|uuid]",
 	Short: "Open the admin app in the browser, on a payment's page when given its id",
@@ -39,9 +38,8 @@ rail0_id (0x…) or UUID — that payment's page.
 (it needs an admin session in the browser). --print only prints the URL, as it does
 when there is no terminal or with --agent, so a script can pass it on.
 
-The admin's address is the admin-url setting (RAIL0_ADMIN_URL), or else the one the
-current environment declares: development and staging have one, production does not
-— there, set it with 'rail0 config set admin-url https://…'.`,
+The admin's address is the admin-url setting (RAIL0_ADMIN_URL, or 'rail0 config set
+admin-url https://…'); without one the command says so.`,
 	Example: `  rail0 open                          # the admin's home page
   rail0 open 0xabc123…                # that payment's page
   rail0 open 0xabc123… --console      # the console's page for it (operators)
@@ -76,18 +74,13 @@ func init() {
 	openCmd.Flags().BoolVar(&openPrint, "print", false, "Only print the URL; do not open a browser")
 }
 
-// adminURL resolves the admin app's address: the admin-url setting when set, else the
-// current environment's declaration, else an error saying how to set one.
+// adminURL resolves the admin app's address: the admin-url setting (which includes
+// the active environment's default), else an error saying how to set one.
 func adminURL() (string, error) {
 	if v := configuredDefault("admin-url"); v != "" {
 		return strings.TrimRight(v, "/"), nil
 	}
-	if e, err := lookupEnv(detectEnv()); err == nil {
-		if v := e.settings["admin-url"]; v != "" {
-			return strings.TrimRight(v, "/"), nil
-		}
-	}
-	return "", errors.New("no admin-url for this environment — set one with 'rail0 config set admin-url https://…' (or RAIL0_ADMIN_URL)")
+	return "", errors.New("no admin-url is set — set one with 'rail0 config set admin-url https://…' (or RAIL0_ADMIN_URL)")
 }
 
 // adminPageURL builds the page to open: the admin's home for no id, else the payment's

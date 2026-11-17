@@ -24,17 +24,20 @@ func TestInitCommandContract(t *testing.T) {
 }
 
 // Stdin is not a terminal under `go test`, which is exactly the non-interactive case:
-// the error must name the four commands to run instead, since that is the information
-// a script needs.
+// the error must name the commands to run instead, since that is the information a
+// script needs — without the hidden `env`.
 func TestInitRefusesNonInteractively(t *testing.T) {
 	err := initCmd.RunE(initCmd, nil)
 	if err == nil {
 		t.Fatal("init must refuse when stdin is not a terminal, not wait on a prompt")
 	}
-	for _, want := range []string{"rail0 env", "rail0 keys add", "rail0 auth login"} {
+	for _, want := range []string{"rail0 health", "rail0 keys add", "rail0 auth login"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("the refusal should name %q; got: %v", want, err)
 		}
+	}
+	if strings.Contains(err.Error(), "rail0 env") {
+		t.Errorf("the refusal must not name the hidden env command; got: %v", err)
 	}
 }
 

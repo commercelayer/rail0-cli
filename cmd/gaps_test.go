@@ -377,7 +377,9 @@ func TestWalletTokensAdd(t *testing.T) {
 				}
 				return nil
 			}
-			if err := (&config.Config{Settings: map[string]string{"chain-id": "84532"}}).Save(); err != nil {
+			cfg := &config.Config{}
+			cfg.SetEnvSetting("production", "chain-id", "84532")
+			if err := cfg.Save(); err != nil {
 				t.Fatal(err)
 			}
 			resetTokenCatalog(t)

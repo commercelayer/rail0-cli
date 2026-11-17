@@ -21,22 +21,35 @@ func TestConfigPrecedenceAndOrigin(t *testing.T) {
 
 	k := configKeys["base-url"]
 
-	// Nothing set → the key has no value; the commands use the CLI's fallback.
-	if _, _, ok := configuredSetting(k); ok {
-		t.Fatal("unset key reported as set")
-	}
-	if v, origin := effectiveSetting(k); v != config.DefaultBaseURL || origin != originUnset {
+	// Nothing set → the active environment's (production's) default.
+	if v, origin := effectiveSetting(k); v != config.DefaultBaseURL || origin != "production default" {
 		t.Fatalf("unset: got %q (%s)", v, origin)
 	}
+	// A global key set nowhere has no value; the commands use the CLI's fallback.
+	if _, _, ok := configuredSetting(configKeys["http-timeout"]); ok {
+		t.Fatal("unset global key reported as set")
+	}
+	if v, origin := effectiveSetting(configKeys["http-timeout"]); v != "30" || origin != originUnset {
+		t.Fatalf("unset http-timeout: got %q (%s)", v, origin)
+	}
 
-	// Persisted in the config file → origin is the file.
+	// Persisted in the config file, in the active environment's block → origin is the file.
 	cfg, _ := config.Load()
-	cfg.Settings = map[string]string{"base-url": "http://localhost:9292"}
+	cfg.SetEnvSetting("production", "base-url", "http://localhost:9292")
 	if err := cfg.Save(); err != nil {
 		t.Fatal(err)
 	}
 	if v, origin := effectiveSetting(k); v != "http://localhost:9292" || origin != "config file" {
 		t.Errorf("file: got %q (%s)", v, origin)
+	}
+	// Another environment's block does not apply.
+	cfg.Environments = nil
+	cfg.SetEnvSetting("staging", "base-url", "http://localhost:9292")
+	if err := cfg.Save(); err != nil {
+		t.Fatal(err)
+	}
+	if v, origin := effectiveSetting(k); v != config.DefaultBaseURL || origin != "production default" {
+		t.Errorf("other environment's block applied: got %q (%s)", v, origin)
 	}
 
 	// Env var wins over the file.
@@ -136,14 +149,19 @@ func TestConfiguredDefaultIsEmptyWhenNothingWasSet(t *testing.T) {
 	t.Setenv("RAIL0_OUTPUT", "")
 	t.Setenv("RAIL0_HTTP_TIMEOUT", "")
 
-	for _, name := range []string{"output", "http-timeout", "chain-id", "token"} {
+	for _, name := range []string{"output", "http-timeout", "chain-id", "admin-url"} {
 		if got := configuredDefault(name); got != "" {
 			t.Errorf("configuredDefault(%q) = %q, want empty when unset", name, got)
 		}
 	}
+	// A per-environment key with a built-in default IS configured: the commands
+	// fill the flag with it.
+	if got := configuredDefault("token"); got != "USDC" {
+		t.Errorf("configuredDefault(token) = %q, want production's default", got)
+	}
 
 	cfg, _ := config.Load()
-	cfg.Settings = map[string]string{"chain-id": "5042002"}
+	cfg.SetEnvSetting("production", "chain-id", "5042002")
 	if err := cfg.Save(); err != nil {
 		t.Fatal(err)
 	}
@@ -164,17 +182,18 @@ func clearConfigEnv(t *testing.T) {
 	}
 }
 
-// A config key either is set, and then has a value, or it is not set at all. The
-// listing used to show every key with `default` and `modified` columns, including
-// an empty default for chain-id and token — keys that looked present without a value.
+// A config key either is in effect, and then has a value and an origin, or it is not
+// set at all. The listing used to show every key with `default` and `modified`
+// columns, including an empty default for chain-id — a key that looked present
+// without a value. The environment's defaults ARE values, listed with their origin.
 func TestConfigListShowsOnlyTheKeysThatAreSet(t *testing.T) {
 	clearConfigEnv(t)
 	cfg, _ := config.Load()
-	cfg.Settings = map[string]string{"chain-id": "5042002"}
+	cfg.SetEnvSetting("production", "chain-id", "5042002")
 	if err := cfg.Save(); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("RAIL0_TOKEN_SYMBOL", "USDC")
+	t.Setenv("RAIL0_TOKEN_SYMBOL", "EURC")
 
 	out := captureStdout(t, func() {
 		if err := configCmd.RunE(configCmd, nil); err != nil {
@@ -189,10 +208,11 @@ func TestConfigListShowsOnlyTheKeysThatAreSet(t *testing.T) {
 	for _, r := range rows {
 		got[r["key"].(string)] = r
 	}
-	if len(got) != 2 || got["chain-id"] == nil || got["token"] == nil {
-		t.Fatalf("want exactly chain-id and token, got %v", rows)
+	if len(got) != 4 || got["chain-id"] == nil || got["token"] == nil || got["chain"] == nil || got["base-url"] == nil {
+		t.Fatalf("want exactly base-url, chain, chain-id and token, got %v", rows)
 	}
-	if got["chain-id"]["origin"] != "config file" || got["token"]["origin"] != "env (RAIL0_TOKEN_SYMBOL)" {
+	if got["chain-id"]["origin"] != "config file" || got["token"]["origin"] != "env (RAIL0_TOKEN_SYMBOL)" ||
+		got["chain"]["origin"] != "production default" || got["token"]["value"] != "EURC" {
 		t.Errorf("origins: %v", rows)
 	}
 	for _, r := range rows {
@@ -207,14 +227,59 @@ func TestConfigListShowsOnlyTheKeysThatAreSet(t *testing.T) {
 func TestConfigGetOnAnUnsetKeyIsAnError(t *testing.T) {
 	clearConfigEnv(t)
 
-	err := configGetCmd.RunE(configGetCmd, []string{"token"})
-	if err == nil || !strings.Contains(err.Error(), "token is not set") ||
+	err := configGetCmd.RunE(configGetCmd, []string{"admin-url"})
+	if err == nil || !strings.Contains(err.Error(), "admin-url is not set") ||
 		!strings.Contains(err.Error(), "the matching flag must be passed") {
-		t.Errorf("token: got %v", err)
+		t.Errorf("admin-url: got %v", err)
 	}
-	err = configGetCmd.RunE(configGetCmd, []string{"base-url"})
-	if err == nil || !strings.Contains(err.Error(), "the CLI uses "+config.DefaultBaseURL) {
-		t.Errorf("base-url: got %v", err)
+	err = configGetCmd.RunE(configGetCmd, []string{"http-timeout"})
+	if err == nil || !strings.Contains(err.Error(), "the CLI uses 30") {
+		t.Errorf("http-timeout: got %v", err)
+	}
+	// A key with an environment default is never "not set".
+	if err := configGetCmd.RunE(configGetCmd, []string{"token"}); err != nil {
+		t.Errorf("token has a default: %v", err)
+	}
+}
+
+// `config set` / `config unset` on a per-environment key touch the ACTIVE
+// environment's block only; a global key goes in settings.
+func TestConfigSetAndUnsetFollowTheActiveEnvironment(t *testing.T) {
+	clearConfigEnv(t)
+	if err := (&config.Config{Environment: "staging"}).Save(); err != nil {
+		t.Fatal(err)
+	}
+	if err := configSetCmd.RunE(configSetCmd, []string{"token", "EURC"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := configSetCmd.RunE(configSetCmd, []string{"output", "quiet"}); err != nil {
+		t.Fatal(err)
+	}
+	cfg, _ := config.Load()
+	if cfg.Environments["staging"]["token"] != "EURC" || cfg.Settings["token"] != "" {
+		t.Errorf("token must be stored under staging, got %+v", cfg)
+	}
+	if cfg.Settings["output"] != "quiet" || cfg.Environments["staging"]["output"] != "" {
+		t.Errorf("output must be stored globally, got %+v", cfg)
+	}
+	if v, origin := effectiveSetting(configKeys["token"]); v != "EURC" || origin != originConfigFile {
+		t.Errorf("token = %q (%s)", v, origin)
+	}
+
+	// unset removes the stored value; the default applies again. A key only in
+	// effect through its default is not "set in the config file".
+	if err := configUnsetCmd.RunE(configUnsetCmd, []string{"token"}); err != nil {
+		t.Fatal(err)
+	}
+	if v, origin := effectiveSetting(configKeys["token"]); v != "USDC" || origin != "staging default" {
+		t.Errorf("after unset: token = %q (%s)", v, origin)
+	}
+	if err := configUnsetCmd.RunE(configUnsetCmd, []string{"token"}); err == nil {
+		t.Error("unsetting a key that is only defaulted must error")
+	}
+	cfg, _ = config.Load()
+	if len(cfg.Environments) != 0 {
+		t.Errorf("an emptied environment block must be dropped, got %v", cfg.Environments)
 	}
 }
 
@@ -222,7 +287,6 @@ func TestConfigGetOnAnUnsetKeyIsAnError(t *testing.T) {
 func TestConfigHelpSaysWhatHappensWhenAKeyIsNotSet(t *testing.T) {
 	for _, want := range []string{
 		"base-url",
-		"not set: the CLI uses " + config.DefaultBaseURL,
 		"chain-id",
 		"not set: the matching flag must be passed",
 		"http-timeout",
@@ -241,7 +305,7 @@ func TestCreateAnnouncesTheChainAndTokenItTookFromTheSettings(t *testing.T) {
 	clearConfigEnv(t)
 	seedChainCatalog(t, rail0.Blockchain{ChainID: 5042002, Name: "Arc Testnet"})
 	cfg, _ := config.Load()
-	cfg.Settings = map[string]string{"chain-id": "5042002"}
+	cfg.SetEnvSetting("production", "chain-id", "5042002")
 	if err := cfg.Save(); err != nil {
 		t.Fatal(err)
 	}

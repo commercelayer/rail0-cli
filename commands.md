@@ -10,7 +10,7 @@
 > **Tempi:** ogni operazione on-chain con `--wait` richiede **~1 minuto** su Arc.
 > Mentre aspetti, passa all'admin e fai vedere la transazione *in flight*.
 
-> La config CLI ha già `chain arc` (o il vecchio `chain-id 5042002`) e `token USDC`, quindi `-c` e `-t` si possono omettere.
+> La config CLI ha `chain arc` e `token USDC` di default, quindi `-c` e `-t` si possono omettere.
 
 ---
 
@@ -18,7 +18,7 @@
 
 ```bash
 rail0 --version   # deve essere v1.1.0-8-g1619963 o successiva (alias nei comandi wallets)
-rail0 env current
+rail0 config      # gateway staging, chain arc, token USDC
 rail0 health
 rail0 auth login -p @payee
 ```

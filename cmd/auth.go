@@ -28,9 +28,9 @@ Who actually needs this:
   merchants   yes. The action commands (authorize, capture, refund, …) and
               every account view read the session.
 
-The session is a JWT cached per gateway under the OS cache dir, so switching
-'rail0 env' switches session with it rather than logging you out. The token is
-never written to the config file. 'auth status' prints who you are and when it
+The session is a JWT cached per gateway under the OS cache dir, so changing the
+gateway changes session with it rather than logging you out. The token is never
+written to the config file. 'auth status' prints who you are and when it
 expires; 'rail0 token' prints the token itself.`,
 	Example: `  rail0 auth login -p @merchant-key
   rail0 auth status
@@ -205,7 +205,7 @@ is a normal reason to log out), and the outcome says which of the two happened.`
 		// Exit 0 even when the revocation failed, on purpose: the local credential IS
 		// gone, which is what the command was asked to do. The warning (stderr) is
 		// what the operator acts on; the result carries the same verdict for a
-		// script, with the vocabulary `env` uses for previous_session.
+		// script.
 		if revoked.Had && !revoked.Revoked {
 			ui.Notice("warning", map[string]any{"what": "token_not_revoked", "why": revoked.Why},
 				fmt.Sprintf("warning: the token was NOT revoked — %s", revoked.Why))
@@ -214,6 +214,63 @@ is a normal reason to log out), and the outcome says which of the two happened.`
 		// callers, and was the one command whose outcome a script could not read.
 		return ui.RunAPI(func() (any, error) { return logoutResult(baseURL, revoked), nil })
 	},
+}
+
+// sessionRevocation records what happened to the session `auth logout` ended, so
+// the command can report it instead of exiting silently.
+type sessionRevocation struct {
+	// Had is false when there was no stored session — the common case, and the
+	// reason the whole block must stay quiet rather than warn.
+	Had bool
+	// Revoked is true only when the gateway confirmed the denylist entry.
+	Revoked bool
+	// Why explains a Had-but-not-Revoked outcome (expired, unreachable, refused).
+	Why string
+}
+
+// revokeCurrentSession ends the session on the CURRENT gateway and removes the
+// local token, best-effort.
+//
+// Best-effort on purpose: logging out of a gateway that is DOWN is a normal thing
+// to want, and refusing because it will not answer would be the wrong trade. So
+// the local token is deleted either way — leaving a copy behind after asking to
+// log out is worse than an unrevoked one — and the outcome is reported so the
+// operator knows whether the old JWT is dead or merely abandoned.
+func revokeCurrentSession() sessionRevocation {
+	return revokeSession(resolveBaseURL())
+}
+
+// revokeSession is revokeCurrentSession for a named gateway — see newClientFor.
+func revokeSession(baseURL string) sessionRevocation {
+	stored := token.Load(baseURL)
+	if stored == "" {
+		return sessionRevocation{}
+	}
+	out := sessionRevocation{Had: true}
+
+	// An already-expired token needs no revocation: parseJWTClaims rejects one,
+	// so a nil error means the session is still live and worth killing.
+	if _, err := parseJWTClaims(stored); err != nil {
+		out.Why = "the stored session had already expired"
+	} else {
+		res, err := newClientFor(baseURL).Auth.Logout(context.Background())
+		switch {
+		case err != nil:
+			out.Why = fmt.Sprintf("could not reach %s to revoke it (%s)", baseURL, humanizeError(err))
+		case !res.Revoked:
+			// The gateway answered but could not record the revocation, so the
+			// JWT is still accepted until exp. Reported, never smoothed over.
+			out.Why = "the gateway could not record the revocation, so that token is valid until it expires"
+		default:
+			out.Revoked = true
+		}
+	}
+
+	// Local copy goes regardless of the above.
+	if err := token.Delete(baseURL); err != nil && out.Why == "" {
+		out.Why = fmt.Sprintf("could not remove the local token: %v", err)
+	}
+	return out
 }
 
 // logoutResult renders what `auth logout` did: session "none" (nothing was stored),

@@ -1,6 +1,6 @@
 ## rail0 config unset
 
-Remove a setting from the config file
+Remove a setting from the config file (the built-in default, if any, applies again)
 
 ```
 rail0 config unset <key> [flags]
@@ -9,7 +9,7 @@ rail0 config unset <key> [flags]
 ### Examples
 
 ```
-  rail0 config unset base-url
+  rail0 config unset chain
 ```
 
 ### Options

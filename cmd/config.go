@@ -17,7 +17,8 @@ import (
 
 // configKey describes a settable CLI default: its canonical name, the env var
 // that overrides the stored value, a description, what the CLI does when the key
-// is not set, and an optional validator for `config set`.
+// is not set, an optional validator for `config set`, and whether it is stored per
+// environment.
 //
 // `whenUnset` is NOT a value of the key. A key is either set (somewhere: config
 // file, env var, flag) and then has a value, or it is not set at all. What the CLI
@@ -31,6 +32,11 @@ type configKey struct {
 	desc      string
 	whenUnset func() string
 	validate  func(string) error
+	// perEnv keys are stored under environments.<active>.<key> in the config file,
+	// with the active environment's built-in default beneath (see environments in
+	// env.go). The others (output, http-timeout) are the user's own preferences,
+	// the same whichever gateway they are pointed at, and live in settings.
+	perEnv bool
 }
 
 // configKeys is the whitelist of settable keys. Only non-sensitive endpoint /
@@ -53,6 +59,7 @@ var configKeys = map[string]configKey{
 		desc:      "RAIL0 gateway base URL",
 		whenUnset: func() string { return config.DefaultBaseURL },
 		validate:  validateBaseURL,
+		perEnv:    true,
 	},
 	"chain": {
 		name:      "chain",
@@ -60,6 +67,7 @@ var configKeys = map[string]configKey{
 		desc:      "Default chain for --chain/-c: a slug (arc) or a chain id",
 		whenUnset: func() string { return "" },
 		validate:  validateChainRef,
+		perEnv:    true,
 	},
 	// The numeric predecessor of `chain`, still read (configuredChain) so configs and
 	// RAIL0_CHAIN_ID exports written before slugs keep working. `chain` wins when both
@@ -70,6 +78,7 @@ var configKeys = map[string]configKey{
 		desc:      "Legacy numeric default chain; superseded by chain",
 		whenUnset: func() string { return "" },
 		validate:  validatePositiveInt("chain-id"),
+		perEnv:    true,
 	},
 	"token": {
 		name: "token",
@@ -81,6 +90,7 @@ var configKeys = map[string]configKey{
 		desc:      "Default token symbol for --token/-t (e.g. USDC)",
 		whenUnset: func() string { return "" },
 		validate:  validateTokenSymbol,
+		perEnv:    true,
 	},
 	"admin-url": {
 		name:      "admin-url",
@@ -88,6 +98,7 @@ var configKeys = map[string]configKey{
 		desc:      "Admin app URL that 'rail0 open' opens",
 		whenUnset: func() string { return "" },
 		validate:  validateAdminURL,
+		perEnv:    true,
 	},
 	"output": {
 		name:      "output",
@@ -191,8 +202,8 @@ func validateOutputMode(v string) error {
 // transactions — so a plaintext endpoint puts all three on the wire in the clear,
 // and a typo'd or injected RAIL0_BASE_URL used to do that with no warning at all.
 // A local gateway is the one legitimate plaintext case, which is why loopback is
-// carved out rather than http:// being banned outright (`rail0 env development`
-// sets http://localhost:9292). (#62)
+// carved out rather than http:// being banned outright (the development
+// environment's gateway is http://localhost:9292). (#62)
 func validateBaseURL(v string) error {
 	u, err := url.Parse(v)
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
@@ -249,9 +260,38 @@ func effectiveSetting(k configKey) (value, origin string) {
 	return k.whenUnset(), originUnset
 }
 
-// configuredSetting resolves a key from the places it can be SET — flag > env >
-// config file — and reports whether it is set at all. No fallback: an unset key has
-// no value, which is what `rail0 config` lists and `config get` answers.
+// originRank orders the origins configuredSetting reports, highest first, so a caller
+// weighing two keys (configuredChain: chain against the legacy chain-id) can let the
+// one set in the higher-priority place win whatever the exact origin string says.
+func originRank(origin string) int {
+	switch {
+	case strings.HasPrefix(origin, "flag"):
+		return 3
+	case strings.HasPrefix(origin, "env"):
+		return 2
+	case origin == originConfigFile:
+		return 1
+	default:
+		return 0 // an environment's built-in default
+	}
+}
+
+// originConfigFile is the origin of a value stored in the config file — in the
+// active environment's block for a per-environment key, in settings otherwise.
+const originConfigFile = "config file"
+
+// envDefaultOrigin names the origin of an environment's built-in default.
+func envDefaultOrigin(env string) string { return env + " default" }
+
+// configuredSetting resolves a key from the places it can be SET — flag > env var >
+// config file > the active environment's built-in default — and reports whether it
+// is set at all. No CLI-wide fallback: a key set nowhere has no value, which is what
+// `rail0 config` lists and `config get` answers.
+//
+// A per-environment key (perEnv) is read from the active environment's block of the
+// config file, then from that environment's defaults: staging's chain is arc unless
+// `config set chain …` was run while staging was active. A global key is read from
+// settings and has no environment default.
 func configuredSetting(k configKey) (value, origin string, ok bool) {
 	// Only the two keys with a GLOBAL flag can be overridden per command this way.
 	// chain and token are overridden by per-command flags, which are not bound
@@ -277,8 +317,20 @@ func configuredSetting(k configKey) (value, origin string, ok bool) {
 	cfg, err := config.Load()
 	if err != nil {
 		warnConfigUnreadable(err)
-	} else if v := cfg.Settings[k.name]; v != "" {
-		return v, "config file", true
+		cfg = &config.Config{}
+	}
+	if !k.perEnv {
+		if v := cfg.Settings[k.name]; v != "" {
+			return v, originConfigFile, true
+		}
+		return "", "", false
+	}
+	env := activeEnvOf(cfg)
+	if v, ok := cfg.EnvSetting(env, k.name); ok {
+		return v, originConfigFile, true
+	}
+	if v, ok := envDefault(env, k.name); ok {
+		return v, envDefaultOrigin(env), true
 	}
 	return "", "", false
 }
@@ -320,24 +372,25 @@ var configCmd = &cobra.Command{
 	Short: "Manage persisted CLI defaults (base-url, chain, token, output, http-timeout)",
 	Long: `Manage persisted CLI defaults stored in the config file.
 
-Run bare to list the settings that are SET, with each value and where it comes from
-(flag, env var or config file). A key that is set nowhere is not listed: it has no
-value, and the CLI does what the key reference below says for an unset key.
-Resolution precedence is: flag  >  env var  >  config file.
+Run bare to list the settings in effect, with each value and where it comes from:
+a flag, an env var, the config file, or the built-in default (base-url, chain and
+token have one, so they are always listed; admin-url, output and http-timeout only
+once set). Resolution precedence is: flag  >  env var  >  config file  >  default.
 
 A stored default fills in the matching flag when you omit it, so the chain and the
-token can be set once instead of on every command. 'rail0 env <name>' sets both in
-one shot along with the gateway.
+token can be set once instead of on every command: 'config set chain arc' and
+'config set token USDC' make every payment command use them until you pass -c/-t.
+'config unset' removes your value and the built-in default applies again.
 
 Addresses and signing keys are NOT settable here: use the alias book ('rail0 aliases
 add') and the OS keychain ('rail0 keys add', passed as @name), which already spare
 you the retyping without making the parties or the signer implicit.`,
 	Example: `  rail0 config
-  rail0 config set base-url http://localhost:9292
   rail0 config set chain arc
   rail0 config set token USDC
   rail0 config get chain
-  rail0 config unset chain`,
+  rail0 config unset chain
+  rail0 config set output pretty`,
 	Args: cobra.NoArgs,
 	RunE: func(_ *cobra.Command, _ []string) error {
 		names := sortedConfigKeyNames()
@@ -358,7 +411,7 @@ you the retyping without making the parties or the signer implicit.`,
 var configSetCmd = &cobra.Command{
 	Use:     "set <key> <value>",
 	Short:   "Persist a setting to the config file",
-	Example: `  rail0 config set base-url http://localhost:9292`,
+	Example: `  rail0 config set chain arc`,
 	Args:    cobra.ExactArgs(2),
 	RunE: func(_ *cobra.Command, args []string) error {
 		key, value := args[0], args[1]
@@ -375,10 +428,17 @@ var configSetCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		if cfg.Settings == nil {
-			cfg.Settings = map[string]string{}
+		// A per-environment key goes in the ACTIVE environment's block, so the value
+		// follows the environment: a chain set while on staging is staging's, and
+		// production keeps its own.
+		if k.perEnv {
+			cfg.SetEnvSetting(activeEnvOf(cfg), key, value)
+		} else {
+			if cfg.Settings == nil {
+				cfg.Settings = map[string]string{}
+			}
+			cfg.Settings[key] = value
 		}
-		cfg.Settings[key] = value
 		if err := cfg.Save(); err != nil {
 			return err
 		}
@@ -410,22 +470,31 @@ var configGetCmd = &cobra.Command{
 
 var configUnsetCmd = &cobra.Command{
 	Use:     "unset <key>",
-	Short:   "Remove a setting from the config file",
-	Example: `  rail0 config unset base-url`,
+	Short:   "Remove a setting from the config file (the built-in default, if any, applies again)",
+	Example: `  rail0 config unset chain`,
 	Args:    cobra.ExactArgs(1),
 	RunE: func(_ *cobra.Command, args []string) error {
 		key := args[0]
-		if _, err := lookupKey(key); err != nil {
+		k, err := lookupKey(key)
+		if err != nil {
 			return err
 		}
 		cfg, err := loadConfigForWrite()
 		if err != nil {
 			return err
 		}
-		if _, ok := cfg.Settings[key]; !ok {
-			return fmt.Errorf("%q is not set in the config file", key)
+		if k.perEnv {
+			env := activeEnvOf(cfg)
+			if _, ok := cfg.EnvSetting(env, key); !ok {
+				return fmt.Errorf("%q is not set in the config file", key)
+			}
+			cfg.UnsetEnvSetting(env, key)
+		} else {
+			if _, ok := cfg.Settings[key]; !ok {
+				return fmt.Errorf("%q is not set in the config file", key)
+			}
+			delete(cfg.Settings, key)
 		}
-		delete(cfg.Settings, key)
 		if err := cfg.Save(); err != nil {
 			return err
 		}

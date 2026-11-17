@@ -59,7 +59,7 @@ func fakeArcNode(t *testing.T) *httptest.Server {
 func resetKeysBalanceFlags(t *testing.T) {
 	t.Helper()
 	t.Cleanup(func() {
-		keysBalanceChainID, keysBalanceRPCURL, keysBalanceToken, keysBalanceTokens = 0, "", "", false
+		balanceChainID, balanceRPCURL, balanceToken, balanceTokens = 0, "", "", false
 	})
 }
 
@@ -86,8 +86,8 @@ func TestKeysBalanceReadsThroughTheGatewaysPublicRPC(t *testing.T) {
 		PublicRPCURLs: []string{"http://127.0.0.1:1/down", node.URL}})
 	seedArcTokens(t)
 
-	keysBalanceChainID = 5042002
-	keysBalanceTokens = true
+	balanceChainID = 5042002
+	balanceTokens = true
 	chain, reader, err := balanceReader(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -115,8 +115,8 @@ func TestKeysBalanceRPCURLNamesTheChainAndMustAgreeWithChain(t *testing.T) {
 	defer node.Close()
 	seedChainCatalog(t)
 
-	keysBalanceRPCURL = node.URL
-	keysBalanceToken = arcUSDC // not in any catalog: described on-chain
+	balanceRPCURL = node.URL
+	balanceToken = arcUSDC // not in any catalog: described on-chain
 	chain, reader, err := balanceReader(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -130,17 +130,22 @@ func TestKeysBalanceRPCURLNamesTheChainAndMustAgreeWithChain(t *testing.T) {
 		t.Errorf("on-chain token row = %+v, %v", rows, err)
 	}
 
-	keysBalanceChainID = 84532
+	balanceChainID = 84532
 	if _, _, err := balanceReader(context.Background()); err == nil || !isUsageError(err) {
 		t.Errorf("a --chain disagreeing with the node must be refused, got %v", err)
 	}
 }
 
-func TestKeysBalanceNeedsAChain(t *testing.T) {
+// Without --chain the environment's default chain applies (every environment has
+// one), resolved against the gateway: a gateway that does not list it is an error
+// naming the default and where it came from, not a bare "--chain is required".
+func TestKeysBalanceWithoutAChainUsesTheDefault(t *testing.T) {
 	clearConfigEnv(t)
 	resetKeysBalanceFlags(t)
-	if _, _, err := balanceReader(context.Background()); err == nil || !strings.Contains(err.Error(), "--chain is required") {
-		t.Errorf("want the chain-required error, got %v", err)
+	seedChainCatalog(t)
+	_, _, err := balanceReader(context.Background())
+	if err == nil || !strings.Contains(err.Error(), `default chain "arc" (production default)`) {
+		t.Errorf("want the default chain named, got %v", err)
 	}
 }
 
@@ -148,7 +153,7 @@ func TestKeysBalanceChainWithoutRPCEndpoints(t *testing.T) {
 	clearConfigEnv(t)
 	resetKeysBalanceFlags(t)
 	seedChainCatalog(t, rail0.Blockchain{ChainID: 5042002, Slug: "arc", Name: "Arc Testnet"})
-	keysBalanceChainID = 5042002
+	balanceChainID = 5042002
 	if _, _, err := balanceReader(context.Background()); err == nil || !strings.Contains(err.Error(), "--rpc-url") {
 		t.Errorf("want a pointer to --rpc-url, got %v", err)
 	}
@@ -260,7 +265,7 @@ func TestKeysBalanceTokenSymbolOnAChainTheGatewayDoesNotServe(t *testing.T) {
 	}
 	defer reader.Close()
 
-	keysBalanceToken = "USDC"
+	balanceToken = "USDC"
 	_, err = readBalances(context.Background(), reader, &rail0.Blockchain{ChainID: 5042}, common.Address{})
 	if !errors.Is(err, errNoTokensOnChain) {
 		t.Fatalf("want errNoTokensOnChain, got %v", err)

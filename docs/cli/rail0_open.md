@@ -11,9 +11,8 @@ rail0_id (0x…) or UUID — that payment's page.
 (it needs an admin session in the browser). --print only prints the URL, as it does
 when there is no terminal or with --agent, so a script can pass it on.
 
-The admin's address is the admin-url setting (RAIL0_ADMIN_URL), or else the one the
-current environment declares: development and staging have one, production does not
-— there, set it with 'rail0 config set admin-url https://…'.
+The admin's address is the admin-url setting (RAIL0_ADMIN_URL, or 'rail0 config set
+admin-url https://…'); without one the command says so.
 
 ```
 rail0 open [rail0Id|uuid] [flags]

@@ -153,10 +153,10 @@ func init() {
 	)
 	assignGroup(groupPayments, paymentsCmd, payoutsCmd, openCmd)
 	assignGroup(groupAccount, authCmd, tokenCmd, accountCmd, walletsCmd, paymentMethodsCmd, webhooksCmd, analyticsCmd, disputesCmd)
-	assignGroup(groupCatalog, chainsCmd, tokensCmd, healthCmd)
+	assignGroup(groupCatalog, chainsCmd, tokensCmd, balanceCmd, healthCmd)
 	assignGroup(groupLocal, initCmd, configCmd, envCmd, aliasesCmd, keysCmd)
 
-	rootCmd.AddCommand(paymentsCmd, payoutsCmd, accountCmd, walletsCmd, paymentMethodsCmd, webhooksCmd, chainsCmd, tokensCmd, authCmd, healthCmd, aliasesCmd, keysCmd, configCmd, envCmd, disputesCmd, analyticsCmd, openCmd)
+	rootCmd.AddCommand(paymentsCmd, payoutsCmd, accountCmd, walletsCmd, paymentMethodsCmd, webhooksCmd, chainsCmd, tokensCmd, balanceCmd, authCmd, healthCmd, aliasesCmd, keysCmd, configCmd, envCmd, disputesCmd, analyticsCmd, openCmd)
 }
 
 // Help groups. `completion`, `help`, `update` and `version` deliberately have none:
@@ -192,9 +192,8 @@ func newClient() *rail0.Client {
 	return newClientFor(resolveBaseURL())
 }
 
-// newClientFor is newClient for a named gateway rather than the current one — for the
-// one call that must reach a gateway the configuration has already moved away from:
-// revoking the session `env` just left.
+// newClientFor is newClient for a named gateway rather than the current one, so a
+// session can be revoked on exactly the gateway it belongs to (revokeSession).
 func newClientFor(baseURL string) *rail0.Client {
 	opts := rail0.ClientOptions{
 		BaseURL: baseURL,
@@ -474,8 +473,8 @@ func resolveAccountID(explicit string) (string, error) {
 
 // resolveBaseURL picks the API base URL. Precedence:
 // --base-url flag > RAIL0_BASE_URL env > config file (`config set base-url`) >
-// config.DefaultBaseURL. Single source of truth shared with the `config`
-// command via effectiveSetting.
+// the active environment's default (production's is config.DefaultBaseURL). Single
+// source of truth shared with the `config` command via effectiveSetting.
 //
 // Deliberately does NOT validate: `rail0 config` has to be able to DISPLAY a bad
 // value so the user can see what is wrong with it. Validation happens in
@@ -487,8 +486,8 @@ func resolveBaseURL() string {
 
 // Command trees that never build a gateway client, and are therefore exempt from
 // base-url validation. This exemption is the point, not an oversight: these are the
-// tools used to INSPECT and REPAIR a bad base URL (`rail0 config`, `rail0 env
-// development`), so failing them on the very value they exist to fix would lock the
+// tools used to INSPECT and REPAIR a bad base URL (`rail0 config`, and the hidden
+// `rail0 env`), so failing them on the very value they exist to fix would lock the
 // CLI out of its own recovery path. Verified against the newClient() call sites —
 // none of these trees has one.
 //
@@ -517,7 +516,7 @@ func topLevelName(cmd *cobra.Command) string {
 // checkBaseURL validates the base URL a command is about to talk to, before it can
 // send anything. Attached as the root PersistentPreRunE, so it covers ALL four
 // resolution paths at once — flag, env var, config file, built-in default — which
-// is what validateBaseURL being wired only to `config set` / `env switch` used to
+// is what validateBaseURL being wired only to `config set` used to
 // miss: --base-url and RAIL0_BASE_URL reached the client entirely unchecked.
 func checkBaseURL(cmd *cobra.Command) error {
 	if localOnlyCommands[topLevelName(cmd)] {

@@ -177,9 +177,8 @@ func (f *createPaymentFlags) addTo(cmd *cobra.Command) {
 	_ = cmd.RegisterFlagCompletionFunc("to", completeAliasNames)
 }
 
-// applyConfiguredDefaults fills the chain and the token from the stored defaults
-// (`config set …`, or `rail0 env <name>` for both at once) when the caller omitted
-// them.
+// applyConfiguredDefaults fills the chain and the token from the configured defaults
+// (`config set …`, or the environment's built-in ones) when the caller omitted them.
 //
 // Only those two. --amount is the one field that differs every time, and a default
 // there would silently price a payment; --description is the reconciliation
@@ -216,7 +215,7 @@ func (f *createPaymentFlags) applyConfiguredDefaults() error {
 
 // noteConfiguredDefaults says, on stderr, which values the command took from the
 // stored settings rather than from its flags. Without it a chain set once with
-// `config set chain-id` (or by `rail0 env`) was used silently, and a refusal such as
+// `config set chain-id` (or an environment's default) was used silently, and a refusal such as
 // "the merchant does not accept that token on that chain" named a chain the user had
 // never typed. Quiet mode stays quiet, like the sign-in note.
 func (f *createPaymentFlags) noteConfiguredDefaults() {

@@ -328,3 +328,16 @@ func TestManagedByRecognisesHomebrew(t *testing.T) {
 		t.Error("wrong upgrade command")
 	}
 }
+
+// A build stamped by its package manager is managed wherever the binary sits — a
+// homebrew-core formula can be installed under any prefix.
+func TestManagedByHonoursTheBuildStamp(t *testing.T) {
+	t.Cleanup(func() { Packager = "" })
+	if got := ManagedBy("/usr/local/bin/rail0"); got != "" {
+		t.Fatalf("unstamped, outside Homebrew: ManagedBy = %q, want \"\"", got)
+	}
+	Packager = "Homebrew"
+	if got := ManagedBy("/usr/local/bin/rail0"); got != "Homebrew" {
+		t.Fatalf("stamped: ManagedBy = %q, want Homebrew", got)
+	}
+}

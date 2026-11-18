@@ -8,7 +8,7 @@
 #   2. a reviewer approves it and it is merged;
 #   3. this workflow, on that push to main: plan → gate (ci.yml on the release commit,
 #      against the go.mod rail0-go tag) → tag vX.Y.Z → GoReleaser (binaries + a draft
-#      release) → publish the release → Slack.
+#      release) → publish the release → Homebrew tap → Slack.
 #
 # Why on merge, not on a pushed tag: a tag pushed from a laptop was the release, with no
 # review and no CI on that commit. Now the reviewed pull request IS the release, and the
@@ -20,6 +20,10 @@
 # The release commit is the one that SET the version (the release PR's merge), found from
 # history, not the head of main: a resume after other merges still ships exactly the
 # reviewed commit.
+#
+# Homebrew: GoReleaser writes the cask, and the publish job pushes it to
+# commercelayer/homebrew-tap after the release is published, with the optional secret
+# HOMEBREW_TAP_TOKEN (see "Update the Homebrew tap").
 #
 # rail0-go comes from the Go module proxy at the version go.mod requires. The plan
 # refuses a pseudo-version or a version with no rail0-go tag, so a release always builds
@@ -284,6 +288,37 @@ jobs:
       # binary and checksums.txt in place, so `rail0 update` never sees half a release.
       - name: Publish the GitHub release
         run: gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false
+
+      # The cask GoReleaser wrote (dist/homebrew/Casks/rail0.rb), pushed only now that the
+      # release is published and its download URLs answer: `brew upgrade` never sees a
+      # cask pointing at a draft. Optional: without HOMEBREW_TAP_TOKEN (a fine-grained PAT
+      # with `contents: read and write` on commercelayer/homebrew-tap) the release stands
+      # and the tap keeps its previous version. Re-running is harmless: an unchanged cask
+      # commits nothing.
+      - name: Update the Homebrew tap
+        env:
+          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "$TAP_TOKEN" ]; then
+            echo "::warning::HOMEBREW_TAP_TOKEN is not set: commercelayer/homebrew-tap was not updated to $TAG"
+            exit 0
+          fi
+          cask=dist/homebrew/Casks/rail0.rb
+          [ -f "$cask" ] || { echo "::error::GoReleaser wrote no $cask"; exit 1; }
+          tap="$RUNNER_TEMP/homebrew-tap"
+          git clone --quiet --depth 1 "https://x-access-token:${TAP_TOKEN}@github.com/commercelayer/homebrew-tap.git" "$tap"
+          mkdir -p "$tap/Casks"
+          cp "$cask" "$tap/Casks/rail0.rb"
+          cd "$tap"
+          git add Casks/rail0.rb
+          if git diff --cached --quiet; then
+            echo "The tap already has rail0 $VERSION"
+            exit 0
+          fi
+          git -c user.name=rail0-release-bot -c user.email=noreply@github.com commit --quiet -m "rail0 $VERSION"
+          git push --quiet origin HEAD
+          echo "- Homebrew: commercelayer/homebrew-tap updated to rail0 $VERSION" >>"$GITHUB_STEP_SUMMARY"
 
   announce:
     name: Slack message

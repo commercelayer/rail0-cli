@@ -42,9 +42,63 @@ write_version() { # OLD NEW
   printf '%s\n' "$2" >VERSION
 }
 
+# Run by the shared part below, right before the version bump (dry: before printing what
+# it would do): the rail0-go check, then the line the release notes owe that bump.
+preflight_checks() { # dry|real
+  sdk_preflight "$1"
+  sdk_release_note
+}
+
+# Which rail0-go a go.mod requires: the working tree's, or the one in REV (a tag).
+sdk_required() { # [REV]
+  local src
+  if [ -n "${1:-}" ]; then src="$(git show "$1:go.mod" 2>/dev/null)" || return 0; else src="$(cat go.mod)"; fi
+  printf '%s\n' "$src" | awk -v m="$SDK_MODULE" '
+    $1 == m && $2 ~ /^v/ { print $2; exit }
+    $1 == "require" && $2 == m { print $3; exit }
+  '
+}
+
+# The rail0-go the CLI is built with is part of what a release ships, so when it changed
+# since the last tag — the bump offered below, or a pull request that moved it — the
+# release notes say so: "- **deps:** rail0-go v1.10.1 (was v1.10.0)" under "### Changed".
+# The bump below is a commit of this script, not a pull request, so without this line
+# nothing in the notes would tell it. A merged pull request
+# whose title already names rail0-go speaks for itself: no second line. It is worked out
+# from git, so a re-run (the branch already bumped) writes the same line again.
+#
+# It rewrites the shared part's pr_body in place (between the release-notes markers),
+# which the run then writes into the pull request.
+sdk_release_note() {
+  local before now entry
+  [ -n "${last_tag:-}" ] || return 0
+  before="$(sdk_required "$last_tag")"
+  now="$(sdk_required)"
+  [ -n "$before" ] && [ -n "$now" ] && [ "$before" != "$now" ] || return 0
+  if printf '%s\n%s\n' "${prs:-}" "${branch_prs:-}" | grep -qi 'rail0-go'; then return 0; fi
+  entry="- **deps:** rail0-go ${now} (was ${before})"
+  pr_body="$(printf '%s\n' "$pr_body" | sdk_note_into_body "$entry")"
+}
+
+# Puts ENTRY first under "### Changed" between the release-notes markers, adding that
+# section (after "### Added", before the rest) when there is none, and replacing the "no
+# pull requests merged" placeholder when that was all the notes had.
+sdk_note_into_body() { # ENTRY  (body on stdin)
+  awk -v entry="$1" '
+    /<!-- release-notes:start -->/ { innotes = 1; print; next }
+    innotes && !done && /^### Changed$/ { print; getline; print; print entry; done = 1; next }
+    innotes && !done && /^_No pull requests merged/ { print "### Changed"; print ""; print entry; print ""; done = 1; next }
+    innotes && !done && (/^### (Fixed|Removed)$/ || /^\*\*Full diff:\*\*/ || /<!-- release-notes:end -->/) {
+      print "### Changed"; print ""; print entry; print ""; done = 1
+    }
+    /<!-- release-notes:end -->/ { innotes = 0 }
+    { print }
+  '
+}
+
 # The release workflow builds against EXACTLY the rail0-go tag go.mod requires, and
 # refuses a pseudo-version. Catch both here, before the pull request, and offer the bump.
-preflight_checks() { # dry|real
+sdk_preflight() { # dry|real
   local mode="$1" required latest t v answer
   required="$(awk -v m="$SDK_MODULE" '
     $1 == m && $2 ~ /^v/ { print $2; exit }

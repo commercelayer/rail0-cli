@@ -20,12 +20,12 @@ import "charm.land/lipgloss/v2"
 //	 73 — rail0.xyz accent green for the download bar
 //	238 — dim gray for the --pretty table separator
 //
-// LabelStyle.Width(22) pads every --pretty label to a fixed column so values
-// align vertically. Increase the constant if a new response field exceeds 20
-// chars.
+// LabelStyle carries no width: the --pretty key-value view pads each label to the
+// longest name beside it (printMap). A fixed width wrapped every longer name onto a
+// second line, in the middle of the word.
 var (
 	KeyStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("81"))
-	LabelStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Width(22)
+	LabelStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
 	HexStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("75"))
 	StringStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
 	NumberStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("215"))

@@ -120,7 +120,7 @@ var webhooksListCmd = &cobra.Command{
 			if err != nil {
 				return nil, err
 			}
-			return paged(resp.Data, resp.Meta), nil
+			return paged(table(resp.Data, webhookColumns), resp.Meta), nil
 		})
 	},
 }
@@ -406,7 +406,7 @@ with --page / --per-page.`,
 			if err != nil {
 				return nil, err
 			}
-			return paged(resp.Data, resp.Meta), nil
+			return paged(table(resp.Data, eventCallbackColumns), resp.Meta), nil
 		})
 	},
 }

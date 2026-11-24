@@ -2040,7 +2040,23 @@ Every command prints the gateway response with all fields the gateway returns.
 
 **Plain JSON (`--json` or piped):** strict, valid indented JSON with no ANSI colour on stdout, suitable for `jq` and shell pipelines.
 
-**Pretty (`--pretty`):** a key-value (single record) or table (list) view with the same highlighting, as an alternative terminal layout. Terminal only — piping still emits plain JSON.
+**Pretty (`--pretty`):** the view for reading rather than parsing: a table for a list, key-value rows for one record, with the same highlighting. Terminal only — piping still emits plain JSON. `rail0 config set output pretty` makes it the default.
+
+- **A list shows the columns worth scanning, not every field.** Payments: id, status, amount (in token units), token (by symbol), payer and payee (shortened, `0x2D2B…57D5`), created, chain, description. Transactions, a payment's history, disputes, wallets, webhooks, delivery attempts and chains have their own; any other list gets one column per field, minus the fields holding nested objects. Timestamps are UTC, to the minute.
+
+  ```
+    ID                                    STATUS              AMOUNT  TOKEN  PAYER        PAYEE        CREATED
+    ────────────────────────────────────  ──────────────────  ──────  ─────  ───────────  ───────────  ────────────────
+    01a16403-398f-7f15-a8e5-8a9b78900e1a  partially_captured     2.5  USDC   0xe3DD…94c4  0x2D2B…57D5  2026-10-22 14:28
+    01a16316-39ee-749b-ae23-7e7ad0460946  signed                   1  USDC   0xe3DD…94c4  0x2D2B…57D5  2026-10-22 10:09
+
+    not shown: chain, description — --json has every field
+    page 1 of 35, 70 in all — next: --page 2
+  ```
+
+- **The table fits the terminal.** Free text (a description, a URL) is cut first, ending in `…`; if that is not enough, columns are dropped from the right, least important first, and a line under the table names them. A wider terminal shows more.
+- **Nothing is lost.** The columns exist in this view only: `--json`, `--quiet`, a pipe and agent mode print every field of every row, as before. The full value of a shortened address or hash is in the record's own view (`payments get <id> --pretty`) and in `--json`. The token and chain columns read the gateway's catalogues, at most one request each per command, and only when the table is drawn.
+- **One record** is a row per field, the values aligned on the longest name.
 
 ```sh
 # Extract the rail0_id of a freshly created payment

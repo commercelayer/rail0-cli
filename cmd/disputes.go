@@ -53,7 +53,7 @@ of ONE payment.`,
 			if err != nil {
 				return nil, err
 			}
-			return paged(resp.Data, resp.Meta), nil
+			return paged(table(resp.Data, accountDisputeColumns), resp.Meta), nil
 		})
 	},
 }

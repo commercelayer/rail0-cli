@@ -311,7 +311,7 @@ decimals.`,
 			// Humanized like --all and `payments get`: one page used to come back raw
 			// (base units, no *_human fields), so the same command changed shape with a
 			// flag that should only change how many rows it fetches.
-			return paged(humanizeAll(ctx, resp.Data), resp.Meta), nil
+			return paged(table(humanizeAll(ctx, resp.Data), paymentColumns), resp.Meta), nil
 		})
 	},
 }
@@ -397,7 +397,7 @@ func fetchAllPayments(ctx context.Context, client *rail0.Client, p rail0.ListPay
 	if err != nil {
 		return nil, err
 	}
-	return wholeList(humanizeAll(ctx, all), len(all)), nil
+	return wholeList(table(humanizeAll(ctx, all), paymentColumns), len(all)), nil
 }
 
 // fetchAllPaymentsRaw is fetchAllPayments without the humanizing, for the CSV. PerPage
@@ -481,7 +481,7 @@ them: '--status submitting,submitted' is what is on its way to the chain.`,
 				return nil, err
 			}
 			// amount_human beside each raw amount, like every payment view.
-			return paged(humanizeTransactions(ctx, client, id, resp.Data), resp.Meta), nil
+			return paged(table(humanizeTransactions(ctx, client, id, resp.Data), transactionColumns), resp.Meta), nil
 		})
 	},
 }
@@ -1593,7 +1593,7 @@ var paymentsDisputesCmd = &cobra.Command{
 			if err != nil {
 				return nil, err
 			}
-			return paged(resp.Data, resp.Meta), nil
+			return paged(table(resp.Data, disputeColumns), resp.Meta), nil
 		})
 	},
 }

@@ -42,7 +42,7 @@ timeline is readable only by the payment's payer or payee.`,
 			if err != nil {
 				return nil, err
 			}
-			return paymentHistory(ctx, payment), nil
+			return table(paymentHistory(ctx, payment), historyColumns), nil
 		})
 	},
 }

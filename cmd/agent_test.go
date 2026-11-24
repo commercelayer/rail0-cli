@@ -1,13 +1,16 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -119,6 +122,45 @@ func TestAgentErrorPayloadRetryable(t *testing.T) {
 	server := &rail0.APIError{Status: 500, Code: "internal_error"}
 	if e := agentErrorPayload(nil, server, exitCode(server))["error"].(map[string]any); e["retryable"] != false {
 		t.Errorf("500 = %v", e)
+	}
+}
+
+// A gateway that was never reached saw nothing, so the same command is safe again; a
+// timeout is not that — the request may have arrived — and stays not retryable.
+func TestAgentNetworkErrorRetryableOnlyWhenNothingArrived(t *testing.T) {
+	for name, c := range map[string]struct {
+		err  error
+		want bool
+	}{
+		"host does not resolve": {&net.DNSError{Err: "no such host", Name: "gateway.invalid", IsNotFound: true}, true},
+		"connection refused":    {&net.OpError{Op: "dial", Net: "tcp", Err: syscall.ECONNREFUSED}, true},
+		"wrapped by the SDK":    {fmt.Errorf("rail0: do request: %w", errors.New("dial tcp 127.0.0.1:9: connect: connection refused")), true},
+		"timeout":               {fmt.Errorf("rail0: do request: %w", context.DeadlineExceeded), false},
+	} {
+		code := exitCode(c.err)
+		e := agentErrorPayload(nil, c.err, code)["error"].(map[string]any)
+		if code != 9 || e["code"] != "network_error" {
+			t.Errorf("%s: exit %d code %v, want 9 network_error", name, code, e["code"])
+		}
+		if e["retryable"] != c.want {
+			t.Errorf("%s: retryable = %v, want %v", name, e["retryable"], c.want)
+		}
+	}
+	if neverReachedGateway(nil) || neverReachedGateway(&rail0.APIError{Status: 500}) {
+		t.Error("an answer from the gateway is not 'never reached'")
+	}
+}
+
+// 'auth status' spells the address like 'auth login' does (EIP-55), not in the lower
+// case the token carries.
+func TestChecksumAddress(t *testing.T) {
+	if got := checksumAddress("0x2d2b3d4e72370a7256633d426518a372a53557d5"); got != "0x2D2B3d4E72370A7256633D426518a372a53557D5" {
+		t.Errorf("got %v", got)
+	}
+	for _, v := range []any{"", "not an address", nil, 42} {
+		if got := checksumAddress(v); got != v {
+			t.Errorf("checksumAddress(%v) = %v, want it unchanged", v, got)
+		}
 	}
 }
 

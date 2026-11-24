@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	rail0 "github.com/commercelayer/rail0-go"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/rail0/cli/internal/token"
 	"github.com/rail0/cli/internal/ui"
 	"github.com/spf13/cobra"
@@ -184,7 +185,7 @@ useful when several environments are in play, or to remove one by hand.`,
 		expiresAt, expiresIn := tokenExpiry(claims)
 		return ui.RunAPI(func() (any, error) {
 			return map[string]any{
-				"address":    claims["sub"],
+				"address":    checksumAddress(claims["sub"]),
 				"account_id": claims["account_id"],
 				"expires_at": expiresAt,
 				"expires_in": expiresIn,
@@ -192,6 +193,19 @@ useful when several environments are in play, or to remove one by hand.`,
 			}, nil
 		})
 	},
+}
+
+// checksumAddress renders a session's address the way 'auth login' prints it: in the
+// EIP-55 mixed case. The token carries it in lower case, so 'auth status' showed the
+// same wallet spelled differently from the command that had just signed it in, and a
+// caller comparing the two as text saw two addresses. A value that is not an address is
+// returned as it is.
+func checksumAddress(v any) any {
+	s, ok := v.(string)
+	if !ok || !common.IsHexAddress(s) {
+		return v
+	}
+	return common.HexToAddress(s).Hex()
 }
 
 // ── auth logout ───────────────────────────────────────────────────────────────

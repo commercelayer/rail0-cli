@@ -125,6 +125,28 @@ func isPaymentCommand(cmd *cobra.Command) bool {
 	return false
 }
 
+// neverReachedGateway reports a network failure in which no request can have arrived:
+// the host did not resolve, or nothing accepted the connection. The identical command is
+// then safe to run again whatever it does, because the gateway never saw it.
+//
+// A timeout, or a connection cut after it opened, is deliberately not one: the request
+// may have arrived and been acted on, so repeating a command that moves funds could move
+// them twice. Those stay not retryable, and --idempotency-key is the way to repeat them.
+//
+// The string tests mirror exitCode: the SDK wraps some of these errors so they no longer
+// unwrap to their net types.
+func neverReachedGateway(err error) bool {
+	if err == nil {
+		return false
+	}
+	var dnsErr *net.DNSError
+	if errors.As(err, &dnsErr) || errors.Is(err, syscall.ECONNREFUSED) {
+		return true
+	}
+	s := err.Error()
+	return strings.Contains(s, "connection refused") || strings.Contains(s, "no such host")
+}
+
 func isTimeout(err error) bool {
 	var ne net.Error
 	return errors.As(err, &ne) && ne.Timeout()

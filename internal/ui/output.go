@@ -77,21 +77,26 @@ func RunAPIWithMessage(msg string, fn func() (any, error)) error {
 		if err != nil {
 			return err
 		}
-		return printEnvelope(data)
+		items, page := unwrapPaged(data)
+		return printEnvelopePaged(items, page)
 	}
 	if quietMode {
 		data, err := fn()
 		if err != nil {
 			return err
 		}
-		return printQuiet(data)
+		items, _ := unwrapPaged(data)
+		return printQuiet(items)
 	}
 	if IsMachineOutput() {
 		data, err := fn()
 		if err != nil {
 			return err
 		}
-		return printJSON(data)
+		// The array alone, as always: a script pipes it to jq, and the page is in
+		// agent mode's envelope for whoever needs it.
+		items, _ := unwrapPaged(data)
+		return printJSON(items)
 	}
 	stop := startSpinner(msg)
 	data, err := fn()
@@ -99,10 +104,59 @@ func RunAPIWithMessage(msg string, fn func() (any, error)) error {
 	if err != nil {
 		return err
 	}
+	items, page := unwrapPaged(data)
 	if prettyMode {
-		return printPretty(data)
+		err = printPretty(items)
+	} else {
+		err = printStyled(items)
 	}
-	return printStyled(data)
+	if err == nil {
+		printPageHint(page)
+	}
+	return err
+}
+
+// PageInfo is where a page of a list sits in the whole list: what the gateway says in
+// its paging headers, which the list commands used to drop (they print the array, and
+// the array alone cannot say whether it is everything).
+type PageInfo struct {
+	Page       int `json:"page,omitempty"`
+	PerPage    int `json:"per_page,omitempty"`
+	Total      int `json:"total"`
+	TotalPages int `json:"total_pages,omitempty"`
+	// HasMore says rows exist beyond this page. NextPage is the --page value that
+	// fetches them, absent on the last page.
+	HasMore  bool `json:"has_more"`
+	NextPage int  `json:"next_page,omitempty"`
+}
+
+// Paged is a list result together with its PageInfo. A command returns it from RunAPI
+// in place of the bare list; every output mode prints the list exactly as before, and
+// the page goes where that mode can carry it: the "page" key of the agent envelope, a
+// one-line note on a terminal when more rows exist, nowhere for --json and --quiet.
+type Paged struct {
+	Items any
+	Page  PageInfo
+}
+
+func unwrapPaged(data any) (any, *PageInfo) {
+	if p, ok := data.(Paged); ok {
+		return p.Items, &p.Page
+	}
+	return data, nil
+}
+
+// printPageHint tells a person at a terminal that the list goes on, and how to get the
+// rest. On stderr, so the output stays the list; silent on the last page.
+func printPageHint(page *PageInfo) {
+	if page == nil || !page.HasMore {
+		return
+	}
+	hint := fmt.Sprintf("page %d of %d, %d in all", page.Page, page.TotalPages, page.Total)
+	if page.NextPage > 0 {
+		hint += fmt.Sprintf(" — next: --page %d", page.NextPage)
+	}
+	fmt.Fprintln(os.Stderr, NullStyle.Render("  "+hint))
 }
 
 // Progressf writes a progress line to stderr — but ONLY when no spinner is
@@ -174,11 +228,18 @@ func Notice(name string, fields map[string]any, text string) {
 // printEnvelope is the agent-mode result: {"ok":true,"data":…} as ONE line, so a caller
 // reads exactly one line of stdout per command. A nil result (a 204) is "data":null
 // rather than nothing — an empty stdout would read as a crash.
-func printEnvelope(v any) error {
+func printEnvelope(v any) error { return printEnvelopePaged(v, nil) }
+
+// printEnvelopePaged is printEnvelope for a list: the same line, with the list's place
+// in the whole as "page" beside "data" — {"ok":true,"data":[…],"page":{"page":1,
+// "per_page":25,"total":71,"total_pages":3,"has_more":true,"next_page":2}}. "data" keeps
+// its shape, so a caller that reads only it is unaffected.
+func printEnvelopePaged(v any, page *PageInfo) error {
 	b, err := compactJSON(struct {
-		OK   bool `json:"ok"`
-		Data any  `json:"data"`
-	}{true, v})
+		OK   bool      `json:"ok"`
+		Data any       `json:"data"`
+		Page *PageInfo `json:"page,omitempty"`
+	}{true, v, page})
 	if err != nil {
 		return fmt.Errorf("marshal output: %w", err)
 	}
@@ -189,6 +250,10 @@ func printEnvelope(v any) error {
 // PrintEnvelope prints the agent-mode success envelope for a caller that runs before
 // the output mode is applied (help, which cobra serves ahead of every command hook).
 func PrintEnvelope(v any) error { return printEnvelope(v) }
+
+// PrintJSON prints v as plain indented JSON, for the same early caller when --json was
+// asked for outside agent mode.
+func PrintJSON(v any) error { return printJSON(v) }
 
 // FatalAgent prints the agent-mode failure envelope — {"ok":false,"error":…, …} built by
 // the caller — on stdout, where the success envelope would have gone, and exits with

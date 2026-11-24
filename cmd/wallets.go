@@ -92,7 +92,7 @@ not_your_wallet). Adding a wallet ('wallets create') is currently unavailable.`,
 			}
 			// Return the full gateway response (each wallet with its nested tokens
 			// and account_id); the output layer shows every field.
-			return resp.Data, nil
+			return paged(resp.Data, resp.Meta), nil
 		})
 	},
 }

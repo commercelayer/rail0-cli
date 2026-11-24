@@ -127,7 +127,7 @@ func runPayoutsList(_ *cobra.Command, _ []string) error {
 		if err != nil {
 			return nil, err
 		}
-		return resp.Data, nil // bare array; pagination is in headers
+		return paged(resp.Data, resp.Meta), nil
 	})
 }
 
@@ -182,7 +182,7 @@ var payoutsEventsCmd = &cobra.Command{
 			if err != nil {
 				return nil, err
 			}
-			return resp.Data, nil
+			return paged(resp.Data, resp.Meta), nil
 		})
 	},
 }

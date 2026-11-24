@@ -112,7 +112,7 @@ func runPayoutDestinationsList(_ *cobra.Command, _ []string) error {
 		if err != nil {
 			return nil, err
 		}
-		return viewPayoutDestinations(resp.Data), nil // bare array; pagination is in headers
+		return paged(viewPayoutDestinations(resp.Data), resp.Meta), nil
 	})
 }
 
@@ -640,7 +640,7 @@ of every payout made to it, newest first.`,
 			if err != nil {
 				return nil, err
 			}
-			return resp.Data, nil
+			return paged(resp.Data, resp.Meta), nil
 		})
 	},
 }

@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"regexp"
 
@@ -121,7 +120,7 @@ var webhooksListCmd = &cobra.Command{
 			if err != nil {
 				return nil, err
 			}
-			return resp.Data, nil // bare array; pagination is in headers
+			return paged(table(resp.Data, webhookColumns), resp.Meta), nil
 		})
 	},
 }
@@ -407,7 +406,7 @@ with --page / --per-page.`,
 			if err != nil {
 				return nil, err
 			}
-			return resp.Data, nil // bare array; pagination is in headers
+			return paged(table(resp.Data, eventCallbackColumns), resp.Meta), nil
 		})
 	},
 }
@@ -431,7 +430,7 @@ func validateEventCallbackPaymentID(id string) error {
 	if id == "" || eventCallbackPaymentIDPattern.MatchString(id) {
 		return nil
 	}
-	return fmt.Errorf("--payment-id %q is neither a payment UUID nor a 0x rail0_id (0x + 64 hex)", id)
+	return usagef("--payment-id %q is neither a payment UUID nor a 0x rail0_id (0x + 64 hex)", id)
 }
 
 // ── webhooks redeliver ────────────────────────────────────────────────────────────
@@ -507,7 +506,7 @@ func parseBoolFlag(s string) (*bool, error) {
 		f := false
 		return &f, nil
 	default:
-		return nil, errors.New("flag must be 'true' or 'false'")
+		return nil, usagef("flag must be 'true' or 'false'")
 	}
 }
 

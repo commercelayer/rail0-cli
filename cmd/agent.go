@@ -32,12 +32,30 @@ var agentFlag bool
 // agentMode reports whether agent mode is on, by flag or by environment. The variable
 // exists so an agent's harness can set it once instead of adding the flag to every call.
 func agentMode() bool {
-	if agentFlag {
+	if agentFlag || agentInArgs(os.Args[1:]) {
 		return true
 	}
 	switch strings.ToLower(strings.TrimSpace(os.Getenv("RAIL0_AGENT"))) {
 	case "1", "true", "yes", "on":
 		return true
+	}
+	return false
+}
+
+// agentInArgs reports whether --agent is on the command line, read from the raw
+// arguments. cobra sets agentFlag only once it has found the command and parsed its
+// flags, so a call it rejects before that — an unknown command, above all — used to run
+// with the flag unseen: the error went to stderr as text and stdout stayed empty, in the
+// one mode that promises a JSON line whatever happens. Everything after "--" is an
+// argument, never a flag.
+func agentInArgs(args []string) bool {
+	for _, arg := range args {
+		switch arg {
+		case "--":
+			return false
+		case "--agent", "--agent=true", "--agent=1":
+			return true
+		}
 	}
 	return false
 }
@@ -62,6 +80,68 @@ func (e *usageError) Error() string { return e.Msg }
 
 func newUsageError(code, format string, args ...any) error {
 	return &usageError{Code: code, Msg: fmt.Sprintf(format, args...)}
+}
+
+// usagef is the usage error of a value the caller passed wrong or left out: a flag, an
+// argument, a combination. The same message a plain error would carry, with the class
+// that makes it exit ExitCodeUsage ("fix the call") instead of 1 ("the operation
+// failed"), which is what a script or an agent branches on.
+func usagef(format string, args ...any) error {
+	return newUsageError("usage_error", format, args...)
+}
+
+// usageWrap is usagef for a wrapped cause — a library's parse error under a prefix
+// naming the flag. The cause stays reachable through errors.Is/As.
+func usageWrap(err error, format string, args ...any) error {
+	return &wrappedUsageError{usageError{Code: "usage_error", Msg: fmt.Sprintf(format, args...)}, err}
+}
+
+type wrappedUsageError struct {
+	usageError
+	cause error
+}
+
+func (e *wrappedUsageError) Unwrap() error { return e.cause }
+
+// As lets errors.As find the usageError inside, so isUsageError and agentErrorCode
+// treat a wrapped usage error like a plain one.
+func (e *wrappedUsageError) As(target any) bool {
+	if t, ok := target.(**usageError); ok {
+		*t = &e.usageError
+		return true
+	}
+	return false
+}
+
+// missingKeyError is the usage error of a signing command run with no key at all, where
+// nobody can be asked for one. It names every way to give it.
+func missingKeyError() error {
+	return newUsageError("missing_private_key",
+		"no signing key: pass --private-key (-p / --pk), set RAIL0_PRIVATE_KEY, or save one with 'rail0 keys add' and pass it as @name")
+}
+
+// sessionError is a command that needs a stored session and found none it can use: not
+// signed in, an expired or malformed token. It is the local twin of the gateway's 401 —
+// the same exit code (3) and the same next step — where it used to be a plain error
+// (exit 1, cli_error) that a caller could not tell from an internal failure.
+type sessionError struct {
+	Code string
+	Msg  string
+	// Exit is the exit code: 3 (not signed in) unless set — 4 for a session that is
+	// valid but belongs to a wallet with no account, the gateway's 403 account_required.
+	Exit int
+}
+
+func (e *sessionError) Error() string { return e.Msg }
+
+func newSessionError(code, msg string) error { return &sessionError{Code: code, Msg: msg, Exit: 3} }
+
+// agentHelp is help in agent mode: one JSON line like every other call —
+// {"ok":true,"data":{"command":"rail0 payments capture","help":"…","flags":[…],…}}. It
+// used to be printed as text, the one output of agent mode a caller could not parse. The
+// data is helpData: the text a person reads, and the same facts as fields.
+func agentHelp(cmd *cobra.Command) error {
+	return ui.PrintEnvelope(helpData(cmd))
 }
 
 // nextStepError carries what to run next — and whether the operation may still be
@@ -139,15 +219,16 @@ func markUsageErrors(cmd *cobra.Command) {
 // code is the gateway's machine code when the gateway answered, else one of this CLI's:
 // usage_error (or the usageError's own code), aborted, wait_timeout, network_error,
 // cli_error. message is the same text a person would read. retryable is true only where
-// running the identical command again is the right move (a 429, or a gateway code that
-// says nothing was submitted). in_flight says an on-chain operation may still be
-// running: the caller must check it (next_steps) instead of repeating it.
+// running the identical command again is the right move: a 429, a gateway code that
+// says nothing was submitted, or a gateway that was never reached (neverReachedGateway).
+// in_flight says an on-chain operation may still be running: the caller must check it
+// (next_steps) instead of repeating it.
 func agentErrorPayload(cmd *cobra.Command, err error, code int) map[string]any {
 	e := map[string]any{
 		"code":      agentErrorCode(err, code),
 		"message":   humanizeErrorFor(cmd, err).Error(),
 		"exit_code": code,
-		"retryable": code == ExitCodeRateLimited,
+		"retryable": code == ExitCodeRateLimited || neverReachedGateway(err),
 		"in_flight": errors.Is(err, ErrWaitGaveUp),
 	}
 	var apiErr *rail0.APIError
@@ -193,6 +274,10 @@ func agentErrorCode(err error, code int) string {
 	var ue *usageError
 	if errors.As(err, &ue) && ue.Code != "" {
 		return ue.Code
+	}
+	var se *sessionError
+	if errors.As(err, &se) && se.Code != "" {
+		return se.Code
 	}
 	var apiErr *rail0.APIError
 	if errors.As(err, &apiErr) && apiErr.Code != "" {

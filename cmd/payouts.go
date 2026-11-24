@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"context"
-	"fmt"
 	"regexp"
 	"strings"
 
@@ -128,7 +127,7 @@ func runPayoutsList(_ *cobra.Command, _ []string) error {
 		if err != nil {
 			return nil, err
 		}
-		return resp.Data, nil // bare array; pagination is in headers
+		return paged(resp.Data, resp.Meta), nil
 	})
 }
 
@@ -183,7 +182,7 @@ var payoutsEventsCmd = &cobra.Command{
 			if err != nil {
 				return nil, err
 			}
-			return resp.Data, nil
+			return paged(resp.Data, resp.Meta), nil
 		})
 	},
 }
@@ -264,7 +263,7 @@ payout returns to submitted.`,
 	Args:    cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if !txHashPattern.MatchString(args[1]) {
-			return fmt.Errorf("invalid transaction hash %q: expected 0x followed by 64 hex characters", args[1])
+			return usagef("invalid transaction hash %q: expected 0x followed by 64 hex characters", args[1])
 		}
 		return ui.RunAPI(func() (any, error) {
 			return newClient().Payouts.Submitted(context.Background(), args[0], args[1])

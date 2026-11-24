@@ -8,6 +8,9 @@ Print the JWT session token saved by the last 'rail0 auth login' for the
 current gateway (~/.cache/rail0/tokens/<digest of the base URL>), together with
 its expiry. If no valid token is stored, it suggests logging in instead.
 
+Not available in agent mode: the token is a credential and would land in the
+agent's context. 'rail0 auth status' says who is signed in and until when.
+
 This is the singular session token — not to be confused with 'rail0 tokens',
 which lists the gateway's accepted payment tokens.
 

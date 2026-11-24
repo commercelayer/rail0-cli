@@ -149,7 +149,7 @@ func validatePositiveInt(key string) func(string) error {
 	return func(v string) error {
 		n, err := strconv.Atoi(v)
 		if err != nil || n <= 0 {
-			return fmt.Errorf("%s must be a positive integer (got %q)", key, v)
+			return usagef("%s must be a positive integer (got %q)", key, v)
 		}
 		return nil
 	}
@@ -161,12 +161,12 @@ func validatePositiveInt(key string) func(string) error {
 func validateChainRef(v string) error {
 	if n, err := strconv.Atoi(v); err == nil {
 		if n <= 0 {
-			return fmt.Errorf("chain must be a slug (e.g. arc) or a positive chain id (got %q)", v)
+			return usagef("chain must be a slug (e.g. arc) or a positive chain id (got %q)", v)
 		}
 		return nil
 	}
 	if !chainSlugPattern(v) {
-		return fmt.Errorf("chain must be a slug (e.g. arc) or a positive chain id (got %q)", v)
+		return usagef("chain must be a slug (e.g. arc) or a positive chain id (got %q)", v)
 	}
 	return nil
 }
@@ -177,7 +177,7 @@ func validateChainRef(v string) error {
 // a chain that may not be configured yet.
 func validateTokenSymbol(v string) error {
 	if !tokenSymbolPattern.MatchString(v) {
-		return fmt.Errorf("token must be a symbol as listed in GET /tokens, e.g. USDC (got %q)", v)
+		return usagef("token must be a symbol as listed in GET /tokens, e.g. USDC (got %q)", v)
 	}
 	return nil
 }
@@ -189,7 +189,7 @@ func validateOutputMode(v string) error {
 	case "auto", "json", "pretty", "quiet":
 		return nil
 	}
-	return fmt.Errorf("output must be one of auto, json, pretty, quiet (got %q)", v)
+	return usagef("output must be one of auto, json, pretty, quiet (got %q)", v)
 }
 
 // validateBaseURL rejects a base URL the CLI must not talk to. Two rules:
@@ -207,7 +207,7 @@ func validateOutputMode(v string) error {
 func validateBaseURL(v string) error {
 	u, err := url.Parse(v)
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-		return fmt.Errorf("base-url must be an http(s) URL, e.g. https://api.rail0.xyz (got %q)", v)
+		return usagef("base-url must be an http(s) URL, e.g. https://api.rail0.xyz (got %q)", v)
 	}
 	if u.Scheme == "http" && !isLoopbackHost(u.Hostname()) {
 		return fmt.Errorf(
@@ -243,7 +243,7 @@ func lookupKey(name string) (configKey, error) {
 		valid = append(valid, n)
 	}
 	sort.Strings(valid)
-	return configKey{}, fmt.Errorf("unknown config key %q (valid: %s)", name, strings.Join(valid, ", "))
+	return configKey{}, usagef("unknown config key %q (valid: %s)", name, strings.Join(valid, ", "))
 }
 
 // originUnset is the origin effectiveSetting reports when the key is set nowhere and

@@ -46,7 +46,7 @@ measured. 'settlement_human' says it in one line ("p50 11s · p90 19s …", or
 	RunE: func(cmd *cobra.Command, args []string) error {
 		networkType := strings.ToLower(chainsNetworkType)
 		if networkType != "" && networkType != "testnet" && networkType != "mainnet" {
-			return fmt.Errorf("invalid --network-type %q: must be 'testnet' or 'mainnet'", chainsNetworkType)
+			return usagef("invalid --network-type %q: must be 'testnet' or 'mainnet'", chainsNetworkType)
 		}
 		return ui.RunAPI(func() (any, error) {
 			chains, err := newReadClient().Chains.List(context.Background(),
@@ -58,7 +58,7 @@ measured. 'settlement_human' says it in one line ("p50 11s · p90 19s …", or
 			for i := range chains {
 				out[i] = chainView{Blockchain: chains[i], SettlementHuman: settlementLabel(chains[i].Settlement)}
 			}
-			return out, nil
+			return table(out, chainColumns), nil
 		})
 	},
 }

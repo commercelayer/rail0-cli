@@ -273,7 +273,7 @@ func amountFilters(ctx context.Context, min, max string, chainID int, token stri
 		return "", "", nil
 	}
 	if chainID == 0 || token == "" {
-		return "", "", fmt.Errorf(
+		return "", "", usagef(
 			"--min-amount/--max-amount are decimals in token units and need --chain and --token to convert; pass both")
 	}
 	decimals, ok := tokenDecimals(ctx, chainID, token)

@@ -161,11 +161,11 @@ func balanceReader(ctx context.Context) (*rail0.Blockchain, *chainread.Reader, e
 		id, err := reader.ChainID(ctx)
 		if err != nil {
 			reader.Close()
-			return nil, nil, fmt.Errorf("--rpc-url: %w", err)
+			return nil, nil, usageWrap(err, "--rpc-url: %v", err)
 		}
 		if !id.IsInt64() {
 			reader.Close()
-			return nil, nil, fmt.Errorf("--rpc-url: implausible chain id %s", id)
+			return nil, nil, usagef("--rpc-url: implausible chain id %s", id)
 		}
 		if balanceChainID != 0 && int64(balanceChainID) != id.Int64() {
 			reader.Close()

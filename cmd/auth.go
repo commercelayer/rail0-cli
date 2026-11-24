@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	rail0 "github.com/commercelayer/rail0-go"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/rail0/cli/internal/token"
 	"github.com/rail0/cli/internal/ui"
 	"github.com/spf13/cobra"
@@ -64,7 +65,8 @@ require authentication (e.g. 'payments list') — that file is the only place th
 session is read from. The exact path is printed on success and by 'rail0 auth
 status'. On success the command prints the session (address, expiry) but NOT the
 raw token — pass --token (-t) to also print the token itself, or run 'rail0
-token' later.
+token' later. Neither is available in agent mode: the token is a credential and
+would land in the agent's context.
 
 The signing key is resolved like every other signing command: pass -p as a raw
 0x-prefixed hex key, as @name for a key saved in the OS keychain ('rail0 keys
@@ -72,6 +74,14 @@ add'), or omit it to fall back to the RAIL0_PRIVATE_KEY environment variable.`,
 	Example: `  rail0 auth login -p @merchant-key   # or -p 0xYourPrivateKey…
   rail0 auth login -p @payee -t  # also print the token + its expiry`,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		// --token prints the session token, which agent mode keeps out of the agent's
+		// context (see 'rail0 token'). Refused before anything is signed, so the call
+		// is fixed rather than half done.
+		if loginShowToken && agentMode() {
+			return newUsageError("unavailable_in_agent_mode",
+				"--token is not available in agent mode: it would print the session token into the agent's context — "+
+					"sign in without it; 'rail0 auth status' says who is signed in and until when")
+		}
 		ctx := context.Background()
 		client := newClient()
 
@@ -84,7 +94,7 @@ add'), or omit it to fall back to the RAIL0_PRIVATE_KEY environment variable.`,
 		}
 		privKey, err := rail0.HexToPrivateKey(keyHex)
 		if err != nil {
-			return fmt.Errorf("invalid private key: %w", err)
+			return usageWrap(err, "invalid private key: %v", err)
 		}
 
 		// Derive the SIWE domain from the SAME resolved base URL the client calls
@@ -107,7 +117,8 @@ add'), or omit it to fall back to the RAIL0_PRIVATE_KEY environment variable.`,
 			ui.Notice("token_saved", map[string]any{"path": tokenPath}, fmt.Sprintf("Token saved to %s", tokenPath))
 		}
 
-		// Print the session summary; include the raw token only with --token.
+		// Print the session summary; include the raw token only with --token (which
+		// agent mode refused above).
 		summary := loginSummary(authResp, loginShowToken)
 		return ui.RunAPI(func() (any, error) { return summary, nil })
 	},
@@ -174,7 +185,7 @@ useful when several environments are in play, or to remove one by hand.`,
 		expiresAt, expiresIn := tokenExpiry(claims)
 		return ui.RunAPI(func() (any, error) {
 			return map[string]any{
-				"address":    claims["sub"],
+				"address":    checksumAddress(claims["sub"]),
 				"account_id": claims["account_id"],
 				"expires_at": expiresAt,
 				"expires_in": expiresIn,
@@ -182,6 +193,19 @@ useful when several environments are in play, or to remove one by hand.`,
 			}, nil
 		})
 	},
+}
+
+// checksumAddress renders a session's address the way 'auth login' prints it: in the
+// EIP-55 mixed case. The token carries it in lower case, so 'auth status' showed the
+// same wallet spelled differently from the command that had just signed it in, and a
+// caller comparing the two as text saw two addresses. A value that is not an address is
+// returned as it is.
+func checksumAddress(v any) any {
+	s, ok := v.(string)
+	if !ok || !common.IsHexAddress(s) {
+		return v
+	}
+	return common.HexToAddress(s).Hex()
 }
 
 // ── auth logout ───────────────────────────────────────────────────────────────
@@ -326,7 +350,7 @@ and stop using it.`,
 		}
 		privKey, err := rail0.HexToPrivateKey(keyHex)
 		if err != nil {
-			return fmt.Errorf("invalid private key: %w", err)
+			return usageWrap(err, "invalid private key: %v", err)
 		}
 		if err := confirmDestructive(fmt.Sprintf(
 			"Revoke EVERY session of %s, on every machine? You will need to sign in again.", address)); err != nil {

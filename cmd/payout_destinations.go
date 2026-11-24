@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 
@@ -113,7 +112,7 @@ func runPayoutDestinationsList(_ *cobra.Command, _ []string) error {
 		if err != nil {
 			return nil, err
 		}
-		return viewPayoutDestinations(resp.Data), nil // bare array; pagination is in headers
+		return paged(viewPayoutDestinations(resp.Data), resp.Meta), nil
 	})
 }
 
@@ -250,10 +249,10 @@ the label (payout_destination_label_taken).`,
 			tokenArg = configuredDefault("token")
 		}
 		if tokenArg == "" {
-			return errors.New("--token is required (a symbol such as USDC, or the token's 0x address)")
+			return usagef("--token is required (a symbol such as USDC, or the token's 0x address)")
 		}
 		if payoutDestAddAddress == "" {
-			return errors.New("--address is required: the deposit address copied from the venue")
+			return usagef("--address is required: the deposit address copied from the venue")
 		}
 		if err := validateAddress(payoutDestAddAddress); err != nil {
 			return err
@@ -360,7 +359,7 @@ func promptPayoutLabel() (string, error) {
 		"A name for this destination, unique in the account (ignoring case), e.g. \"Exchange USDC (Arc)\"",
 		false, func(s string) error {
 			if strings.TrimSpace(s) == "" {
-				return errors.New("the label may not be blank")
+				return usagef("the label may not be blank")
 			}
 			return nil
 		})
@@ -641,7 +640,7 @@ of every payout made to it, newest first.`,
 			if err != nil {
 				return nil, err
 			}
-			return resp.Data, nil
+			return paged(resp.Data, resp.Meta), nil
 		})
 	},
 }

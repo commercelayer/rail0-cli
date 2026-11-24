@@ -475,9 +475,9 @@ Exit codes distinguish the failure class:
 |---|---|
 | `0` | success |
 | `1` | any other failure |
-| `2` | usage: unknown command or flag, wrong arguments, a required value or `--yes` missing where nobody can be asked, a command not offered in agent mode |
-| `3` | unauthorized (401) |
-| `4` | forbidden (403) |
+| `2` | usage: unknown command or flag, wrong arguments, a flag value that is invalid or conflicts with another, a required value (the signing key included) or `--yes` missing where nobody can be asked, a command not offered in agent mode |
+| `3` | unauthorized: the gateway answered 401, or the command needs a session and none is stored (not signed in, or the stored one expired) |
+| `4` | forbidden: the gateway answered 403, or the stored session belongs to a wallet with no account and the command needs one |
 | `5` | not found (404) |
 | `6` | conflict (409) |
 | `7` | rejected by the gateway (400, 422) |
@@ -523,7 +523,7 @@ transactions <id>`, whether it reverted on-chain or was refused before broadcast
 The list commands (`payments list`, `payments transactions`, `payments disputes`,
 `disputes`, `wallets`, `webhooks list`, `webhooks event-callbacks`) take `--page` and
 `--per-page`; `payments list` also accepts `--all` to walk every page and return the
-full set.
+full set. A terminal shows a note under a page that is not the last one (`page 1 of 3, 70 in all — next: --page 2`); `--json` prints the array alone; [agent mode](#agent-mode---agent) carries the same facts as `"page"` beside `"data"`.
 
 Minimal setup:
 
@@ -889,7 +889,7 @@ undoable by rotating back. The previous secret is gone, and from that moment eve
 consumer still verifying `X-Rail0-Signature` against it rejects deliveries — so a
 mistyped webhook id silently breaks production verification.
 
-The signing key is resolved in this order: `--private-key` (`-p` / `--pk`, where `@name` pulls the key from the OS keychain) > `RAIL0_PRIVATE_KEY` env var. If none is set, the CLI prompts for the key **hidden** on a terminal (or reads one line from a piped stdin), so it never lands in the shell history or process arguments — the same masked input as `keys add`.
+The signing key is resolved in this order: `--private-key` (`-p` / `--pk`, where `@name` pulls the key from the OS keychain) > `RAIL0_PRIVATE_KEY` env var. If none is set, the CLI prompts for the key **hidden** on a terminal (or reads one line from a piped stdin), so it never lands in the shell history or process arguments — the same masked input as `keys add`. In [agent mode](#agent-mode---agent) nothing is read from stdin: with no key the command answers `missing_private_key` (exit `2`) at once. A pipe that delivers nothing gets the same answer.
 
 **Checked before signing.** The gateway prepares the transaction, but the CLI checks it
 locally before your key touches it, and refuses to sign on any mismatch: it must be
@@ -936,7 +936,8 @@ On success the command prints the session (address, expiry) but **not** the raw 
 
 #### `auth status`
 
-Print the wallet address, account id, and expiry encoded in the cached JWT.
+Print the wallet address, account id, and expiry encoded in the cached JWT. The address
+is in the EIP-55 mixed case, the same spelling `auth login` prints.
 
 ```sh
 rail0 auth status
@@ -985,6 +986,11 @@ TOKEN="$(rail0 token --json | jq -r .token)"   # e.g. to call the gateway with c
 
 Exporting it does **not** configure the CLI — it reads the session from its cache file
 and nowhere else.
+
+Not available in [agent mode](#agent-mode---agent), where the token would land in the
+agent's context: `rail0 token` and `rail0 auth login --token` answer
+`unavailable_in_agent_mode` there. `rail0 auth status` says who is signed in and until
+when, without the token.
 
 ---
 
@@ -1926,6 +1932,32 @@ rail0 payouts report-hash <payout_id> 0x5c50…     # a transfer you broadcast y
 
 ---
 
+### Help, as text or as data (`help`)
+
+```sh
+rail0 help                           # what the CLI does and its commands
+rail0 help payments                  # one group
+rail0 help payments capture          # one command (the same as: rail0 payments capture --help)
+```
+
+`help` has two readers. A person gets the text above. A program — an AI agent above all —
+gets the same facts as data, so that a command and its flags need not be read out of
+prose: with `--agent` inside the envelope, with `--json` as plain JSON.
+
+```sh
+rail0 --agent help                   # the index: every command, its arguments and flag names
+rail0 --agent help payments          # the index of one group
+rail0 --agent help payments capture  # one command in full: each flag's type, default, meaning
+rail0 help payments create --json | jq -r '.flags[].name'
+```
+
+The index of the whole CLI also lists the global flags, the environment variables, the
+exit codes and the CLI's own error codes. One command in full says, besides its flags,
+whether it signs (`signs`), needs `--yes` (`needs_yes`), can wait for the chain
+(`can_wait`) or is refused in agent mode. The text rides along as `help`. All of it is
+read from the command tree, so it cannot name a flag that does not exist, and it is
+local: no gateway call, no session. `rail0 help <not a command>` is a usage error.
+
 ## Full flow examples
 
 Worked versions of the three shapes, using the address book and keychain names
@@ -2009,7 +2041,23 @@ Every command prints the gateway response with all fields the gateway returns.
 
 **Plain JSON (`--json` or piped):** strict, valid indented JSON with no ANSI colour on stdout, suitable for `jq` and shell pipelines.
 
-**Pretty (`--pretty`):** a key-value (single record) or table (list) view with the same highlighting, as an alternative terminal layout. Terminal only — piping still emits plain JSON.
+**Pretty (`--pretty`):** the view for reading rather than parsing: a table for a list, key-value rows for one record, with the same highlighting. Terminal only — piping still emits plain JSON. `rail0 config set output pretty` makes it the default.
+
+- **A list shows the columns worth scanning, not every field.** Payments: id, status, amount (in token units), token (by symbol), payer and payee (shortened, `0x2D2B…57D5`), created, chain, description. Transactions, a payment's history, disputes, wallets, webhooks, delivery attempts and chains have their own; any other list gets one column per field, minus the fields holding nested objects. Timestamps are UTC, to the minute.
+
+  ```
+    ID                                    STATUS              AMOUNT  TOKEN  PAYER        PAYEE        CREATED
+    ────────────────────────────────────  ──────────────────  ──────  ─────  ───────────  ───────────  ────────────────
+    01a16403-398f-7f15-a8e5-8a9b78900e1a  partially_captured     2.5  USDC   0xe3DD…94c4  0x2D2B…57D5  2026-10-22 14:28
+    01a16316-39ee-749b-ae23-7e7ad0460946  signed                   1  USDC   0xe3DD…94c4  0x2D2B…57D5  2026-10-22 10:09
+
+    not shown: chain, description — --json has every field
+    page 1 of 35, 70 in all — next: --page 2
+  ```
+
+- **The table fits the terminal.** Free text (a description, a URL) is cut first, ending in `…`; if that is not enough, columns are dropped from the right, least important first, and a line under the table names them. A wider terminal shows more.
+- **Nothing is lost.** The columns exist in this view only: `--json`, `--quiet`, a pipe and agent mode print every field of every row, as before. The full value of a shortened address or hash is in the record's own view (`payments get <id> --pretty`) and in `--json`. The token and chain columns read the gateway's catalogues, at most one request each per command, and only when the table is drawn.
+- **One record** is a row per field, the values aligned on the longest name.
 
 ```sh
 # Extract the rail0_id of a freshly created payment
@@ -2037,20 +2085,55 @@ call, or once with `RAIL0_AGENT=1` in the agent's environment.
   ```
 
   `code` is the gateway's machine code when the gateway answered, else one of the CLI's:
-  `usage_error`, `flag_conflict`, `confirmation_required`, `unavailable_in_agent_mode`,
-  `interactive_only`, `aborted`, `wait_timeout`, `network_error`, `cli_error`.
-  `retryable` is true only when the identical command is safe to run again (a 429 — see
-  `retry_after_s` — or a gateway code saying nothing was submitted). `in_flight` true
-  means an on-chain operation may still be running: run `next_steps`, do not repeat it.
+  `usage_error`, `missing_private_key`, `invalid_chain`, `flag_conflict`,
+  `confirmation_required`, `minimum_required`, `minimum_conflict`, `label_required`,
+  `unavailable_in_agent_mode`, `interactive_only`, `not_logged_in`, `session_expired`,
+  `account_required`, `aborted`, `wait_timeout`, `network_error`, `cli_error`
+  (`rail0 --agent help` prints this list, with the exit codes).
+  A mistake in the call (a flag or an argument that is wrong, missing or in conflict,
+  a key that is not a key) is `usage_error`, exit `2`: fix the call. No usable stored
+  session is `not_logged_in` or `session_expired`, exit `3`, with the sign-in as
+  `next_steps`. `cli_error`, exit `1`, is what is left: a failure that is not the
+  caller's to fix by changing the command.
+  `retryable` is true only when the identical command is safe to run again: a 429 (see
+  `retry_after_s`), a gateway code saying nothing was submitted, or a `network_error` in
+  which the gateway was never reached (the host did not resolve, the connection was
+  refused). A `network_error` that is a timeout stays `false`: the request may have
+  arrived, so repeat a fund-moving command only with its `--idempotency-key`. `in_flight`
+  true means an on-chain operation may still be running: run `next_steps`, do not repeat it.
   `reason` carries the gateway's sub-cause when there is one.
 - **stderr: JSON Lines events only**, e.g. `{"event":"signed_in","address":"0x…","stored":true,"message":"Signed in as 0x…"}`,
   `{"event":"progress","message":"waiting… 30s elapsed of 10m0s"}`,
   `{"event":"dispute_reason","kind":"open","reason":null}`. `--debug` traces are JSON too.
+- **Lists say where they stand.** A list command adds `"page"` beside `"data"`:
+  `{"ok":true,"data":[…],"page":{"page":1,"per_page":25,"total":70,"total_pages":3,"has_more":true,"next_page":2}}`.
+  `has_more` says rows exist beyond this page, and `next_page` is the `--page` value that
+  fetches them (absent on the last page). `data` is the array it always was. With
+  `payments list --all` the page is `{"total":70,"has_more":false}`. `--json` still prints
+  the array alone; on a terminal a note under the list says when it goes on.
+- **Help is data.** `--help`, `help <command>` and a group run bare answer in the
+  envelope, never as bare text: `rail0 --agent help` is the index of every command with
+  its arguments and flag names, plus the global flags, the environment variables, the
+  exit codes and the CLI's own error codes; `rail0 --agent help payments` is the index
+  of one group; `rail0 --agent help payments capture` is one command in full — each flag
+  with its type, default and meaning, whether it is required, and whether the command
+  signs (`signs`), asks for consent (`needs_yes`), can wait for the chain (`can_wait`)
+  or is refused in agent mode. The text a person reads is there too, as `help`. See
+  [help, as text or as data](#help-as-text-or-as-data-help).
 - **Never a prompt, a spinner, colour or an update offer.** A value a terminal would
   ask for is a usage error naming the flag. Commands that move funds or delete things
   still need `--yes`: agent mode is not consent.
-- **Not available:** `keys generate` (the private key would land in the agent's
-  context — generate it in a terminal and give the agent only an alias) and `init`.
+- **Never a read from stdin.** A signing command run with no key answers
+  `missing_private_key` at once (give it with `-p @name` or `RAIL0_PRIVATE_KEY`). Outside
+  agent mode a key may be piped in; here that read would wait on a stdin the agent's
+  harness leaves open and silent.
+- **A wrong call is an envelope too.** An unknown command is a `usage_error` envelope
+  with the suggestions in its message, wherever `--agent` sits on the line.
+- **Not available:** `keys generate` and `keys add` (the private key would pass through
+  the agent's context — create and save it in a terminal and give the agent only its
+  `@name`), `token` and `auth login --token` (the session token is a credential too:
+  the CLI sends it by itself, and `auth status` says who is signed in and until when)
+  and `init`.
 - Cannot be combined with `--quiet` or `--pretty` (exit `2`); `--json` is implied.
 
 ```sh
@@ -2099,8 +2182,9 @@ since the last tag. After the release merges, delete `milestone/next`, cut it ag
    and the notes instead of bumping twice. One approval then covers the change and its
    release.
 2. Review the pull request (edit the notes in its body if needed), approve and merge it.
-   The approval must come from a reviewer **other than the pull request's author**, on its
-   final commit: release.yml checks it before publishing anything and stops otherwise —
+   The approval must come from a reviewer **who neither opened the pull request nor wrote
+   any of its changes** (its commits, co-authored commits, and the pull requests merged
+   into the milestone), on its final commit: release.yml checks it before publishing anything and stops otherwise —
    an admin merge that bypassed the review, a direct push to `main` or a resume of an
    unapproved release publishes nothing.
 3. `.github/workflows/release.yml` runs on that push to `main`: CI again on the release

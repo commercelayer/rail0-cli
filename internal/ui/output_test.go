@@ -45,12 +45,12 @@ func TestPrintPretty(t *testing.T) {
 		if err := json.Unmarshal([]byte(raw), &v); err != nil {
 			t.Fatal(err)
 		}
-		if err := printPretty(v); err != nil {
+		if err := printPretty(v, nil); err != nil {
 			t.Errorf("printPretty error: %v", err)
 		}
 	}
 	// A nil result (e.g. a 204 delete) prints nothing and must not error.
-	if err := printPretty(nil); err != nil {
+	if err := printPretty(nil, nil); err != nil {
 		t.Errorf("printPretty(nil) error: %v", err)
 	}
 }

@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"errors"
 	"fmt"
 	"net/url"
 	"os/exec"
@@ -80,7 +79,7 @@ func adminURL() (string, error) {
 	if v := configuredDefault("admin-url"); v != "" {
 		return strings.TrimRight(v, "/"), nil
 	}
-	return "", errors.New("no admin-url is set — set one with 'rail0 config set admin-url https://…' (or RAIL0_ADMIN_URL)")
+	return "", usagef("no admin-url is set — set one with 'rail0 config set admin-url https://…' (or RAIL0_ADMIN_URL)")
 }
 
 // adminPageURL builds the page to open: the admin's home for no id, else the payment's
@@ -95,7 +94,7 @@ func adminPageURL(base, id string, console bool) (string, error) {
 		return base + "/", nil
 	}
 	if !paymentIDPattern.MatchString(id) {
-		return "", fmt.Errorf("%q is neither a payment UUID nor a rail0_id (0x followed by 64 hex characters)", id)
+		return "", usagef("%q is neither a payment UUID nor a rail0_id (0x followed by 64 hex characters)", id)
 	}
 	path := "/payments/"
 	if console {
@@ -124,7 +123,7 @@ func openBrowser(target string) error {
 func validateAdminURL(v string) error {
 	u, err := url.Parse(v)
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-		return fmt.Errorf("admin-url must be an http(s) URL, e.g. https://rail0-admin-staging.fly.dev (got %q)", v)
+		return usagef("admin-url must be an http(s) URL, e.g. https://rail0-admin-staging.fly.dev (got %q)", v)
 	}
 	return nil
 }

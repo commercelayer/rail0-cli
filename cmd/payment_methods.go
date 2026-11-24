@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"context"
-	"errors"
 
 	rail0 "github.com/commercelayer/rail0-go"
 	"github.com/rail0/cli/internal/ui"
@@ -38,7 +37,7 @@ Public — no login required. Identify the merchant with exactly one of --accoun
 		// Exactly one handle, matching the gateway's exactly_one_of rule — fail
 		// fast with a clear message instead of a 400 round-trip.
 		if (paymentMethodsAccount == "") == (paymentMethodsAddress == "") {
-			return errors.New("provide exactly one of --account <id> or --address <0x…|@alias>")
+			return usagef("provide exactly one of --account <id> or --address <0x…|@alias>")
 		}
 		addr, err := resolveAlias(paymentMethodsAddress)
 		if err != nil {

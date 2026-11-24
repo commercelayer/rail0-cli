@@ -21,6 +21,11 @@ const loginHint = "Run: rail0 auth login -p 0xYourKey… (any wallet — no gate
 // `rail0 tokens` catalog command, which is unrelated). If there's no usable
 // session it prints the login hint to stderr and exits 0 rather than erroring —
 // "you're not logged in" is a normal state, not a failure.
+//
+// Agent mode refuses it. The token is a credential (the session, for 24 hours): printed
+// into the envelope it lands in the agent's context and in whatever logs that context,
+// which is the reason 'keys generate' is refused there. An agent does not need it — the
+// CLI sends it by itself — and 'auth status' says who is signed in and until when.
 
 var tokenCmd = &cobra.Command{
 	Use:   "token",
@@ -29,11 +34,18 @@ var tokenCmd = &cobra.Command{
 current gateway (~/.cache/rail0/tokens/<digest of the base URL>), together with
 its expiry. If no valid token is stored, it suggests logging in instead.
 
+Not available in agent mode: the token is a credential and would land in the
+agent's context. 'rail0 auth status' says who is signed in and until when.
+
 This is the singular session token — not to be confused with 'rail0 tokens',
 which lists the gateway's accepted payment tokens.`,
 	Example: `  rail0 token`,
 	Args:    cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := refuseInAgentMode(cmd, "it would print the session token into the agent's context — "+
+			"'rail0 auth status' says who is signed in and until when"); err != nil {
+			return err
+		}
 		info, hint := tokenSession(token.Load(resolveBaseURL()))
 		if hint != "" {
 			return notLoggedIn(hint)

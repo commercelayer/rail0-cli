@@ -686,7 +686,7 @@ chain has too few confirmed transactions to be measured. --timeout always wins.`
 		// deadline and then report a timeout, which reads like a slow chain rather
 		// than a mistyped flag. (#107)
 		if waitUntil != "" && !slices.Contains(waitableStatuses, waitUntil) {
-			return fmt.Errorf("unknown --until status %q; expected one of: %s",
+			return usagef("unknown --until status %q; expected one of: %s",
 				waitUntil, strings.Join(waitableStatuses, ", "))
 		}
 		client := newReadClient()

@@ -58,7 +58,7 @@ func signSigningPayloadVRS(sp *rail0.SigningPayload, privateKeyHex string, want 
 
 	privKey, err := rail0.HexToPrivateKey(privateKeyHex)
 	if err != nil {
-		return zero, fmt.Errorf("invalid private key: %w", err)
+		return zero, usageWrap(err, "invalid private key: %v", err)
 	}
 
 	sig, err := rail0.SignSigningPayloadFor(sp, privKey, want)

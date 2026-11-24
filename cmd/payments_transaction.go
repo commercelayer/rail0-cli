@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"context"
-	"fmt"
 	"slices"
 	"strings"
 
@@ -40,7 +39,7 @@ func statusFilterValues(flag string, values, allowed []string) ([]string, error)
 			continue
 		}
 		if !slices.Contains(allowed, v) {
-			return nil, fmt.Errorf("unknown %s value %q; expected one of: %s", flag, v, strings.Join(allowed, ", "))
+			return nil, usagef("unknown %s value %q; expected one of: %s", flag, v, strings.Join(allowed, ", "))
 		}
 		out = append(out, v)
 	}

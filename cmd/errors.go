@@ -388,6 +388,11 @@ func exitCode(err error) int {
 	if isUsageError(err) {
 		return ExitCodeUsage
 	}
+	// No usable stored session: the same class as the gateway's 401.
+	var se *sessionError
+	if errors.As(err, &se) {
+		return se.Exit
+	}
 
 	var apiErr *rail0.APIError
 	if errors.As(err, &apiErr) {

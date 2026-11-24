@@ -32,7 +32,7 @@ func validateAddress(v string) error {
 		return err
 	}
 	if !evmAddressPattern.MatchString(v) {
-		return fmt.Errorf("invalid address %q: expected a 0x-prefixed 40-hex-character EVM address, or an @alias", v)
+		return usagef("invalid address %q: expected a 0x-prefixed 40-hex-character EVM address, or an @alias", v)
 	}
 	return nil
 }
@@ -42,11 +42,11 @@ func validateAddress(v string) error {
 // exists to reject an obviously wrong value at entry rather than after a round-trip.
 func validateAmount(v string) error {
 	if !amountPattern.MatchString(v) {
-		return fmt.Errorf("invalid amount %q: use a decimal in token units (e.g. 1.00)", v)
+		return usagef("invalid amount %q: use a decimal in token units (e.g. 1.00)", v)
 	}
 	// Reject zero (any mix of 0s and a dot strips to empty).
 	if strings.Trim(strings.ReplaceAll(v, ".", ""), "0") == "" {
-		return fmt.Errorf("amount must be greater than zero")
+		return usagef("amount must be greater than zero")
 	}
 	return nil
 }
@@ -104,7 +104,7 @@ func lookupTokenAddress(ctx context.Context, chainID int, symbol string) (string
 	if len(syms) == 0 {
 		return "", 0, syms, fmt.Errorf("%w: %s — the gateway of this environment does not serve that chain (point --base-url at a gateway that does)", errNoTokensOnChain, chainLabel(chainID))
 	}
-	return "", 0, syms, fmt.Errorf("unknown token %q on %s — available: %s", symbol, chainLabel(chainID), strings.Join(syms, ", "))
+	return "", 0, syms, usagef("unknown token %q on %s — available: %s", symbol, chainLabel(chainID), strings.Join(syms, ", "))
 }
 
 // errNoTokensOnChain: the current gateway lists no active token on the chain at all,
@@ -123,7 +123,7 @@ func assertAmountPrecision(amount string, decimals int) error {
 		return nil
 	}
 	if frac := len(s) - i - 1; frac > decimals {
-		return fmt.Errorf("amount %q has %d decimal places, but the token supports at most %d", s, frac, decimals)
+		return usagef("amount %q has %d decimal places, but the token supports at most %d", s, frac, decimals)
 	}
 	return nil
 }
@@ -239,7 +239,7 @@ func (f *createPaymentFlags) build() (rail0.CreatePaymentRequest, error) {
 	// it also catches two aliases — or an alias and a raw address — pointing to
 	// the same wallet. Compared case-insensitively. The gateway enforces this too.
 	if req.Payer != "" && strings.EqualFold(req.Payer, req.Payee) {
-		return rail0.CreatePaymentRequest{}, fmt.Errorf(
+		return rail0.CreatePaymentRequest{}, usagef(
 			"payer (--from) and payee (--to) must be different addresses — a payment can't be sent from an address to itself")
 	}
 	return req, nil
@@ -310,7 +310,7 @@ func (f *createPaymentFlags) buildResolved() (rail0.CreatePaymentRequest, error)
 			return f.buildInteractive()
 		}
 	} else if missing {
-		return rail0.CreatePaymentRequest{}, fmt.Errorf(
+		return rail0.CreatePaymentRequest{}, usagef(
 			"--from, --to, --token, --amount, and --chain are required (or use --payment-file)")
 	}
 	return f.resolve()
@@ -322,7 +322,7 @@ func (f *createPaymentFlags) buildResolved() (rail0.CreatePaymentRequest, error)
 // interesting one, because writing the symbol there is the natural mistake.
 func validateFileRequest(req rail0.CreatePaymentRequest) error {
 	if req.Payer == "" || req.Payee == "" || req.Token == "" || req.Amount == "" || req.ChainID == 0 {
-		return fmt.Errorf("payment file must set payer, payee, token, amount, chain_id and mode")
+		return usagef("payment file must set payer, payee, token, amount, chain_id and mode")
 	}
 	// The gateway requires mode, and the file is the whole request: -C/--charge is a
 	// FLAG-path input and is ignored with a file, like every other request flag. A
@@ -331,9 +331,9 @@ func validateFileRequest(req rail0.CreatePaymentRequest) error {
 	switch req.Mode {
 	case "authorize", "charge":
 	case "":
-		return fmt.Errorf(`payment file must set "mode": "authorize" or "charge" (the gateway requires it, and -C/--charge does not apply to a payment file)`)
+		return usagef(`payment file must set "mode": "authorize" or "charge" (the gateway requires it, and -C/--charge does not apply to a payment file)`)
 	default:
-		return fmt.Errorf(`payment file mode %q: must be "authorize" or "charge"`, req.Mode)
+		return usagef(`payment file mode %q: must be "authorize" or "charge"`, req.Mode)
 	}
 	if err := validateAddress(string(req.Payer)); err != nil {
 		return fmt.Errorf("payment file payer: %w", err)
@@ -370,17 +370,17 @@ func validateFileRequest(req rail0.CreatePaymentRequest) error {
 func (f *createPaymentFlags) validateSupplied() error {
 	if f.from != "" {
 		if err := validateAddress(f.from); err != nil {
-			return fmt.Errorf("--from: %w", err)
+			return usageWrap(err, "--from: %v", err)
 		}
 	}
 	if f.to != "" {
 		if err := validateAddress(f.to); err != nil {
-			return fmt.Errorf("--to: %w", err)
+			return usageWrap(err, "--to: %v", err)
 		}
 	}
 	if f.amount != "" {
 		if err := validateAmount(f.amount); err != nil {
-			return fmt.Errorf("--amount: %w", err)
+			return usageWrap(err, "--amount: %v", err)
 		}
 	}
 	return nil

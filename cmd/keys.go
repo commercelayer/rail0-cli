@@ -79,10 +79,16 @@ recovered, and a confirmation in that position is one people answer by reflex.
 enumerated — which is exactly why the name index exists.`,
 	Example: `  rail0 keys add payer`,
 	Args:    cobra.ExactArgs(1),
-	RunE: func(_ *cobra.Command, args []string) error {
+	RunE: func(cmd *cobra.Command, args []string) error {
+		// Agent mode: the key would be read from stdin, which there is neither a person
+		// nor, usually, a pipe that ends. Refused before anything is asked or looked up.
+		if err := refuseInAgentMode(cmd, "it reads a private key from the terminal or a pipe — "+
+			"save the key in a terminal and give the agent only its @name"); err != nil {
+			return err
+		}
 		name := args[0]
 		if strings.HasPrefix(name, "@") {
-			return errors.New("key name must not include the leading '@'")
+			return usagef("key name must not include the leading '@'")
 		}
 		cfg, err := loadConfigForWrite()
 		if err != nil {
@@ -220,7 +226,9 @@ func promptSecret(label string) (string, error) {
 	if !interactive() {
 		line, err := bufio.NewReader(os.Stdin).ReadString('\n')
 		if err != nil && line == "" {
-			return "", fmt.Errorf("read key from stdin: %w", err)
+			// Nothing was piped: the caller gave no key at all. "read key from stdin:
+			// EOF" said what the CLI tried, not what was missing.
+			return "", missingKeyError()
 		}
 		return line, nil
 	}

@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"fmt"
 	"strings"
 
 	rail0 "github.com/commercelayer/rail0-go"
@@ -18,7 +17,7 @@ import (
 func signTx(unsignedJSON, privateKeyHex string) (string, error) {
 	key, err := rail0.HexToPrivateKey(privateKeyHex)
 	if err != nil {
-		return "", fmt.Errorf("invalid private key: %w", err)
+		return "", usageWrap(err, "invalid private key: %v", err)
 	}
 	return rail0.SignTransaction(unsignedJSON, key)
 }
@@ -29,7 +28,7 @@ func signTx(unsignedJSON, privateKeyHex string) (string, error) {
 func addressFromKey(privateKeyHex string) (string, error) {
 	key, err := ethcrypto.HexToECDSA(strings.TrimPrefix(privateKeyHex, "0x"))
 	if err != nil {
-		return "", fmt.Errorf("invalid private key: %w", err)
+		return "", usageWrap(err, "invalid private key: %v", err)
 	}
 	return ethcrypto.PubkeyToAddress(key.PublicKey).Hex(), nil
 }

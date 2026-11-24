@@ -58,22 +58,22 @@ func (v *chainFlagValue) Set(s string) error {
 	if v.legacy {
 		n, err := strconv.Atoi(s)
 		if err != nil {
-			return fmt.Errorf("chain id must be an integer (use --chain for a slug such as arc)")
+			return usagef("chain id must be an integer (use --chain for a slug such as arc)")
 		}
 		v.ref.legacy = s
 		*v.ref.target = n
 		return nil
 	}
 	if s == "" {
-		return fmt.Errorf("pass a chain slug (e.g. arc) or a chain id (e.g. 5042002)")
+		return usagef("pass a chain slug (e.g. arc) or a chain id (e.g. 5042002)")
 	}
 	if n, err := strconv.Atoi(s); err == nil {
 		if n <= 0 {
-			return fmt.Errorf("chain id must be positive (got %d)", n)
+			return usagef("chain id must be positive (got %d)", n)
 		}
 		*v.ref.target = n
 	} else if !chainSlugPattern(s) {
-		return fmt.Errorf("%q is neither a chain id nor a chain slug (e.g. arc, base)", s)
+		return usagef("%q is neither a chain id nor a chain slug (e.g. arc, base)", s)
 	}
 	v.ref.chain = s
 	return nil
@@ -228,7 +228,7 @@ func configuredChainID(ctx context.Context) (id int, origin string, ok bool, err
 
 // errChainRequired is the shared "no --chain and no default" error.
 func errChainRequired() error {
-	return fmt.Errorf("--chain is required (or set a default with 'rail0 config set chain <slug|id>')")
+	return usagef("--chain is required (or set a default with 'rail0 config set chain <slug|id>')")
 }
 
 // completeChainSlugs completes --chain to the current gateway's slugs, each described

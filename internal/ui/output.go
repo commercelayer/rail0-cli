@@ -251,6 +251,10 @@ func printEnvelopePaged(v any, page *PageInfo) error {
 // the output mode is applied (help, which cobra serves ahead of every command hook).
 func PrintEnvelope(v any) error { return printEnvelope(v) }
 
+// PrintJSON prints v as plain indented JSON, for the same early caller when --json was
+// asked for outside agent mode.
+func PrintJSON(v any) error { return printJSON(v) }
+
 // FatalAgent prints the agent-mode failure envelope — {"ok":false,"error":…, …} built by
 // the caller — on stdout, where the success envelope would have gone, and exits with
 // code. stdout rather than stderr: one stream holds the outcome whatever it was, and the

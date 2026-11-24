@@ -1926,21 +1926,31 @@ rail0 payouts report-hash <payout_id> 0x5c50…     # a transfer you broadcast y
 
 ---
 
-### The CLI as data (`commands`)
+### Help, as text or as data (`help`)
 
 ```sh
-rail0 commands                       # the index: every command, its arguments and flag names
-rail0 commands payments              # the index of one group
-rail0 commands payments capture      # one command in full: each flag's type, default, meaning
+rail0 help                           # what the CLI does and its commands
+rail0 help payments                  # one group
+rail0 help payments capture          # one command (the same as: rail0 payments capture --help)
 ```
 
-For a program, and for an AI agent above all, that has to pick a command and its flags
-without reading help text: the same facts `--help` prints, as JSON. The index also
-lists the global flags, the environment variables, the exit codes and the CLI's own
-error codes. One command in full says, besides its flags, whether it signs (`signs`),
-needs `--yes` (`needs_yes`), can wait for the chain (`can_wait`) or is refused in agent
-mode. It is read from the command tree, so it cannot name a flag that does not exist,
-and it is local: no gateway call, no session.
+`help` has two readers. A person gets the text above. A program — an AI agent above all —
+gets the same facts as data, so that a command and its flags need not be read out of
+prose: with `--agent` inside the envelope, with `--json` as plain JSON.
+
+```sh
+rail0 --agent help                   # the index: every command, its arguments and flag names
+rail0 --agent help payments          # the index of one group
+rail0 --agent help payments capture  # one command in full: each flag's type, default, meaning
+rail0 help payments create --json | jq -r '.flags[].name'
+```
+
+The index of the whole CLI also lists the global flags, the environment variables, the
+exit codes and the CLI's own error codes. One command in full says, besides its flags,
+whether it signs (`signs`), needs `--yes` (`needs_yes`), can wait for the chain
+(`can_wait`) or is refused in agent mode. The text rides along as `help`. All of it is
+read from the command tree, so it cannot name a flag that does not exist, and it is
+local: no gateway call, no session. `rail0 help <not a command>` is a usage error.
 
 ## Full flow examples
 
@@ -2057,7 +2067,7 @@ call, or once with `RAIL0_AGENT=1` in the agent's environment.
   `confirmation_required`, `minimum_required`, `minimum_conflict`, `label_required`,
   `unavailable_in_agent_mode`, `interactive_only`, `not_logged_in`, `session_expired`,
   `account_required`, `aborted`, `wait_timeout`, `network_error`, `cli_error`
-  (`rail0 commands` prints this list, with the exit codes).
+  (`rail0 --agent help` prints this list, with the exit codes).
   A mistake in the call (a flag or an argument that is wrong, missing or in conflict,
   a key that is not a key) is `usage_error`, exit `2`: fix the call. No usable stored
   session is `not_logged_in` or `session_expired`, exit `3`, with the sign-in as
@@ -2076,15 +2086,15 @@ call, or once with `RAIL0_AGENT=1` in the agent's environment.
   fetches them (absent on the last page). `data` is the array it always was. With
   `payments list --all` the page is `{"total":70,"has_more":false}`. `--json` still prints
   the array alone; on a terminal a note under the list says when it goes on.
-- **`rail0 commands` describes the CLI as data**, so a command and its flags need not be
-  read out of help text. Bare, it is the index: every command with its purpose,
-  arguments and flag names, plus the global flags, the environment variables, the exit
-  codes and the CLI's own error codes. `rail0 commands payments` is the index of one
-  group; `rail0 commands payments capture` is one command in full — each flag with its
-  type, default and meaning, whether it is required, and whether the command signs
-  (`signs`), asks for consent (`needs_yes`), can wait for the chain (`can_wait`) or is
-  refused in agent mode. Help in agent mode carries the same description beside its text.
-  It reads the command tree itself and makes no gateway call.
+- **Help is data.** `--help`, `help <command>` and a group run bare answer in the
+  envelope, never as bare text: `rail0 --agent help` is the index of every command with
+  its arguments and flag names, plus the global flags, the environment variables, the
+  exit codes and the CLI's own error codes; `rail0 --agent help payments` is the index
+  of one group; `rail0 --agent help payments capture` is one command in full — each flag
+  with its type, default and meaning, whether it is required, and whether the command
+  signs (`signs`), asks for consent (`needs_yes`), can wait for the chain (`can_wait`)
+  or is refused in agent mode. The text a person reads is there too, as `help`. See
+  [help, as text or as data](#help-as-text-or-as-data-help).
 - **Never a prompt, a spinner, colour or an update offer.** A value a terminal would
   ask for is a usage error naming the flag. Commands that move funds or delete things
   still need `--yes`: agent mode is not consent.
@@ -2092,10 +2102,8 @@ call, or once with `RAIL0_AGENT=1` in the agent's environment.
   `missing_private_key` at once (give it with `-p @name` or `RAIL0_PRIVATE_KEY`). Outside
   agent mode a key may be piped in; here that read would wait on a stdin the agent's
   harness leaves open and silent.
-- **Help is an envelope too.** `--help`, `help <command>` and a group run bare
-  (`rail0 payments`) answer `{"ok":true,"data":{"command":"rail0 payments","help":"…"}}`:
-  the text a person reads, in one JSON line. An unknown command is a `usage_error`
-  envelope with the suggestions in its message, wherever `--agent` sits on the line.
+- **A wrong call is an envelope too.** An unknown command is a `usage_error` envelope
+  with the suggestions in its message, wherever `--agent` sits on the line.
 - **Not available:** `keys generate` and `keys add` (the private key would pass through
   the agent's context — create and save it in a terminal and give the agent only its
   `@name`) and `init`.

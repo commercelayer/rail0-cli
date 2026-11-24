@@ -64,7 +64,7 @@ AGENTS
   ({"ok":true,"data":…} or {"ok":false,"error":…}), JSON events on stderr, and
   never prompts. Exit codes: 2 usage, 3 auth, 4 forbidden, 5 not found,
   6 conflict, 7 rejected, 8 gateway, 9 network, 10 rate-limited, 11 in flight.
-  'rail0 commands' describes every command and flag as data.
+  'rail0 help [command]' answers with the commands and their flags as data.
 
 Use 'rail0 <command> --help' for detailed usage of any command.`,
 }
@@ -160,12 +160,19 @@ func init() {
 	rootCmd.PersistentFlags().BoolVar(&agentFlag, "agent", false, "Agent mode: one JSON envelope on stdout, JSON events on stderr, no prompts (env: RAIL0_AGENT=1)")
 
 	cobra.OnInitialize(applyOutputMode)
-	// Help in agent mode is an envelope too (agentHelp): --help, 'help <command>' and a
-	// bare group all come through here.
+	// Help has two readers. A person gets the text. A program gets the same facts as
+	// data (helpData): inside the envelope in agent mode, as plain JSON with --json.
+	// --help, 'help <command>' and a bare group all come through here. Only an explicit
+	// --json counts, not a piped stdout: 'rail0 help | less' is still a person.
 	defaultHelp := rootCmd.HelpFunc()
 	rootCmd.SetHelpFunc(func(c *cobra.Command, args []string) {
-		if agentMode() {
+		switch {
+		case agentMode():
 			if err := agentHelp(c); err == nil {
+				return
+			}
+		case jsonOut:
+			if err := ui.PrintJSON(helpData(c)); err == nil {
 				return
 			}
 		}
@@ -535,7 +542,6 @@ func resolveBaseURL() string {
 var localOnlyCommands = map[string]bool{
 	"config": true, "env": true, "keys": true, "aliases": true,
 	"help": true, "completion": true, "version": true, "token": true, "init": true, "update": true,
-	"commands":                true,
 	cobra.ShellCompRequestCmd: true, cobra.ShellCompNoDescRequestCmd: true,
 }
 

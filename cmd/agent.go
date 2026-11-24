@@ -136,27 +136,12 @@ func (e *sessionError) Error() string { return e.Msg }
 
 func newSessionError(code, msg string) error { return &sessionError{Code: code, Msg: msg, Exit: 3} }
 
-// agentHelp is help in agent mode: the same text a person reads, inside the success
-// envelope, so that asking for help is one JSON line like every other call —
-// {"ok":true,"data":{"command":"rail0 payments","help":"…"}}. It used to be printed as
-// it is, the one output of agent mode a caller could not parse. The text is what cobra's
-// own help template prints: the long description, then the usage block.
+// agentHelp is help in agent mode: one JSON line like every other call —
+// {"ok":true,"data":{"command":"rail0 payments capture","help":"…","flags":[…],…}}. It
+// used to be printed as text, the one output of agent mode a caller could not parse. The
+// data is helpData: the text a person reads, and the same facts as fields.
 func agentHelp(cmd *cobra.Command) error {
-	text := strings.TrimRight(cmd.Long, " \n")
-	if text == "" {
-		text = cmd.Short
-	}
-	if cmd.Runnable() || cmd.HasSubCommands() {
-		text += "\n\n" + cmd.UsageString()
-	}
-	// The same facts as data, beside the text (describeCommand): a caller that wants a
-	// flag's type does not have to parse the usage block for it.
-	data := describeCommand(cmd)
-	data["command"] = cmd.CommandPath()
-	data["help"] = strings.TrimRight(text, "\n")
-	delete(data, "path")
-	delete(data, "description")
-	return ui.PrintEnvelope(data)
+	return ui.PrintEnvelope(helpData(cmd))
 }
 
 // nextStepError carries what to run next — and whether the operation may still be

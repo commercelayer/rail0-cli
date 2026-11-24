@@ -4,22 +4,30 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/rail0/cli/internal/ui"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
 
-// The catalogue: the CLI describing itself as data, for a program — an AI agent first of
-// all — that has to work out WHICH command and WHICH flags without reading help prose.
-// The help answers "what does this do" for a person; this answers "what can I call, with
-// what" for a caller that would otherwise guess (--payee where the flag is --to) and
-// learn from the usage error.
+// Help as data: what `rail0 help` (and --help) answers when the caller is a program — an
+// AI agent first of all — and not a person. The text answers "what does this do"; the
+// data answers "what can I call, with what" for a caller that would otherwise guess
+// (--payee where the flag is --to) and learn from the usage error.
+//
+// One name for both: `rail0 help [command]` prints the text on a terminal, and the same
+// facts as data with --agent (inside the envelope, beside the text) or --json. There is
+// no second command to learn.
+//
+//	rail0 help                      the index: every command, its arguments and flag names,
+//	                                and what holds for every call (global flags, environment,
+//	                                exit codes, the CLI's own error codes)
+//	rail0 help payments             the index of one group
+//	rail0 help payments capture     one command in full
 //
 // Everything here is read from the command tree cobra already holds, so it cannot drift
-// from the commands: the same source the help and the generated reference use. The three
-// things the tree does not say are kept beside it and checked by tests: which commands
-// agent mode refuses (agentUnavailable), the exit codes (exitCodeMeanings) and the CLI's
-// own error codes (cliErrorCodes).
+// from the commands: the same source the help text and the generated reference use. The
+// three things the tree does not say are kept beside it and checked by tests: which
+// commands agent mode refuses (agentUnavailable), the exit codes (exitCodeMeanings) and
+// the CLI's own error codes (cliErrorCodes).
 
 // agentUnavailable are the commands agent mode refuses, by path. Each refuses in its own
 // RunE (refuseInAgentMode, or init's interactive_only); a test runs them to keep this
@@ -68,45 +76,38 @@ var extraEnvironment = []map[string]string{
 	{"name": "RAIL0_NO_UPDATE_CHECK", "purpose": "1 switches off the once-a-day check for a newer release"},
 }
 
-var commandsCmd = &cobra.Command{
-	Use:   "commands [command…]",
-	Short: "Describe the CLI's commands and flags as data (for programs and agents)",
-	Long: `Prints what this CLI can be called with, as data rather than as help text.
-
-Bare, it prints an index: every command with its one-line purpose, its arguments and
-the names of its flags, plus what holds for all of them — the global flags, the
-environment variables, the exit codes and the CLI's own error codes.
-
-With a command, it prints that command in full: each flag with its type, default,
-whether it is required and what it means, the examples, and whether the command signs
-(--private-key), asks for consent (--yes), can wait for the chain (--wait) or is refused
-in agent mode. With a group (payments, webhooks, …) it prints the index of that group.
-
-It reads the command tree itself, the same source as --help, so it cannot describe a
-flag that does not exist. It is local: no gateway call, no session.`,
-	Example: `  rail0 commands                      # the index, with the exit and error codes
-  rail0 commands payments              # the payment commands
-  rail0 commands payments capture      # one command, every flag
-  rail0 --agent commands payments create | jq '.data.command.flags[].name'`,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		target := cmd.Root()
-		if len(args) > 0 {
-			found, rest, err := cmd.Root().Find(args)
-			if err != nil || len(rest) > 0 || found == nil || !describable(found) {
-				return usagef("unknown command %q\n\nRun '%s commands' for the list", strings.Join(args, " "), cmd.Root().CommandPath())
-			}
-			target = found
-		}
-		return ui.RunAPI(func() (any, error) {
-			if target.HasAvailableSubCommands() {
-				return commandIndex(target), nil
-			}
-			return map[string]any{"command": describeCommand(target)}, nil
-		})
-	},
+// helpData is what help answers as data for cmd: an index for the CLI or a group (its
+// commands, one line each), the full description for a command. The text a person
+// reads rides along as "help", so a caller has the prose and the facts in one answer.
+func helpData(cmd *cobra.Command) map[string]any {
+	var data map[string]any
+	if cmd.HasAvailableSubCommands() && (cmd == cmd.Root() || isBareGroup(cmd)) {
+		data = commandIndex(cmd)
+		delete(data, "group")
+	} else {
+		data = describeCommand(cmd)
+		delete(data, "path")
+		delete(data, "description") // the help text below carries it
+	}
+	data["command"] = cmd.CommandPath()
+	data["help"] = helpText(cmd)
+	return data
 }
 
-// describable reports whether a command belongs in the catalogue: one a caller can run
+// helpText is what cobra's own help template prints: the long description, then the
+// usage block.
+func helpText(cmd *cobra.Command) string {
+	text := strings.TrimRight(cmd.Long, " \n")
+	if text == "" {
+		text = cmd.Short
+	}
+	if cmd.Runnable() || cmd.HasSubCommands() {
+		text += "\n\n" + cmd.UsageString()
+	}
+	return strings.TrimRight(text, "\n")
+}
+
+// describable reports whether a command belongs in the index: one a caller can run
 // and the help lists. Hidden commands, cobra's completion plumbing and the help command
 // itself are left out.
 func describable(c *cobra.Command) bool {
@@ -152,7 +153,7 @@ func commandIndex(group *cobra.Command) map[string]any {
 		"stderr":          "JSON Lines events",
 		"exit_codes":      exitCodeMeanings,
 		"cli_error_codes": cliErrorCodes,
-		"detail":          "rail0 commands <command> prints one command in full",
+		"detail":          "rail0 help <command> describes one command in full",
 	}
 	return out
 }
@@ -174,7 +175,7 @@ func nonHelpFlags(set *pflag.FlagSet) []string {
 }
 
 // summarizeCommand is a command's line in the index: enough to choose it and to know
-// its flags by name. The types and meanings are one call away (rail0 commands <path>).
+// its flags by name. The types and meanings are one call away (rail0 help <path>).
 func summarizeCommand(c *cobra.Command) map[string]any {
 	entry := map[string]any{
 		"path":  c.CommandPath(),
@@ -290,8 +291,4 @@ func describeEnvironment() []map[string]string {
 	out = append(out, extraEnvironment...)
 	sort.Slice(out, func(i, j int) bool { return out[i]["name"] < out[j]["name"] })
 	return out
-}
-
-func init() {
-	rootCmd.AddCommand(commandsCmd)
 }

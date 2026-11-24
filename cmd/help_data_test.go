@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -43,7 +44,7 @@ func TestCatalogueListsEveryRunnableCommand(t *testing.T) {
 		}
 	}
 	walk(rootCmd)
-	for _, want := range []string{"rail0 payments capture", "rail0 payments create", "rail0 auth login", "rail0 health", "rail0 commands"} {
+	for _, want := range []string{"rail0 payments capture", "rail0 payments create", "rail0 auth login", "rail0 health"} {
 		if _, ok := listed[want]; !ok {
 			t.Errorf("%s is not listed", want)
 		}
@@ -217,12 +218,72 @@ func TestCliErrorCodesAreComplete(t *testing.T) {
 	}
 }
 
-func TestCommandsRejectsWhatIsNotACommand(t *testing.T) {
-	for _, args := range [][]string{{"nope"}, {"payments", "nope"}, {"env"}} {
-		err := commandsCmd.RunE(commandsCmd, args)
-		if exitCode(err) != ExitCodeUsage {
-			t.Errorf("commands %v: got %v (exit %d)", args, err, exitCode(err))
-		}
+// One name for both readers: help answers a person in text and a program in data. For
+// the CLI and for a group the data is the index; for a command, the command in full.
+func TestHelpDataByKindOfCommand(t *testing.T) {
+	root := helpData(rootCmd)
+	if root["command"] != "rail0" || root["agent_mode"] == nil || root["environment"] == nil {
+		t.Errorf("root help: keys %v", keysOf(root))
+	}
+	if entries, _ := root["commands"].([]map[string]any); len(entries) < 50 {
+		t.Errorf("root help lists %d commands", len(entries))
+	}
+	if !strings.Contains(root["help"].(string), "QUICKSTART") {
+		t.Error("root help lacks the text a person reads")
+	}
+
+	group := helpData(paymentsCmd)
+	if group["command"] != "rail0 payments" || group["agent_mode"] != nil || group["commands"] == nil {
+		t.Errorf("group help: keys %v", keysOf(group))
+	}
+
+	leaf := helpData(paymentsCaptureCmd)
+	if leaf["command"] != "rail0 payments capture" || leaf["flags"] == nil || leaf["commands"] != nil {
+		t.Errorf("command help: keys %v", keysOf(leaf))
+	}
+	if leaf["needs_yes"] != true || !strings.Contains(leaf["help"].(string), "Usage:") {
+		t.Errorf("command help: %v", keysOf(leaf))
+	}
+
+	// A group that also does something when run bare (wallets lists) is a command with
+	// subcommands: its own flags, and the subcommands by name.
+	wallets := helpData(walletsCmd)
+	if wallets["flags"] == nil || wallets["subcommands"] == nil {
+		t.Errorf("wallets help: keys %v", keysOf(wallets))
+	}
+}
+
+func keysOf(m map[string]any) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+// --json asks help for the data without agent mode: plain JSON, no envelope. A piped
+// stdout alone does not: 'rail0 help | less' is still a person.
+func TestHelpWithJSONIsTheData(t *testing.T) {
+	jsonOut = true
+	t.Cleanup(func() { jsonOut = false })
+	out := captureStdout(t, func() { paymentsCaptureCmd.HelpFunc()(paymentsCaptureCmd, nil) })
+	var data map[string]any
+	if err := json.Unmarshal([]byte(out), &data); err != nil {
+		t.Fatalf("help --json is not JSON: %v\n%.200s", err, out)
+	}
+	if data["command"] != "rail0 payments capture" || data["ok"] != nil || data["flags"] == nil {
+		t.Errorf("got keys %v", keysOf(data))
+	}
+}
+
+func TestHelpWithoutAFlagIsText(t *testing.T) {
+	var buf strings.Builder
+	paymentsCaptureCmd.SetOut(&buf)
+	t.Cleanup(func() { paymentsCaptureCmd.SetOut(nil) })
+	paymentsCaptureCmd.HelpFunc()(paymentsCaptureCmd, nil)
+	if out := buf.String(); strings.HasPrefix(strings.TrimSpace(out), "{") || !strings.Contains(out, "Usage:") {
+		t.Errorf("got %.120q", out)
 	}
 }
 

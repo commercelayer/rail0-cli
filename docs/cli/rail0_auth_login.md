@@ -21,7 +21,8 @@ require authentication (e.g. 'payments list') — that file is the only place th
 session is read from. The exact path is printed on success and by 'rail0 auth
 status'. On success the command prints the session (address, expiry) but NOT the
 raw token — pass --token (-t) to also print the token itself, or run 'rail0
-token' later.
+token' later. Neither is available in agent mode: the token is a credential and
+would land in the agent's context.
 
 The signing key is resolved like every other signing command: pass -p as a raw
 0x-prefixed hex key, as @name for a key saved in the OS keychain ('rail0 keys

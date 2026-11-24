@@ -986,6 +986,11 @@ TOKEN="$(rail0 token --json | jq -r .token)"   # e.g. to call the gateway with c
 Exporting it does **not** configure the CLI — it reads the session from its cache file
 and nowhere else.
 
+Not available in [agent mode](#agent-mode---agent), where the token would land in the
+agent's context: `rail0 token` and `rail0 auth login --token` answer
+`unavailable_in_agent_mode` there. `rail0 auth status` says who is signed in and until
+when, without the token.
+
 ---
 
 ### Account
@@ -2106,7 +2111,9 @@ call, or once with `RAIL0_AGENT=1` in the agent's environment.
   with the suggestions in its message, wherever `--agent` sits on the line.
 - **Not available:** `keys generate` and `keys add` (the private key would pass through
   the agent's context — create and save it in a terminal and give the agent only its
-  `@name`) and `init`.
+  `@name`), `token` and `auth login --token` (the session token is a credential too:
+  the CLI sends it by itself, and `auth status` says who is signed in and until when)
+  and `init`.
 - Cannot be combined with `--quiet` or `--pretty` (exit `2`); `--json` is implied.
 
 ```sh

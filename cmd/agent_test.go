@@ -371,3 +371,29 @@ func TestUnknownHelpTopicIsAUsageError(t *testing.T) {
 		t.Errorf("got %q", out)
 	}
 }
+
+// The session token is a credential: agent mode does not print it, by either door.
+func TestSessionTokenIsNotPrintedInAgentMode(t *testing.T) {
+	withAgentMode(t)
+	err := tokenCmd.RunE(tokenCmd, nil)
+	if err == nil || agentErrorCode(err, exitCode(err)) != "unavailable_in_agent_mode" || exitCode(err) != ExitCodeUsage {
+		t.Errorf("rail0 token: got %v", err)
+	}
+
+	loginShowToken = true
+	t.Cleanup(func() { loginShowToken = false })
+	err = authLoginCmd.RunE(authLoginCmd, nil)
+	if err == nil || agentErrorCode(err, exitCode(err)) != "unavailable_in_agent_mode" || !strings.Contains(err.Error(), "--token") {
+		t.Errorf("auth login --token: got %v", err)
+	}
+}
+
+// Outside agent mode the command is what it was: no session is a hint, not a refusal.
+func TestTokenCommandOutsideAgentMode(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+	t.Setenv("XDG_CACHE_HOME", dir)
+	if err := tokenCmd.RunE(tokenCmd, nil); err != nil {
+		t.Errorf("got %v", err)
+	}
+}

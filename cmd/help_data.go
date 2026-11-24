@@ -36,6 +36,7 @@ var agentUnavailable = map[string]string{
 	"rail0 init":          "interactive: it asks for the gateway, the key and the sign-in",
 	"rail0 keys generate": "it would print a private key into the agent's context",
 	"rail0 keys add":      "it reads a private key from the terminal or a pipe",
+	"rail0 token":         "it would print the session token into the agent's context",
 }
 
 // exitCodeMeanings is exitCode's table, in words. A test checks the two agree.

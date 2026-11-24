@@ -219,15 +219,16 @@ func markUsageErrors(cmd *cobra.Command) {
 // code is the gateway's machine code when the gateway answered, else one of this CLI's:
 // usage_error (or the usageError's own code), aborted, wait_timeout, network_error,
 // cli_error. message is the same text a person would read. retryable is true only where
-// running the identical command again is the right move (a 429, or a gateway code that
-// says nothing was submitted). in_flight says an on-chain operation may still be
-// running: the caller must check it (next_steps) instead of repeating it.
+// running the identical command again is the right move: a 429, a gateway code that
+// says nothing was submitted, or a gateway that was never reached (neverReachedGateway).
+// in_flight says an on-chain operation may still be running: the caller must check it
+// (next_steps) instead of repeating it.
 func agentErrorPayload(cmd *cobra.Command, err error, code int) map[string]any {
 	e := map[string]any{
 		"code":      agentErrorCode(err, code),
 		"message":   humanizeErrorFor(cmd, err).Error(),
 		"exit_code": code,
-		"retryable": code == ExitCodeRateLimited,
+		"retryable": code == ExitCodeRateLimited || neverReachedGateway(err),
 		"in_flight": errors.Is(err, ErrWaitGaveUp),
 	}
 	var apiErr *rail0.APIError

@@ -936,7 +936,8 @@ On success the command prints the session (address, expiry) but **not** the raw 
 
 #### `auth status`
 
-Print the wallet address, account id, and expiry encoded in the cached JWT.
+Print the wallet address, account id, and expiry encoded in the cached JWT. The address
+is in the EIP-55 mixed case, the same spelling `auth login` prints.
 
 ```sh
 rail0 auth status
@@ -2094,9 +2095,12 @@ call, or once with `RAIL0_AGENT=1` in the agent's environment.
   session is `not_logged_in` or `session_expired`, exit `3`, with the sign-in as
   `next_steps`. `cli_error`, exit `1`, is what is left: a failure that is not the
   caller's to fix by changing the command.
-  `retryable` is true only when the identical command is safe to run again (a 429 — see
-  `retry_after_s` — or a gateway code saying nothing was submitted). `in_flight` true
-  means an on-chain operation may still be running: run `next_steps`, do not repeat it.
+  `retryable` is true only when the identical command is safe to run again: a 429 (see
+  `retry_after_s`), a gateway code saying nothing was submitted, or a `network_error` in
+  which the gateway was never reached (the host did not resolve, the connection was
+  refused). A `network_error` that is a timeout stays `false`: the request may have
+  arrived, so repeat a fund-moving command only with its `--idempotency-key`. `in_flight`
+  true means an on-chain operation may still be running: run `next_steps`, do not repeat it.
   `reason` carries the gateway's sub-cause when there is one.
 - **stderr: JSON Lines events only**, e.g. `{"event":"signed_in","address":"0x…","stored":true,"message":"Signed in as 0x…"}`,
   `{"event":"progress","message":"waiting… 30s elapsed of 10m0s"}`,

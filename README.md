@@ -523,7 +523,7 @@ transactions <id>`, whether it reverted on-chain or was refused before broadcast
 The list commands (`payments list`, `payments transactions`, `payments disputes`,
 `disputes`, `wallets`, `webhooks list`, `webhooks event-callbacks`) take `--page` and
 `--per-page`; `payments list` also accepts `--all` to walk every page and return the
-full set.
+full set. A terminal shows a note under a page that is not the last one (`page 1 of 3, 70 in all — next: --page 2`); `--json` prints the array alone; [agent mode](#agent-mode---agent) carries the same facts as `"page"` beside `"data"`.
 
 Minimal setup:
 
@@ -1926,6 +1926,22 @@ rail0 payouts report-hash <payout_id> 0x5c50…     # a transfer you broadcast y
 
 ---
 
+### The CLI as data (`commands`)
+
+```sh
+rail0 commands                       # the index: every command, its arguments and flag names
+rail0 commands payments              # the index of one group
+rail0 commands payments capture      # one command in full: each flag's type, default, meaning
+```
+
+For a program, and for an AI agent above all, that has to pick a command and its flags
+without reading help text: the same facts `--help` prints, as JSON. The index also
+lists the global flags, the environment variables, the exit codes and the CLI's own
+error codes. One command in full says, besides its flags, whether it signs (`signs`),
+needs `--yes` (`needs_yes`), can wait for the chain (`can_wait`) or is refused in agent
+mode. It is read from the command tree, so it cannot name a flag that does not exist,
+and it is local: no gateway call, no session.
+
 ## Full flow examples
 
 Worked versions of the three shapes, using the address book and keychain names
@@ -2037,9 +2053,11 @@ call, or once with `RAIL0_AGENT=1` in the agent's environment.
   ```
 
   `code` is the gateway's machine code when the gateway answered, else one of the CLI's:
-  `usage_error`, `missing_private_key`, `flag_conflict`, `confirmation_required`,
+  `usage_error`, `missing_private_key`, `invalid_chain`, `flag_conflict`,
+  `confirmation_required`, `minimum_required`, `minimum_conflict`, `label_required`,
   `unavailable_in_agent_mode`, `interactive_only`, `not_logged_in`, `session_expired`,
-  `account_required`, `aborted`, `wait_timeout`, `network_error`, `cli_error`.
+  `account_required`, `aborted`, `wait_timeout`, `network_error`, `cli_error`
+  (`rail0 commands` prints this list, with the exit codes).
   A mistake in the call (a flag or an argument that is wrong, missing or in conflict,
   a key that is not a key) is `usage_error`, exit `2`: fix the call. No usable stored
   session is `not_logged_in` or `session_expired`, exit `3`, with the sign-in as
@@ -2052,6 +2070,21 @@ call, or once with `RAIL0_AGENT=1` in the agent's environment.
 - **stderr: JSON Lines events only**, e.g. `{"event":"signed_in","address":"0x…","stored":true,"message":"Signed in as 0x…"}`,
   `{"event":"progress","message":"waiting… 30s elapsed of 10m0s"}`,
   `{"event":"dispute_reason","kind":"open","reason":null}`. `--debug` traces are JSON too.
+- **Lists say where they stand.** A list command adds `"page"` beside `"data"`:
+  `{"ok":true,"data":[…],"page":{"page":1,"per_page":25,"total":70,"total_pages":3,"has_more":true,"next_page":2}}`.
+  `has_more` says rows exist beyond this page, and `next_page` is the `--page` value that
+  fetches them (absent on the last page). `data` is the array it always was. With
+  `payments list --all` the page is `{"total":70,"has_more":false}`. `--json` still prints
+  the array alone; on a terminal a note under the list says when it goes on.
+- **`rail0 commands` describes the CLI as data**, so a command and its flags need not be
+  read out of help text. Bare, it is the index: every command with its purpose,
+  arguments and flag names, plus the global flags, the environment variables, the exit
+  codes and the CLI's own error codes. `rail0 commands payments` is the index of one
+  group; `rail0 commands payments capture` is one command in full — each flag with its
+  type, default and meaning, whether it is required, and whether the command signs
+  (`signs`), asks for consent (`needs_yes`), can wait for the chain (`can_wait`) or is
+  refused in agent mode. Help in agent mode carries the same description beside its text.
+  It reads the command tree itself and makes no gateway call.
 - **Never a prompt, a spinner, colour or an update offer.** A value a terminal would
   ask for is a usage error naming the flag. Commands that move funds or delete things
   still need `--yes`: agent mode is not consent.

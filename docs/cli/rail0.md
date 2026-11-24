@@ -22,6 +22,7 @@ AGENTS
   ({"ok":true,"data":…} or {"ok":false,"error":…}), JSON events on stderr, and
   never prompts. Exit codes: 2 usage, 3 auth, 4 forbidden, 5 not found,
   6 conflict, 7 rejected, 8 gateway, 9 network, 10 rate-limited, 11 in flight.
+  'rail0 commands' describes every command and flag as data.
 
 Use 'rail0 <command> --help' for detailed usage of any command.
 
@@ -45,6 +46,7 @@ Use 'rail0 <command> --help' for detailed usage of any command.
 * [rail0 auth](rail0_auth.md)	 - Authenticate with the RAIL0 gateway using SIWE
 * [rail0 balance](rail0_balance.md)	 - Read an address's on-chain balance straight from the chain (like cast balance)
 * [rail0 chains](rail0_chains.md)	 - List supported blockchains (the slugs and chain IDs --chain takes)
+* [rail0 commands](rail0_commands.md)	 - Describe the CLI's commands and flags as data (for programs and agents)
 * [rail0 config](rail0_config.md)	 - Manage persisted CLI defaults (base-url, chain, token, output, http-timeout)
 * [rail0 disputes](rail0_disputes.md)	 - List every dispute on your payments (requires login)
 * [rail0 health](rail0_health.md)	 - Report gateway health (liveness/readiness)

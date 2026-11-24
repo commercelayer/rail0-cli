@@ -114,3 +114,61 @@ func TestNoticeOutsideAgentModeIsPlainText(t *testing.T) {
 		t.Errorf("got %q", errOut)
 	}
 }
+
+// A list in agent mode: the rows under "data" as always, and where the page sits in the
+// whole list under "page".
+func TestAgentListCarriesItsPage(t *testing.T) {
+	withAgent(t)
+	out := captureStdout(t, func() {
+		err := RunAPI(func() (any, error) {
+			return Paged{
+				Items: []string{"a", "b"},
+				Page:  PageInfo{Page: 1, PerPage: 2, Total: 5, TotalPages: 3, HasMore: true, NextPage: 2},
+			}, nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	})
+	want := `{"ok":true,"data":["a","b"],"page":{"page":1,"per_page":2,"total":5,"total_pages":3,"has_more":true,"next_page":2}}` + "\n"
+	if out != want {
+		t.Errorf("got  %q\nwant %q", out, want)
+	}
+}
+
+// The last page says so, and names no next one.
+func TestAgentLastPageHasNoNext(t *testing.T) {
+	withAgent(t)
+	out := captureStdout(t, func() {
+		_ = RunAPI(func() (any, error) {
+			return Paged{Items: []string{"e"}, Page: PageInfo{Page: 3, PerPage: 2, Total: 5, TotalPages: 3}}, nil
+		})
+	})
+	if !strings.Contains(out, `"has_more":false`) || strings.Contains(out, "next_page") {
+		t.Errorf("got %q", out)
+	}
+}
+
+// A result that is not a list has no "page" key at all.
+func TestAgentEnvelopeWithoutAPage(t *testing.T) {
+	withAgent(t)
+	out := captureStdout(t, func() { _ = RunAPI(func() (any, error) { return map[string]any{"id": "x"}, nil }) })
+	if strings.Contains(out, `"page"`) {
+		t.Errorf("got %q", out)
+	}
+}
+
+// --json (or a pipe) prints the list alone, as it always did: a script pipes it to jq.
+func TestJSONModePrintsTheBareList(t *testing.T) {
+	SetJSON(true)
+	t.Cleanup(func() { SetJSON(false) })
+	out := captureStdout(t, func() {
+		_ = RunAPI(func() (any, error) {
+			return Paged{Items: []string{"a"}, Page: PageInfo{Page: 1, Total: 9, HasMore: true, NextPage: 2}}, nil
+		})
+	})
+	var rows []string
+	if err := json.Unmarshal([]byte(out), &rows); err != nil || len(rows) != 1 {
+		t.Errorf("not the bare list: %v (%q)", err, out)
+	}
+}

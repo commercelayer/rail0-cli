@@ -64,6 +64,7 @@ AGENTS
   ({"ok":true,"data":…} or {"ok":false,"error":…}), JSON events on stderr, and
   never prompts. Exit codes: 2 usage, 3 auth, 4 forbidden, 5 not found,
   6 conflict, 7 rejected, 8 gateway, 9 network, 10 rate-limited, 11 in flight.
+  'rail0 commands' describes every command and flag as data.
 
 Use 'rail0 <command> --help' for detailed usage of any command.`,
 }
@@ -534,6 +535,7 @@ func resolveBaseURL() string {
 var localOnlyCommands = map[string]bool{
 	"config": true, "env": true, "keys": true, "aliases": true,
 	"help": true, "completion": true, "version": true, "token": true, "init": true, "update": true,
+	"commands":                true,
 	cobra.ShellCompRequestCmd: true, cobra.ShellCompNoDescRequestCmd: true,
 }
 

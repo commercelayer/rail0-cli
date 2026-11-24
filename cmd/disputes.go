@@ -53,7 +53,7 @@ of ONE payment.`,
 			if err != nil {
 				return nil, err
 			}
-			return resp.Data, nil // bare array; pagination is in headers
+			return paged(resp.Data, resp.Meta), nil
 		})
 	},
 }

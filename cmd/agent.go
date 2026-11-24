@@ -149,10 +149,14 @@ func agentHelp(cmd *cobra.Command) error {
 	if cmd.Runnable() || cmd.HasSubCommands() {
 		text += "\n\n" + cmd.UsageString()
 	}
-	return ui.PrintEnvelope(map[string]any{
-		"command": cmd.CommandPath(),
-		"help":    strings.TrimRight(text, "\n"),
-	})
+	// The same facts as data, beside the text (describeCommand): a caller that wants a
+	// flag's type does not have to parse the usage block for it.
+	data := describeCommand(cmd)
+	data["command"] = cmd.CommandPath()
+	data["help"] = strings.TrimRight(text, "\n")
+	delete(data, "path")
+	delete(data, "description")
+	return ui.PrintEnvelope(data)
 }
 
 // nextStepError carries what to run next — and whether the operation may still be

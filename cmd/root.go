@@ -3,7 +3,6 @@ package cmd
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"strconv"
@@ -72,6 +71,7 @@ Use 'rail0 <command> --help' for detailed usage of any command.`,
 func Execute() {
 	selfupdate.CleanupOld()
 	rejectUnknownSubcommands(rootCmd)
+	rejectUnknownHelpTopics(rootCmd)
 	markUsageErrors(rootCmd)
 	// ExecuteC, not Execute: it also returns the command that ran, which the error
 	// wording needs (a 404 means something different for a payment than for a
@@ -121,6 +121,30 @@ func rejectUnknownSubcommands(cmd *cobra.Command) {
 	}
 }
 
+// rejectUnknownHelpTopics makes `rail0 help <something that is not a command>` a usage
+// error. cobra's own help command printed "Unknown help topic" and the root usage on
+// stderr and exited 0: a typo read as success, and in agent mode stdout stayed empty.
+// A known topic is served as before, through the help function (text, or the agent
+// envelope).
+func rejectUnknownHelpTopics(root *cobra.Command) {
+	root.InitDefaultHelpCmd()
+	for _, c := range root.Commands() {
+		if c.Name() != "help" || c.Run == nil {
+			continue
+		}
+		show := c.Run
+		c.Run = nil
+		c.RunE = func(c *cobra.Command, args []string) error {
+			if target, _, err := c.Root().Find(args); target == nil || err != nil {
+				return usagef("unknown help topic %q\n\nRun '%s --help' for the list of commands",
+					strings.Join(args, " "), c.Root().CommandPath())
+			}
+			show(c, args)
+			return nil
+		}
+	}
+}
+
 // Root exposes the assembled command tree so out-of-band tools (bin/docs, which
 // generates the CLI reference) can walk it — keeping the doc-generation
 // dependencies out of the shipped binary, which never imports them.
@@ -135,6 +159,17 @@ func init() {
 	rootCmd.PersistentFlags().BoolVar(&agentFlag, "agent", false, "Agent mode: one JSON envelope on stdout, JSON events on stderr, no prompts (env: RAIL0_AGENT=1)")
 
 	cobra.OnInitialize(applyOutputMode)
+	// Help in agent mode is an envelope too (agentHelp): --help, 'help <command>' and a
+	// bare group all come through here.
+	defaultHelp := rootCmd.HelpFunc()
+	rootCmd.SetHelpFunc(func(c *cobra.Command, args []string) {
+		if agentMode() {
+			if err := agentHelp(c); err == nil {
+				return
+			}
+		}
+		defaultHelp(c, args)
+	})
 	// A malformed flag is a usage error (exit 2), not a failed operation. The root's
 	// function is inherited by every subcommand.
 	rootCmd.SetFlagErrorFunc(func(c *cobra.Command, err error) error {
@@ -387,7 +422,7 @@ func ensureSession(ctx context.Context, client *rail0.Client, keyHex, addr strin
 	}
 	privKey, err := rail0.HexToPrivateKey(keyHex)
 	if err != nil {
-		return fmt.Errorf("invalid signing key: %w", err)
+		return usageWrap(err, "invalid signing key: %v", err)
 	}
 	// Auth.Login stashes the JWT on the client it is called on (SetToken), so this
 	// leaves `client` authenticated for every subsequent request the command makes.
@@ -423,15 +458,16 @@ func ensureSession(ctx context.Context, client *rail0.Client, keyHex, addr strin
 func currentAccountID() (string, error) {
 	t := token.Load(resolveBaseURL())
 	if t == "" {
-		return "", errors.New("not logged in: run 'rail0 auth login -p 0xYourKey…'")
+		return "", newSessionError("not_logged_in", "not logged in: run 'rail0 auth login -p 0xYourKey…'")
 	}
 	claims, err := parseJWTClaims(t)
 	if err != nil {
-		return "", errors.New("session invalid or expired: run 'rail0 auth login'")
+		return "", newSessionError("session_expired", "session invalid or expired: run 'rail0 auth login'")
 	}
 	id, _ := claims["account_id"].(string)
 	if id == "" {
-		return "", errors.New("session carries no account_id: re-run 'rail0 auth login'")
+		return "", &sessionError{Code: "account_required", Exit: 4,
+			Msg: "this session's wallet has no account: sign in with a wallet that belongs to one ('rail0 auth login')"}
 	}
 	return id, nil
 }
@@ -443,15 +479,15 @@ func currentAccountID() (string, error) {
 func sessionAddress() (string, error) {
 	t := token.Load(resolveBaseURL())
 	if t == "" {
-		return "", errors.New("not logged in: run 'rail0 auth login -p 0xYourKey…'")
+		return "", newSessionError("not_logged_in", "not logged in: run 'rail0 auth login -p 0xYourKey…'")
 	}
 	claims, err := parseJWTClaims(t)
 	if err != nil {
-		return "", errors.New("session invalid or expired: run 'rail0 auth login'")
+		return "", newSessionError("session_expired", "session invalid or expired: run 'rail0 auth login'")
 	}
 	sub, _ := claims["sub"].(string)
 	if sub == "" {
-		return "", errors.New("session carries no wallet address: re-run 'rail0 auth login'")
+		return "", newSessionError("session_expired", "session carries no wallet address: re-run 'rail0 auth login'")
 	}
 	return sub, nil
 }

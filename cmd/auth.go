@@ -84,7 +84,7 @@ add'), or omit it to fall back to the RAIL0_PRIVATE_KEY environment variable.`,
 		}
 		privKey, err := rail0.HexToPrivateKey(keyHex)
 		if err != nil {
-			return fmt.Errorf("invalid private key: %w", err)
+			return usageWrap(err, "invalid private key: %v", err)
 		}
 
 		// Derive the SIWE domain from the SAME resolved base URL the client calls
@@ -326,7 +326,7 @@ and stop using it.`,
 		}
 		privKey, err := rail0.HexToPrivateKey(keyHex)
 		if err != nil {
-			return fmt.Errorf("invalid private key: %w", err)
+			return usageWrap(err, "invalid private key: %v", err)
 		}
 		if err := confirmDestructive(fmt.Sprintf(
 			"Revoke EVERY session of %s, on every machine? You will need to sign in again.", address)); err != nil {

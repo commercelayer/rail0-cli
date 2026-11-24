@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"errors"
 	"fmt"
 	"regexp"
 	"sort"
@@ -84,15 +83,15 @@ var aliasesAddCmd = &cobra.Command{
 // only differ in argument order).
 func addAlias(name, addr string) error {
 	if strings.HasPrefix(name, "@") {
-		return fmt.Errorf("alias name must not include the leading '@'")
+		return usagef("alias name must not include the leading '@'")
 	}
 	// Catch a pasted private key before the address check — and never echo the
 	// value (it may be a secret). Aliases hold public addresses only.
 	if privateKeyPattern.MatchString(addr) {
-		return errors.New("that looks like a private key — aliases store public 0x addresses, not secrets. Save a signing key with 'rail0 keys add' instead")
+		return usagef("that looks like a private key — aliases store public 0x addresses, not secrets. Save a signing key with 'rail0 keys add' instead")
 	}
 	if !evmAddressPattern.MatchString(addr) {
-		return fmt.Errorf("invalid address %q: expected a 0x-prefixed 40-hex-character EVM address", addr)
+		return usagef("invalid address %q: expected a 0x-prefixed 40-hex-character EVM address", addr)
 	}
 	cfg, err := loadConfigForWrite()
 	if err != nil {
@@ -145,7 +144,7 @@ func resolveAlias(v string) (string, error) {
 	}
 	addr, ok := cfg.Aliases[name]
 	if !ok {
-		return "", fmt.Errorf("unknown alias %q — add it with 'rail0 aliases add %s <address>'", v, name)
+		return "", usagef("unknown alias %q — add it with 'rail0 aliases add %s <address>'", v, name)
 	}
 	return addr, nil
 }

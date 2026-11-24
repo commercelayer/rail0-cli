@@ -1,7 +1,12 @@
 package cmd
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -142,6 +147,227 @@ func TestAgentVersionIsAnEnvelope(t *testing.T) {
 	withAgentMode(t)
 	out := captureStdout(t, func() { _ = versionCmd.RunE(versionCmd, nil) })
 	if !strings.HasPrefix(out, `{"ok":true,"data":{`) || !strings.Contains(out, `"version":`) {
+		t.Errorf("got %q", out)
+	}
+}
+
+// cobra sets the --agent flag only after it has found the command, so a call it rejects
+// before that (an unknown command) ran with the flag unseen and answered in text.
+func TestAgentFlagIsSeenInTheRawArguments(t *testing.T) {
+	for _, args := range [][]string{
+		{"--agent", "nope"},
+		{"nope", "--agent"},
+		{"--agent=true", "payments"},
+		{"payments", "get", "--agent=1"},
+	} {
+		if !agentInArgs(args) {
+			t.Errorf("agentInArgs(%q) = false", args)
+		}
+	}
+	for _, args := range [][]string{
+		{},
+		{"payments", "list"},
+		{"--agent=false", "chains"},
+		{"webhooks", "create", "--", "--agent"}, // after "--" it is an argument
+		{"--agents"},
+	} {
+		if agentInArgs(args) {
+			t.Errorf("agentInArgs(%q) = true", args)
+		}
+	}
+}
+
+// Help is one JSON line in agent mode, like every other call: --help, 'help <command>'
+// and a bare group all come through the root's help function.
+func TestAgentHelpIsAnEnvelope(t *testing.T) {
+	withAgentMode(t)
+	out := captureStdout(t, func() { paymentsCmd.HelpFunc()(paymentsCmd, nil) })
+	if strings.Count(strings.TrimRight(out, "\n"), "\n") != 0 {
+		t.Fatalf("help is not one line: %q", out)
+	}
+	var env struct {
+		OK   bool `json:"ok"`
+		Data struct {
+			Command string `json:"command"`
+			Help    string `json:"help"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(out), &env); err != nil {
+		t.Fatalf("help is not JSON: %v\n%s", err, out)
+	}
+	if !env.OK || env.Data.Command != "rail0 payments" {
+		t.Errorf("got ok=%v command=%q", env.OK, env.Data.Command)
+	}
+	for _, want := range []string{"Manage the full RAIL0 payment lifecycle", "Usage:", "capture", "--agent"} {
+		if !strings.Contains(env.Data.Help, want) {
+			t.Errorf("help lacks %q", want)
+		}
+	}
+}
+
+// Outside agent mode help is the text it always was.
+func TestHelpIsTextOutsideAgentMode(t *testing.T) {
+	var buf strings.Builder
+	paymentsCmd.SetOut(&buf)
+	t.Cleanup(func() { paymentsCmd.SetOut(nil) })
+	paymentsCmd.HelpFunc()(paymentsCmd, nil)
+	if out := buf.String(); strings.HasPrefix(out, "{") || !strings.Contains(out, "Usage:") {
+		t.Errorf("got %q", out)
+	}
+}
+
+// silentStdin swaps stdin for a pipe nobody writes to and nobody closes until the test
+// ends: what an agent's harness leaves a command with.
+func silentStdin(t *testing.T) {
+	t.Helper()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := os.Stdin
+	os.Stdin = r
+	t.Cleanup(func() { os.Stdin = old; _ = w.Close(); _ = r.Close() })
+}
+
+// No key in agent mode is a usage error naming the flag, at once. It used to read the
+// key from stdin and wait for a line that never came.
+func TestAgentModeNeverReadsTheKeyFromStdin(t *testing.T) {
+	withAgentMode(t)
+	t.Setenv("RAIL0_PRIVATE_KEY", "")
+	silentStdin(t)
+
+	done := make(chan error, 1)
+	go func() { _, err := signingKeyOrPrompt(""); done <- err }()
+	select {
+	case err := <-done:
+		if exitCode(err) != ExitCodeUsage || agentErrorCode(err, exitCode(err)) != "missing_private_key" {
+			t.Errorf("got %v (exit %d)", err, exitCode(err))
+		}
+		if !strings.Contains(err.Error(), "--private-key") || !strings.Contains(err.Error(), "RAIL0_PRIVATE_KEY") {
+			t.Errorf("the message does not name how to give the key: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("signingKeyOrPrompt is waiting on stdin in agent mode")
+	}
+}
+
+// A script that pipes nothing: the same usage error, not "read key from stdin: EOF".
+func TestAnEmptyPipeIsAMissingKey(t *testing.T) {
+	t.Setenv("RAIL0_PRIVATE_KEY", "")
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = w.Close()
+	old := os.Stdin
+	os.Stdin = r
+	t.Cleanup(func() { os.Stdin = old; _ = r.Close() })
+
+	_, err = signingKeyOrPrompt("")
+	if exitCode(err) != ExitCodeUsage || agentErrorCode(err, exitCode(err)) != "missing_private_key" {
+		t.Errorf("got %v (exit %d)", err, exitCode(err))
+	}
+}
+
+// 'keys add' reads a private key from the terminal or a pipe: no place for an agent.
+func TestKeysAddRefusedInAgentMode(t *testing.T) {
+	withAgentMode(t)
+	err := keysAddCmd.RunE(keysAddCmd, []string{"payer"})
+	if err == nil || agentErrorCode(err, exitCode(err)) != "unavailable_in_agent_mode" || exitCode(err) != ExitCodeUsage {
+		t.Fatalf("got %v", err)
+	}
+}
+
+// No stored session is the local twin of the gateway's 401: exit 3, a code of its own
+// and the sign-in as the next step. It was exit 1, cli_error.
+func TestNoSessionExitsThree(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+	t.Setenv("XDG_CACHE_HOME", dir)
+	t.Setenv("XDG_CONFIG_HOME", dir)
+
+	for name, call := range map[string]func() (string, error){
+		"currentAccountID": currentAccountID,
+		"sessionAddress":   sessionAddress,
+		"resolveAccountID": func() (string, error) { return resolveAccountID("") },
+	} {
+		_, err := call()
+		if exitCode(err) != 3 || agentErrorCode(err, exitCode(err)) != "not_logged_in" {
+			t.Errorf("%s: got %v (exit %d, code %s)", name, err, exitCode(err), agentErrorCode(err, exitCode(err)))
+		}
+	}
+	_, err := currentAccountID()
+	payload := agentErrorPayload(accountCmd, err, exitCode(err))
+	steps, _ := payload["next_steps"].([]string)
+	if len(steps) == 0 || !strings.Contains(steps[0], "rail0 auth login") {
+		t.Errorf("next_steps = %v", payload["next_steps"])
+	}
+}
+
+// A mistake in the call exits 2 with usage_error, whoever noticed it; the cause of a
+// wrapped one stays reachable.
+func TestCallMistakesAreUsageErrors(t *testing.T) {
+	cause := errors.New("encoding/hex: invalid byte")
+	for name, err := range map[string]error{
+		"usagef":              usagef("--scope must be mine or all, got %q", "everyone"),
+		"usageWrap":           usageWrap(cause, "invalid private key: %v", cause),
+		"wrapped again":       fmt.Errorf("sign: %w", usageWrap(cause, "--from: %v", cause)),
+		"payment-methods":     paymentMethodsCmd.RunE(paymentMethodsCmd, nil),
+		"missing private key": missingKeyError(),
+	} {
+		if exitCode(err) != ExitCodeUsage {
+			t.Errorf("%s: exit %d, want %d (%v)", name, exitCode(err), ExitCodeUsage, err)
+		}
+	}
+	if err := usageWrap(cause, "invalid private key: %v", cause); !errors.Is(err, cause) {
+		t.Error("usageWrap lost its cause")
+	}
+	if got := agentErrorCode(usagef("x"), ExitCodeUsage); got != "usage_error" {
+		t.Errorf("code = %q", got)
+	}
+}
+
+// A plain error whose message starts with a flag's name is a mistake in the call that
+// nobody classed: it would exit 1, "the operation failed", where 2 says "fix the call".
+func TestNoFlagErrorIsLeftUnclassed(t *testing.T) {
+	plain := regexp.MustCompile(`(fmt\.Errorf|errors\.New)\("--`)
+	files, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, file := range files {
+		if strings.HasSuffix(file, "_test.go") {
+			continue
+		}
+		src, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for i, line := range strings.Split(string(src), "\n") {
+			if plain.MatchString(line) {
+				t.Errorf("%s:%d: use usagef or usageWrap: %s", file, i+1, strings.TrimSpace(line))
+			}
+		}
+	}
+}
+
+// 'help <not a command>' is a usage error; a real topic is still served.
+func TestUnknownHelpTopicIsAUsageError(t *testing.T) {
+	rejectUnknownHelpTopics(rootCmd)
+	help, _, err := rootCmd.Find([]string{"help"})
+	if err != nil || help.RunE == nil {
+		t.Fatalf("help command not wrapped: %v", err)
+	}
+	if err := help.RunE(help, []string{"nope"}); exitCode(err) != ExitCodeUsage || !strings.Contains(err.Error(), `unknown help topic "nope"`) {
+		t.Errorf("got %v (exit %d)", err, exitCode(err))
+	}
+	withAgentMode(t)
+	out := captureStdout(t, func() {
+		if err := help.RunE(help, []string{"payments"}); err != nil {
+			t.Errorf("help payments: %v", err)
+		}
+	})
+	if !strings.HasPrefix(out, `{"ok":true,"data":{"command":"rail0 payments"`) {
 		t.Errorf("got %q", out)
 	}
 }

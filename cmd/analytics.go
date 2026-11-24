@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"context"
-	"fmt"
 
 	rail0 "github.com/commercelayer/rail0-go"
 	"github.com/rail0/cli/internal/ui"
@@ -145,7 +144,7 @@ order count.`,
 	Args: cobra.NoArgs,
 	RunE: func(_ *cobra.Command, _ []string) error {
 		if analyticsBy == "" {
-			return fmt.Errorf("--by is required: token, chain, mode, status or operation")
+			return usagef("--by is required: token, chain, mode, status or operation")
 		}
 		filters, err := analyticsFiltersFromFlags()
 		if err != nil {

@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 
@@ -71,7 +70,7 @@ An upsert: a holding that was disabled is re-enabled rather than duplicated.
 			walletTokenToken = configuredDefault("token")
 		}
 		if walletTokenToken == "" {
-			return errors.New("--token is required (a symbol such as USDC, or the token's 0x address)")
+			return usagef("--token is required (a symbol such as USDC, or the token's 0x address)")
 		}
 		ctx := context.Background()
 		address := walletTokenToken
@@ -225,7 +224,7 @@ func matchHolding(w rail0.WalletWithTokens, tokenArg string) (string, error) {
 	for _, h := range matches {
 		chains = append(chains, chainLabel(h.Token.ChainID))
 	}
-	return "", fmt.Errorf("wallet %s holds %s on several chains (%s) — pass --chain",
+	return "", usagef("wallet %s holds %s on several chains (%s) — pass --chain",
 		w.Address, tokenArg, strings.Join(chains, ", "))
 }
 

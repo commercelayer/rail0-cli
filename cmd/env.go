@@ -68,7 +68,7 @@ func lookupEnv(name string) (environment, error) {
 			return e, nil
 		}
 	}
-	return environment{}, fmt.Errorf("unknown environment %q (valid: %s)", name, strings.Join(envNames(), ", "))
+	return environment{}, usagef("unknown environment %q (valid: %s)", name, strings.Join(envNames(), ", "))
 }
 
 // envNames lists the selectable environment names in display order.

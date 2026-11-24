@@ -2,8 +2,6 @@ package cmd
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -150,7 +148,7 @@ func accountUpdateRequest(cmd *cobra.Command) (rail0.UpdateAccountRequest, error
 		}
 		v := strings.TrimSpace(f.val)
 		if v == "" {
-			return req, fmt.Errorf("--%s cannot be empty", f.name)
+			return req, usagef("--%s cannot be empty", f.name)
 		}
 		*f.dst = v
 	}
@@ -174,13 +172,13 @@ func accountUpdateRequest(cmd *cobra.Command) (rail0.UpdateAccountRequest, error
 		}
 		w, err := parseWindow(f.val)
 		if err != nil {
-			return req, fmt.Errorf("--%s: %w", f.name, err)
+			return req, usageWrap(err, "--%s: %v", f.name, err)
 		}
 		*f.dst = w
 	}
 	if req.Name == "" && req.Email == "" && req.PriorityTip == nil &&
 		req.AuthorizationTTL == nil && req.RefundTTL == nil {
-		return req, errors.New("nothing to update: pass --name, --email, --priority-tip, " +
+		return req, usagef("nothing to update: pass --name, --email, --priority-tip, " +
 			"--auth-ttl and/or --refund-ttl")
 	}
 	return req, nil
@@ -198,17 +196,17 @@ func parseWindow(s string) (*rail0.WindowSetting, error) {
 	if days, ok := strings.CutSuffix(s, "d"); ok {
 		n, err := strconv.Atoi(days)
 		if err != nil {
-			return nil, fmt.Errorf("%q is not a whole number of days", s)
+			return nil, usagef("%q is not a whole number of days", s)
 		}
 		d = time.Duration(n) * 24 * time.Hour
 	} else {
 		var err error
 		if d, err = time.ParseDuration(s); err != nil {
-			return nil, fmt.Errorf("%q is not a duration (e.g. 2d, 36h) or 'default'", s)
+			return nil, usagef("%q is not a duration (e.g. 2d, 36h) or 'default'", s)
 		}
 	}
 	if d <= 0 || d%time.Second != 0 {
-		return nil, fmt.Errorf("%q must be a whole number of seconds above zero", s)
+		return nil, usagef("%q must be a whole number of seconds above zero", s)
 	}
 	return rail0.WindowSeconds(int(d / time.Second)), nil
 }

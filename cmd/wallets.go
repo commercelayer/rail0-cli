@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 
@@ -60,7 +59,7 @@ not_your_wallet). Adding a wallet ('wallets create') is currently unavailable.`,
 			Page: walletsPage, PerPage: walletsPerPage,
 		}
 		if p.TokenActive, err = parseBoolFlag(walletsTokenActive); err != nil {
-			return fmt.Errorf("--token-active: %w", err)
+			return usageWrap(err, "--token-active: %v", err)
 		}
 		if walletsActive != "" {
 			switch walletsActive {
@@ -71,7 +70,7 @@ not_your_wallet). Adding a wallet ('wallets create') is currently unavailable.`,
 				f := false
 				p.Active = &f
 			default:
-				return errors.New("--active must be 'true' or 'false'")
+				return usagef("--active must be 'true' or 'false'")
 			}
 		}
 		if walletsDefault != "" {
@@ -83,7 +82,7 @@ not_your_wallet). Adding a wallet ('wallets create') is currently unavailable.`,
 				f := false
 				p.Default = &f
 			default:
-				return errors.New("--default must be 'true' or 'false'")
+				return usagef("--default must be 'true' or 'false'")
 			}
 		}
 		return ui.RunAPI(func() (any, error) {
@@ -183,11 +182,11 @@ one already registered to any account is refused (409).`,
 			return err
 		}
 		if !strings.EqualFold(signer, addr) {
-			return fmt.Errorf("the signing key controls %s, but --address is %s — adding a wallet needs the key OF the address being added", signer, addr)
+			return usagef("the signing key controls %s, but --address is %s — adding a wallet needs the key OF the address being added", signer, addr)
 		}
 		privKey, err := rail0.HexToPrivateKey(keyHex)
 		if err != nil {
-			return fmt.Errorf("invalid private key: %w", err)
+			return usageWrap(err, "invalid private key: %v", err)
 		}
 
 		client := newClient()
@@ -285,7 +284,7 @@ delete, not a removal — so the two are interchangeable.`,
 				f := false
 				req.Active = &f
 			default:
-				return errors.New("--active must be 'true' or 'false'")
+				return usagef("--active must be 'true' or 'false'")
 			}
 		}
 		// --active false IS the revocation, so it is gated like `wallets delete`, which

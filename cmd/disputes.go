@@ -123,12 +123,12 @@ func (l disputeReasonList) resolve(input string) (rail0.DisputeReason, error) {
 	if l.kind == "close" {
 		for _, e := range rail0.DisputeSystemCloseReasons {
 			if string(e.Code) == v || strings.EqualFold(e.Bytes32, v) {
-				return "", fmt.Errorf("%s is recorded by the protocol itself (a full refund closes the dispute) and can't be chosen — use one of: %s, or leave --reason out for no reason",
+				return "", usagef("%s is recorded by the protocol itself (a full refund closes the dispute) and can't be chosen — use one of: %s, or leave --reason out for no reason",
 					e.Code, strings.Join(l.codes(), ", "))
 			}
 		}
 	}
-	return "", fmt.Errorf("unknown %s reason %q — use one of: %s, or leave --reason out for no reason (see 'rail0 disputes reasons')",
+	return "", usagef("unknown %s reason %q — use one of: %s, or leave --reason out for no reason (see 'rail0 disputes reasons')",
 		l.kind, input, strings.Join(l.codes(), ", "))
 }
 
@@ -246,7 +246,7 @@ func disputeReasonRows(kind string, withBytes32 bool) ([]disputeReasonRow, error
 		}
 	}
 	if !matched {
-		return nil, fmt.Errorf("--kind must be open, close or system, got %q", kind)
+		return nil, usagef("--kind must be open, close or system, got %q", kind)
 	}
 	return rows, nil
 }

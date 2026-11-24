@@ -150,7 +150,7 @@ func paymentsUpdateRequest(cmd *cobra.Command) (rail0.UpdatePaymentRequest, erro
 	var req rail0.UpdatePaymentRequest
 	setDesc := cmd.Flags().Changed("description")
 	if setDesc && paymentsUpdateClear {
-		return req, fmt.Errorf("pass --description or --clear, not both")
+		return req, usagef("pass --description or --clear, not both")
 	}
 	if setDesc {
 		req.Description = &paymentsUpdateDescription
@@ -173,7 +173,7 @@ func paymentsUpdateRequest(cmd *cobra.Command) (rail0.UpdatePaymentRequest, erro
 		}
 	}
 	if req.Description == nil && req.MerchantNote == nil && req.Reference == nil && req.ReferenceOrigin == nil {
-		return req, fmt.Errorf("nothing to update: pass --description, --clear, --note, --reference and/or --reference-origin")
+		return req, usagef("nothing to update: pass --description, --clear, --note, --reference and/or --reference-origin")
 	}
 	return req, nil
 }
@@ -329,7 +329,7 @@ func paymentsListScopeParams(cmd *cobra.Command) (rail0.ListPaymentsParams, erro
 	case "all":
 		p.Scope = "all"
 	default:
-		return p, fmt.Errorf("--scope must be mine or all, got %q", paymentsListScope)
+		return p, usagef("--scope must be mine or all, got %q", paymentsListScope)
 	}
 	var operatorOnly []string
 	if cmd.Flags().Changed("account") {
@@ -342,12 +342,12 @@ func paymentsListScopeParams(cmd *cobra.Command) (rail0.ListPaymentsParams, erro
 		operatorOnly = append(operatorOnly, "--expiring-within")
 	}
 	if len(operatorOnly) > 0 && p.Scope != "all" {
-		return p, fmt.Errorf("%s only applies with --scope all (the gateway ignores it on your own list)", strings.Join(operatorOnly, ", "))
+		return p, usagef("%s only applies with --scope all (the gateway ignores it on your own list)", strings.Join(operatorOnly, ", "))
 	}
 	if cmd.Flags().Changed("account") {
 		p.AccountID = strings.TrimSpace(paymentsListAccount)
 		if p.AccountID == "" {
-			return p, errors.New("--account cannot be empty")
+			return p, usagef("--account cannot be empty")
 		}
 	}
 	if cmd.Flags().Changed("has-error") {
@@ -357,7 +357,7 @@ func paymentsListScopeParams(cmd *cobra.Command) (rail0.ListPaymentsParams, erro
 	if cmd.Flags().Changed("expiring-within") {
 		secs := int(paymentsListExpiringWithin / time.Second)
 		if secs < 1 || secs > 90*86_400 {
-			return p, fmt.Errorf("--expiring-within must be between 1s and 90 days, got %s", paymentsListExpiringWithin)
+			return p, usagef("--expiring-within must be between 1s and 90 days, got %s", paymentsListExpiringWithin)
 		}
 		p.ExpiringWithin = secs
 	}
@@ -370,7 +370,7 @@ func paymentsListScopeParams(cmd *cobra.Command) (rail0.ListPaymentsParams, erro
 // ids, --pretty a table.
 func listPaymentsCSV(ctx context.Context, p rail0.ListPaymentsParams) error {
 	if agentMode() || quietOut || prettyOut {
-		return errors.New("--csv writes CSV; it cannot be combined with --agent, --quiet or --pretty")
+		return usagef("--csv writes CSV; it cannot be combined with --agent, --quiet or --pretty")
 	}
 	client := newReadClient()
 	var payments []rail0.Payment
@@ -535,7 +535,7 @@ chain/token defaults: set "mode": "charge" in the file rather than passing -C.`,
 			return err
 		}
 		if !strings.EqualFold(signer, string(req.Payer)) {
-			return fmt.Errorf("signing key address %s does not match the payer %s (--from) — you're signing with the wrong key", signer, req.Payer)
+			return usagef("signing key address %s does not match the payer %s (--from) — you're signing with the wrong key", signer, req.Payer)
 		}
 		// The gateway gates every /payments write behind a SIWE session, and
 		// create requires the payer to BE the authenticated address. Sign in with
@@ -772,7 +772,7 @@ func resolveSigningKey(explicitKey string) (string, error) {
 	if env := os.Getenv("RAIL0_PRIVATE_KEY"); env != "" {
 		return env, nil
 	}
-	return "", errors.New("no signing key: pass --private-key (-p / --pk), set RAIL0_PRIVATE_KEY, or save one with 'rail0 keys add' and pass it as @name")
+	return "", missingKeyError()
 }
 
 // signingKeyOrPrompt resolves the signing key like resolveSigningKey, but when
@@ -791,12 +791,19 @@ func signingKeyOrPrompt(explicitKey string) (string, error) {
 	if explicitKey != "" || os.Getenv("RAIL0_PRIVATE_KEY") != "" {
 		return resolveSigningKey(explicitKey)
 	}
+	// Agent mode never reads the key from stdin. It is not a terminal there, so the
+	// read below would take it for a pipe and wait: an agent's harness usually leaves
+	// stdin open and silent, and the command hung until something closed it. A missing
+	// value is a usage error naming the flag, like every other one in agent mode.
+	if agentMode() {
+		return "", missingKeyError()
+	}
 	key, err := promptSecret("Private key (0x-prefixed hex, or @name for a saved key; hidden)")
 	if err != nil {
 		return "", err
 	}
 	if key = strings.TrimSpace(key); key == "" {
-		return "", errors.New("no signing key provided")
+		return "", missingKeyError()
 	}
 	// Accept the same "@name" keychain reference as the --private-key flag, so the
 	// interactive prompt and the flag behave identically — a saved key can be used
@@ -840,7 +847,7 @@ func ensureSignerFor(ctx context.Context, client *rail0.Client, rail0ID, signing
 			return &signingContext{payment: p, signer: signer, op: op}, nil
 		}
 	}
-	return nil, fmt.Errorf("signing key address %s can't %s this payment — expected %s (wrong key?)",
+	return nil, usagef("signing key address %s can't %s this payment — expected %s (wrong key?)",
 		signer, op, strings.Join(allowed, " or "))
 }
 

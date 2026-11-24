@@ -475,9 +475,9 @@ Exit codes distinguish the failure class:
 |---|---|
 | `0` | success |
 | `1` | any other failure |
-| `2` | usage: unknown command or flag, wrong arguments, a required value or `--yes` missing where nobody can be asked, a command not offered in agent mode |
-| `3` | unauthorized (401) |
-| `4` | forbidden (403) |
+| `2` | usage: unknown command or flag, wrong arguments, a flag value that is invalid or conflicts with another, a required value (the signing key included) or `--yes` missing where nobody can be asked, a command not offered in agent mode |
+| `3` | unauthorized: the gateway answered 401, or the command needs a session and none is stored (not signed in, or the stored one expired) |
+| `4` | forbidden: the gateway answered 403, or the stored session belongs to a wallet with no account and the command needs one |
 | `5` | not found (404) |
 | `6` | conflict (409) |
 | `7` | rejected by the gateway (400, 422) |
@@ -889,7 +889,7 @@ undoable by rotating back. The previous secret is gone, and from that moment eve
 consumer still verifying `X-Rail0-Signature` against it rejects deliveries — so a
 mistyped webhook id silently breaks production verification.
 
-The signing key is resolved in this order: `--private-key` (`-p` / `--pk`, where `@name` pulls the key from the OS keychain) > `RAIL0_PRIVATE_KEY` env var. If none is set, the CLI prompts for the key **hidden** on a terminal (or reads one line from a piped stdin), so it never lands in the shell history or process arguments — the same masked input as `keys add`.
+The signing key is resolved in this order: `--private-key` (`-p` / `--pk`, where `@name` pulls the key from the OS keychain) > `RAIL0_PRIVATE_KEY` env var. If none is set, the CLI prompts for the key **hidden** on a terminal (or reads one line from a piped stdin), so it never lands in the shell history or process arguments — the same masked input as `keys add`. In [agent mode](#agent-mode---agent) nothing is read from stdin: with no key the command answers `missing_private_key` (exit `2`) at once. A pipe that delivers nothing gets the same answer.
 
 **Checked before signing.** The gateway prepares the transaction, but the CLI checks it
 locally before your key touches it, and refuses to sign on any mismatch: it must be
@@ -2037,8 +2037,14 @@ call, or once with `RAIL0_AGENT=1` in the agent's environment.
   ```
 
   `code` is the gateway's machine code when the gateway answered, else one of the CLI's:
-  `usage_error`, `flag_conflict`, `confirmation_required`, `unavailable_in_agent_mode`,
-  `interactive_only`, `aborted`, `wait_timeout`, `network_error`, `cli_error`.
+  `usage_error`, `missing_private_key`, `flag_conflict`, `confirmation_required`,
+  `unavailable_in_agent_mode`, `interactive_only`, `not_logged_in`, `session_expired`,
+  `account_required`, `aborted`, `wait_timeout`, `network_error`, `cli_error`.
+  A mistake in the call (a flag or an argument that is wrong, missing or in conflict,
+  a key that is not a key) is `usage_error`, exit `2`: fix the call. No usable stored
+  session is `not_logged_in` or `session_expired`, exit `3`, with the sign-in as
+  `next_steps`. `cli_error`, exit `1`, is what is left: a failure that is not the
+  caller's to fix by changing the command.
   `retryable` is true only when the identical command is safe to run again (a 429 — see
   `retry_after_s` — or a gateway code saying nothing was submitted). `in_flight` true
   means an on-chain operation may still be running: run `next_steps`, do not repeat it.
@@ -2049,8 +2055,17 @@ call, or once with `RAIL0_AGENT=1` in the agent's environment.
 - **Never a prompt, a spinner, colour or an update offer.** A value a terminal would
   ask for is a usage error naming the flag. Commands that move funds or delete things
   still need `--yes`: agent mode is not consent.
-- **Not available:** `keys generate` (the private key would land in the agent's
-  context — generate it in a terminal and give the agent only an alias) and `init`.
+- **Never a read from stdin.** A signing command run with no key answers
+  `missing_private_key` at once (give it with `-p @name` or `RAIL0_PRIVATE_KEY`). Outside
+  agent mode a key may be piped in; here that read would wait on a stdin the agent's
+  harness leaves open and silent.
+- **Help is an envelope too.** `--help`, `help <command>` and a group run bare
+  (`rail0 payments`) answer `{"ok":true,"data":{"command":"rail0 payments","help":"…"}}`:
+  the text a person reads, in one JSON line. An unknown command is a `usage_error`
+  envelope with the suggestions in its message, wherever `--agent` sits on the line.
+- **Not available:** `keys generate` and `keys add` (the private key would pass through
+  the agent's context — create and save it in a terminal and give the agent only its
+  `@name`) and `init`.
 - Cannot be combined with `--quiet` or `--pretty` (exit `2`); `--json` is implied.
 
 ```sh

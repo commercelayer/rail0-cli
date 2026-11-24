@@ -98,7 +98,7 @@ flight — check it with 'payouts get <id>', never send it again.`,
 		}
 		privKey, err := rail0.HexToPrivateKey(keyHex)
 		if err != nil {
-			return fmt.Errorf("invalid private key: %w", err)
+			return usageWrap(err, "invalid private key: %v", err)
 		}
 		ctx := context.Background()
 		client := newClient()
@@ -498,7 +498,7 @@ transfer.
 		}
 		privKey, err := rail0.HexToPrivateKey(keyHex)
 		if err != nil {
-			return fmt.Errorf("invalid private key: %w", err)
+			return usageWrap(err, "invalid private key: %v", err)
 		}
 		ctx := context.Background()
 		client := newClient()

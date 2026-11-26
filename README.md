@@ -35,7 +35,7 @@ rotate is reported rather than silently honoured. Keys are scoped to the payment
 - [Shell completion](#shell-completion)
 - [Configuration](#configuration) — [defaults](#persisted-defaults-config) · [`--chain`](#chains---chain-slugid) · [address book](#address-book-aliases) · [signing keys](#signing-keys-os-keychain) · [new wallet](#new-wallet-keys-generate) · [`balance`](#on-chain-balance-balance)
 - [Signing modes](#signing-modes) — who signs what, and when
-- [Commands](#commands) — the full reference, including [repairing a webhook](#repairing-a-webhook-that-stopped-delivering) and [payouts](#payouts)
+- [Commands](#commands) — the full reference, including [repairing a webhook](#repairing-a-webhook-that-stopped-delivering), [payouts](#payouts) and the [operator commands](#operator-commands-admin)
 - [Full flow examples](#full-flow-examples) — authorize/capture, charge, refund
 - [Output modes](#output-modes) — including [agent mode (`--agent`)](#agent-mode---agent)
 - [Releasing](#releasing) — for maintainers
@@ -948,6 +948,8 @@ rail0 auth status
 Revoke the session on the gateway and remove the cached JWT. The result says what
 happened: `session` is `none` (nothing was stored), `revoked`, or `abandoned` (removed
 locally but not revoked — `session_detail` says why).
+An operator's [write mode](#write-mode), if it is on, ends first: its token is revoked
+and removed with the session.
 
 ```sh
 rail0 auth logout
@@ -1932,6 +1934,261 @@ rail0 payouts report-hash <payout_id> 0x5c50…     # a transfer you broadcast y
 
 ---
 
+### Operator commands (`admin`)
+
+For a gateway **operator**: the commands that read and repair across every account.
+They need a session whose account holds the operator grant (`rail0 auth login` with an
+operator's key); any other session is answered `403` `forbidden`.
+
+**Not available in [agent mode](#agent-mode---agent).** Every `rail0 admin` command
+answers `unavailable_in_agent_mode` there, before anything is sent: an operator's
+action is a person's, at a terminal.
+
+| Command | What it does | Writes |
+|---|---|---|
+| `admin health` | One verdict, then a named check per thing that can be wrong | no |
+| `admin health --rpc` | Every active chain's RPC endpoints, probed from the gateway | no |
+| `admin transactions` | Transactions across every account, or only the stuck ones | no |
+| `admin sync-errors` | Why an indexer callback could not be applied | no |
+| `admin sync-errors clear` | Delete the sync errors the filters select | **yes** |
+| `admin trace <payment>` | Everything about one payment, whoever it belongs to | no |
+| `admin accounts` | Every account: search, the whole record (`get`), what it has in motion (`exposure`) | no |
+| `admin accounts deactivate\|activate` | Switch an account off or back on | **yes** |
+| `admin wallets --account …` | An account's wallets, and what still names an address (`usage`) | no |
+| `admin wallets deactivate\|activate` | Switch any wallet off or back on | **yes** |
+| `admin onboardings` | Invites and sign-ups, with how their last email went | no |
+| `admin onboardings invite\|correct\|resend\|cancel` | Invite a merchant and follow the request to its claim | **yes** |
+| `admin write-mode [on\|off]` | See, open or close the hour in which the operator may write | — |
+
+#### Write mode
+
+An operator session **reads**. A write is refused `403` `write_mode_required` until
+write mode is on: a second token for the same session, valid one hour by default and
+never longer than the session. Switching it on asks for no signature, and both switches
+are recorded in the gateway's operator audit log.
+
+```sh
+rail0 admin write-mode        # is it on, and until when
+rail0 admin write-mode on     # → {"active": true, "expires_at": "…", "expires_in": "1h 0m"}
+rail0 admin write-mode off    # revoke it now
+```
+
+- **It is a state of the session, not of one command.** While it is on, every command
+  this CLI runs against that gateway carries the write-mode token, so the operator's
+  writes outside `rail0 admin` work too: `account update --account …`,
+  `payments redrive`, a wallet switched off or back on.
+- **It ends** when the hour is up, with `write-mode off`, with `auth logout` and with a
+  new `auth login` (each revokes the token on the gateway, not only here).
+- **The token** is stored beside the session's (same directory, `0600`) and is never
+  printed. Agent mode never carries it: with write mode on in a terminal, an agent on
+  the same machine still gets `write_mode_required` for an operator's write.
+
+#### `admin health`
+
+```sh
+rail0 admin health            # the operator diagnostics
+rail0 admin health --rpc      # can the gateway reach the chains
+rail0 admin health --pretty
+```
+
+The diagnostics are a verdict (`ok`, `degraded`, `error`) and a check per standing
+failure condition: the worker fleet, the indexer's intake, broadcasts that are not
+landing, open webhook circuits, sync callbacks that could not be applied, balance
+divergences. Each check carries its figures and a `describes` sentence saying what they
+mean. `--rpc` reports, per chain, each endpoint's status, head block and latency as
+seen from the gateway's own process.
+
+**The exit code follows the verdict:** `0` when it is `ok`, `1` otherwise, after the
+report is printed, with the failing checks named on stderr. So it works as a check:
+
+```sh
+rail0 admin health --json > /tmp/health.json || notify "gateway: $(jq -r .status /tmp/health.json)"
+```
+
+#### `admin transactions`
+
+```sh
+rail0 admin transactions --stuck any                  # what needs attention
+rail0 admin transactions --hash 0xed7c607d…           # the one an explorer link names
+rail0 admin transactions --account 019e748b-… --status failed --chain arc
+rail0 admin transactions --operation refund --sort -created_at --pretty
+```
+
+| Flag | Meaning |
+|---|---|
+| `--stuck` | `unbroadcast` (signed, never sent), `unconfirmed` (sent, never confirmed) or `any` |
+| `--status` | One or more of `pending`, `submitting`, `submitted`, `confirmed`, `failed` |
+| `--operation` | `authorize`, `capture`, `charge`, `void`, `release`, `refund`, … |
+| `--chain` | A slug or a chain id |
+| `--account` | Payments whose payee is one of this account's wallets |
+| `--hash` | The transaction with this hash |
+| `--sort`, `--page`, `--per-page` | As on every list |
+
+Each row carries the payment it belongs to (`payment`: ids, chain, parties, amount) and
+`error_reason` when it failed. A stuck broadcast is re-sent with
+`rail0 payments redrive <payment> <transaction>`, in write mode.
+
+#### `admin sync-errors`
+
+The gateway's ledger of indexer callbacks it could not apply: on-chain events the
+gateway's mirror never recorded. It is never pruned by itself.
+
+```sh
+rail0 admin sync-errors
+rail0 admin sync-errors --reason payment_mismatch --pretty
+rail0 admin sync-errors --payment 0xrail0Id…
+rail0 admin sync-errors clear --reason not_found      # asks first, with the count
+rail0 admin sync-errors clear --payment 0xrail0Id… --yes
+```
+
+`--reason` is one of `not_found`, `external_operation`, `chain_mismatch`,
+`payment_mismatch`, `operation_mismatch`, `unapplicable`, `balance_divergence`,
+`impossible_balances`; `--outcome` is `confirmed` or `failed`; `--tx-hash` and
+`--payment` (a UUID or a `rail0_id`) narrow to one transaction or payment.
+
+`clear` deletes exactly the rows the same filters list. It counts them first and asks
+(`--yes` skips the question), cannot be undone, needs [write mode](#write-mode) and is
+audited with its filters and the number of rows removed. **At least one filter is
+required.** `--all` empties the whole ledger instead, and that includes the
+`balance_divergence` rows whose count `admin health` reports: to drop a backlog and
+keep those, filter by `--reason`.
+
+#### `admin trace`
+
+"What happened to this payment", in one command, whoever the payment belongs to.
+
+```sh
+rail0 admin trace 0xrail0Id…
+rail0 admin trace 019e748b-… --timeline --pretty
+```
+
+The result has a section per kind: `payment` (with its transactions), `sync_errors`,
+`deliveries` (webhook deliveries across every subscription, each with the subscription
+and its account, without the request body), `disputes`, `actions` (what operators did
+to it) and `totals`, which says how many of each exist.
+
+`--timeline` prints the same facts as one chronological list instead:
+
+```
+  AT                   KIND         EVENT              STATUS     AMOUNT  CODE  DETAIL
+  ───────────────────  ───────────  ─────────────────  ─────────  ──────  ────  ───────────
+  2026-10-22 14:28:15  payment      created                          2.5
+  2026-10-22 14:30:21  transaction  authorize          confirmed                0x563d…9b02
+  2026-10-22 14:37:06  transaction  capture            confirmed       1        0xf8e0…b029
+  2026-10-22 14:37:10  delivery     payments.captured  failed               500  Shop
+  2026-10-23 09:00:00  dispute      opened             open                     not_received
+```
+
+#### `admin accounts`
+
+```sh
+rail0 admin accounts                              # every account, by name
+rail0 admin accounts --search acme --pretty
+rail0 admin accounts --search 0x2D2B…             # whose wallet is this
+rail0 admin accounts --status deactivated
+rail0 admin accounts --operator true              # who holds the operator grant
+rail0 admin accounts get 019e748b-…               # the whole record: active, status, admin
+rail0 admin accounts exposure 019e748b-…          # what it still has in motion
+```
+
+`--search` takes whatever is at hand: a part of the name or of the email, a wallet
+address or its beginning, or the account's id.
+
+`exposure` is what a deactivation would leave half-way, counted on the payments the
+account is the payee of: `in_flight` (created or signed, not yet on chain), `in_escrow`
+(buyer funds the contract holds, not yet captured), `disputed` (open disputes), the money
+of those per chain and token (`by_token`), and the `payouts` still moving. None of it is
+lost by a deactivation: escrow always returns to the buyer by void or release, and the
+wallet is the merchant's.
+
+```sh
+rail0 admin accounts deactivate 019e748b-…        # reads the exposure, shows it, asks
+rail0 admin accounts deactivate 019e748b-… --yes --acknowledge-exposure
+rail0 admin accounts activate 019e748b-…
+```
+
+A deactivated account can start no new payment and write no payout; its sessions keep
+reading, and it can still capture, refund and release what it has. Both need
+[write mode](#write-mode) and are audited.
+
+- **An account with something in motion needs an acknowledgement.** At a terminal the
+  question shows the figures, and answering yes is the acknowledgement. Where no
+  question is asked (`--yes`, a script) the command stops with
+  `exposure_not_acknowledged` unless `--acknowledge-exposure` is passed too: `--yes`
+  alone never switches off an account that has something in motion.
+- The gateway refuses your own account (`422` `self_deactivate`: another operator has
+  to) and the account holding the last active operator grant (`422` `last_admin`).
+- An account already deactivated is reported as such and nothing is written.
+
+#### `admin wallets`
+
+`rail0 wallets` is the merchant's: its own account, and writes only on the wallet it
+signed in with. These are the same reads and the same switch on **any** account, named
+with `--account`.
+
+```sh
+rail0 admin wallets --account 019e748b-…                       # with deactivated_by on the ones that are off
+rail0 admin wallets usage 0x2D2B… --account 019e748b-…         # payments as payee and payer, transactions sent
+rail0 admin wallets deactivate 0x2D2B… --account 019e748b-…    # shows the usage, asks
+rail0 admin wallets activate 0x2D2B… --account 019e748b-…
+```
+
+A wallet is its id, its `0x` address or an `@alias`. `--account` is always required and
+never defaults to the operator's own account.
+
+**An operator's switch-off is the definitive revocation**, for a leaked or lost key: the
+wallet's own session cannot switch it back on (`403` `wallet_deactivated_by_operator`),
+where it could after switching itself off. Only `admin wallets activate` lifts it. The
+wallet stops being offered to buyers and its webhooks stop; its payments still settle.
+The account's only active wallet is refused (`422` `last_active_wallet`). Both switches
+need [write mode](#write-mode) and are audited.
+
+#### `admin onboardings`
+
+How a merchant's account comes to exist: the operator invites (or the merchant signs
+up), the gateway emails a link, and the merchant **claims** the request by signing with
+the wallet it names. Only then is there an account, with the request's id.
+
+```sh
+rail0 admin onboardings                           # open and expired: still waiting for something
+rail0 admin onboardings --send-failed true        # whose email did not go out
+rail0 admin onboardings --status completed --origin signup --pretty
+```
+
+| Flag | Meaning |
+|---|---|
+| `--status` | One or more of `open`, `expired`, `completed` (default: `open,expired`) |
+| `--origin` | `operator` (an invite) or `signup` (self-service) |
+| `--send-failed` | `true`: the last email failed (`last_send_error` says why); `false`: the others |
+| `--sort`, `--page`, `--per-page` | As on every list |
+
+Each row carries its `conflicts`: the name, email or address an account already holds,
+or that another request not yet completed also names.
+
+```sh
+rail0 admin onboardings invite --name "Acme Store" --email ops@acme.example --address 0x2D2B…
+rail0 admin onboardings correct 019f0c11-… --email right@acme.example
+rail0 admin onboardings resend 019f0c11-…         # the invite again, or a reminder for a sign-up
+rail0 admin onboardings cancel 019f0c11-…         # asks first
+```
+
+- **The address is the merchant's own wallet**, given by the merchant: the claim must be
+  signed by it. An operator never makes a wallet for a merchant.
+- **No answer carries the link.** It exists only in the email; the answer says which mail
+  was queued and to whom, and the list shows later whether it went out. Every new link
+  makes the previous one stop working.
+- `invite` repeated for an open request with the same email and address sends a new link
+  for that request. `correct` renews an expired request and sends nothing to the address
+  it replaced. `resend` is also how a failed send is retried.
+- A name, email or address an account already holds is refused (`409`
+  `account_name_taken`, `account_email_taken`, `account_wallet_taken`), and an email the
+  environment may not write to (`422` `email_domain_not_allowed`).
+- A completed request is history (`422` `onboarding_completed`): correct its account with
+  `account update --account`, stop it with `admin accounts deactivate`.
+- All four writes need [write mode](#write-mode) and are audited.
+
+---
+
 ### Help, as text or as data (`help`)
 
 ```sh
@@ -2088,8 +2345,8 @@ call, or once with `RAIL0_AGENT=1` in the agent's environment.
   `usage_error`, `missing_private_key`, `invalid_chain`, `flag_conflict`,
   `confirmation_required`, `minimum_required`, `minimum_conflict`, `label_required`,
   `unavailable_in_agent_mode`, `interactive_only`, `not_logged_in`, `session_expired`,
-  `account_required`, `aborted`, `wait_timeout`, `network_error`, `cli_error`
-  (`rail0 --agent help` prints this list, with the exit codes).
+  `account_required`, `write_mode_required`, `operator_session`, `exposure_not_acknowledged`, `aborted`, `wait_timeout`, `network_error`,
+  `cli_error` (`rail0 --agent help` prints this list, with the exit codes).
   A mistake in the call (a flag or an argument that is wrong, missing or in conflict,
   a key that is not a key) is `usage_error`, exit `2`: fix the call. No usable stored
   session is `not_logged_in` or `session_expired`, exit `3`, with the sign-in as
@@ -2132,8 +2389,27 @@ call, or once with `RAIL0_AGENT=1` in the agent's environment.
 - **Not available:** `keys generate` and `keys add` (the private key would pass through
   the agent's context — create and save it in a terminal and give the agent only its
   `@name`), `token` and `auth login --token` (the session token is a credential too:
-  the CLI sends it by itself, and `auth status` says who is signed in and until when)
-  and `init`.
+  the CLI sends it by itself, and `auth status` says who is signed in and until when),
+  `init`, and every [`rail0 admin` command](#operator-commands-admin): an operator's
+  action is a person's. The write-mode token is never carried in agent mode either, so
+  an operator's write through any other command is refused `write_mode_required`.
+- **Never with an operator's session.** With an operator's session the gateway widens
+  the ordinary commands too (`payments list --scope all`, `payments get` on anyone's
+  payment, `account get --account`, `wallets --account`), so agent mode refuses the
+  session itself, with `operator_session` (exit `4`):
+  - a session **stored** by a person who signed in as an operator is not carried: what
+    needs no session still works (`health`, `chains`, `tokens`, `payment-methods`,
+    `help`), anything else answers `operator_session`;
+  - a session **opened on the spot**, by `auth login` or by a command signing in with
+    its `-p` key, is revoked at once when the gateway says it is an operator's, and is
+    never stored. A session a person stored before is left as it was.
+
+  The way out is a key whose account is not an operator's (`rail0 auth login -p @key`),
+  or a person at a terminal. `auth status` says `"operator": true` for such a session,
+  and in agent mode `"usable_in_agent_mode": false`. The CLI knows what the gateway
+  answered at sign-in: a session stored by a CLI older than this rule, one pasted with
+  `auth login --token`, and a role granted after the sign-in read as not an operator's
+  until the next sign-in, at most the 24 hours a session lasts.
 - Cannot be combined with `--quiet` or `--pretty` (exit `2`); `--json` is implied.
 
 ```sh
@@ -2157,6 +2433,22 @@ whole milestone. Run `bin/release-prepare` on `milestone/next` (clean, pushed, c
 branch decide the version and fill the notes, together with anything merged on `main`
 since the last tag. After the release merges, delete `milestone/next`, cut it again from
 `main` and move the open milestone's pull requests onto it.
+
+**The release pull request says what it releases.** Two things, both checked or written
+by `bin/release-prepare`:
+
+- **A summary, written by its author** at the top of the description: a few lines saying
+  what the release brings, what is new and what does not change. The script writes its
+  own block (notes, version, how the release happens) below it, between
+  `<!-- release:start -->` markers, and keeps everything above on every re-run, so the
+  summary is written once and updated when more is merged. It is the first thing shown in
+  the pull request, in the message of its merge commit and in every preview. Without one
+  (an empty description, only a comment, or a placeholder) a real run **refuses** before
+  it commits or pushes anything; `--dry-run` warns and lists what the release contains,
+  which is what to write the summary from.
+- **A title written by the script**:
+  `Release vX.Y.Z: <the first pull request that decided the version> and N more`. It is
+  rewritten on every run, so it follows what is merged.
 
 1. `bin/release-prepare`, on an up-to-date, clean `main`. It computes the version from the titles of the pull requests merged since the last tag
    (Conventional Commits): a breaking change — `!` after the type, as in `feat(api)!:`, or a

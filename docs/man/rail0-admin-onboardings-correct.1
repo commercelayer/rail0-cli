@@ -1,0 +1,76 @@
+.nh
+.TH "RAIL0" "1" "Aug 2026" "rail0 CLI" ""
+
+.SH NAME
+rail0-admin-onboardings-correct - Correct a request's name, email or address and send a new link (write mode, audited)
+
+
+.SH SYNOPSIS
+\fBrail0 admin onboardings correct  [flags]\fP
+
+
+.SH DESCRIPTION
+Replace the name, the email and/or the wallet address of a request that is not
+completed, and send a new link to its email, saying what changed. The previous link stops
+working, nothing goes to the address that was replaced, and an expired request is
+renewed. At least one of --name / --email / --address, with a value that differs.
+
+.PP
+The same checks as an invite run on the result. A completed request is history (422
+onboarding_completed): its account is corrected with 'rail0 account update --account'.
+
+.PP
+A write: it needs write mode ('rail0 admin write-mode on').
+
+
+.SH OPTIONS
+\fB--address\fP=""
+	The corrected wallet address (0x…40 hex, or @alias)
+
+.PP
+\fB--email\fP=""
+	The corrected contact email
+
+.PP
+\fB-h\fP, \fB--help\fP[=false]
+	help for correct
+
+.PP
+\fB--name\fP=""
+	The corrected account name
+
+
+.SH OPTIONS INHERITED FROM PARENT COMMANDS
+\fB--agent\fP[=false]
+	Agent mode: one JSON envelope on stdout, JSON events on stderr, no prompts (env: RAIL0_AGENT=1)
+
+.PP
+\fB--base-url\fP=""
+	RAIL0 gateway base URL (env: RAIL0_BASE_URL)
+
+.PP
+\fB--debug\fP[=false]
+	Print HTTP request/response details to stderr
+
+.PP
+\fB--json\fP[=false]
+	Force plain (uncolored) JSON output (useful in scripts)
+
+.PP
+\fB--pretty\fP[=false]
+	Use the key-value/table view instead of JSON (terminal only)
+
+.PP
+\fB-q\fP, \fB--quiet\fP[=false]
+	Print only the result's id/hash, one per line (useful in scripts)
+
+
+.SH EXAMPLE
+.EX
+  rail0 admin onboardings correct 019f0c11-… --email right@acme.example
+  rail0 admin onboardings correct 019f0c11-… --address 0x9F3A… --name "Acme Store Ltd"
+.EE
+
+
+.SH SEE ALSO
+\fBrail0-admin-onboardings(1)\fP

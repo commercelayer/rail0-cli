@@ -107,13 +107,22 @@ add'), or omit it to fall back to the RAIL0_PRIVATE_KEY environment variable.`,
 		if err != nil {
 			return err
 		}
+		// An operator's key in agent mode: the session is revoked and not stored, and
+		// the session already stored, if any, is left as it was.
+		if authResp.Admin && agentMode() {
+			return refuseOperatorSignIn(ctx, client)
+		}
 
+		// A new session starts reading: a write-mode token left by the previous one is
+		// revoked and removed, whoever that session belonged to.
+		endWriteMode(resolveBaseURL())
 		tokenPath, saveErr := token.SaveAndReport(resolveBaseURL(), authResp.Token)
 		if saveErr != nil {
 			// Reports the failure and how to recover, but NEVER the token itself —
 			// see tokenSaveFailureNotice for why that matters. (#64)
 			ui.Notice("warning", map[string]any{"what": "token_not_saved"}, tokenSaveFailureNotice(saveErr))
 		} else {
+			rememberSessionRole(resolveBaseURL(), authResp.Token, authResp.Admin)
 			ui.Notice("token_saved", map[string]any{"path": tokenPath}, fmt.Sprintf("Token saved to %s", tokenPath))
 		}
 
@@ -184,13 +193,22 @@ useful when several environments are in play, or to remove one by hand.`,
 		}
 		expiresAt, expiresIn := tokenExpiry(claims)
 		return ui.RunAPI(func() (any, error) {
-			return map[string]any{
+			status := map[string]any{
 				"address":    checksumAddress(claims["sub"]),
 				"account_id": claims["account_id"],
 				"expires_at": expiresAt,
 				"expires_in": expiresIn,
 				"token_path": token.Path(resolveBaseURL()),
-			}, nil
+			}
+			// Said only when it is one, as the gateway answered at sign-in: an agent
+			// reads here why its commands are refused with operator_session.
+			if token.IsOperator(resolveBaseURL()) {
+				status["operator"] = true
+				if agentMode() {
+					status["usable_in_agent_mode"] = false
+				}
+			}
+			return status, nil
 		})
 	},
 }
@@ -274,10 +292,16 @@ func revokeSession(baseURL string) sessionRevocation {
 
 	// An already-expired token needs no revocation: parseJWTClaims rejects one,
 	// so a nil error means the session is still live and worth killing.
+	// Write mode ends with the session it belongs to: its token is revoked and removed
+	// first, so it cannot outlive the sign-out on this machine. And the sign-out below
+	// presents the SESSION token explicitly — a client built the usual way would carry
+	// the write-mode token while it is on, and the gateway would revoke that one instead.
+	endWriteMode(baseURL)
+
 	if _, err := parseJWTClaims(stored); err != nil {
 		out.Why = "the stored session had already expired"
 	} else {
-		res, err := newClientFor(baseURL).Auth.Logout(context.Background())
+		res, err := clientWithToken(baseURL, stored).Auth.Logout(context.Background())
 		switch {
 		case err != nil:
 			out.Why = fmt.Sprintf("could not reach %s to revoke it (%s)", baseURL, humanizeError(err))
@@ -389,7 +413,8 @@ func dropRevokedLocalSession(baseURL, address string) string {
 		}
 	}
 	// This address's session, or one too broken to read: either way it no longer
-	// authenticates anything.
+	// authenticates anything. Its write-mode token goes with it.
+	_ = token.DeleteWriteMode(baseURL)
 	_ = token.Delete(baseURL)
 	return "removed"
 }

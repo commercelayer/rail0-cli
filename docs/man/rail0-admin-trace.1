@@ -1,0 +1,71 @@
+.nh
+.TH "RAIL0" "1" "Aug 2026" "rail0 CLI" ""
+
+.SH NAME
+rail0-admin-trace - Everything about one payment: transactions, sync errors, deliveries, disputes, operator actions
+
+
+.SH SYNOPSIS
+\fBrail0 admin trace  [flags]\fP
+
+
+.SH DESCRIPTION
+Answer "what happened to this payment" in one command, whoever the payment belongs to.
+
+.PP
+The payment is read with its transactions, and then everything else that names it:
+the sync errors (indexer callbacks about it that could not be applied), the webhook
+deliveries across every subscription, its disputes, and what operators did to it.
+\&'totals' says how many of each exist, in case one kind has more than a page.
+
+.PP
+--timeline prints the same facts as one chronological list instead: the payment's own
+history with the sync errors, deliveries, disputes and operator actions in their place.
+
+.PP
+The argument is the payment's id (UUID) or its rail0_id (0x…, 64 hex).
+
+
+.SH OPTIONS
+\fB-h\fP, \fB--help\fP[=false]
+	help for trace
+
+.PP
+\fB--timeline\fP[=false]
+	Print one chronological list instead of the sections
+
+
+.SH OPTIONS INHERITED FROM PARENT COMMANDS
+\fB--agent\fP[=false]
+	Agent mode: one JSON envelope on stdout, JSON events on stderr, no prompts (env: RAIL0_AGENT=1)
+
+.PP
+\fB--base-url\fP=""
+	RAIL0 gateway base URL (env: RAIL0_BASE_URL)
+
+.PP
+\fB--debug\fP[=false]
+	Print HTTP request/response details to stderr
+
+.PP
+\fB--json\fP[=false]
+	Force plain (uncolored) JSON output (useful in scripts)
+
+.PP
+\fB--pretty\fP[=false]
+	Use the key-value/table view instead of JSON (terminal only)
+
+.PP
+\fB-q\fP, \fB--quiet\fP[=false]
+	Print only the result's id/hash, one per line (useful in scripts)
+
+
+.SH EXAMPLE
+.EX
+  rail0 admin trace 0xrail0Id…
+  rail0 admin trace 019e748b-… --timeline --pretty
+.EE
+
+
+.SH SEE ALSO
+\fBrail0-admin(1)\fP

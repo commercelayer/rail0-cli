@@ -130,29 +130,33 @@ func SaveAndReport(baseURL, jwt string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	return path, writeTokenFile(path, jwt)
+}
+
+// writeTokenFile is the one way a token reaches the disk: the session's and the
+// write-mode one alike, with the permissions and the atomic replace described on
+// SaveAndReport.
+func writeTokenFile(path, jwt string) error {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0700); err != nil {
-		return "", err
+		return err
 	}
 	if err := os.Chmod(dir, 0700); err != nil {
-		return "", err
+		return err
 	}
 	tmp, err := os.CreateTemp(dir, ".token-*.tmp") // created 0600
 	if err != nil {
-		return "", err
+		return err
 	}
 	defer func() { _ = os.Remove(tmp.Name()) }() // a no-op once renamed
 	if _, err := tmp.WriteString(jwt + "\n"); err != nil {
 		_ = tmp.Close()
-		return "", err
+		return err
 	}
 	if err := tmp.Close(); err != nil {
-		return "", err
+		return err
 	}
-	if err := os.Rename(tmp.Name(), path); err != nil {
-		return "", err
-	}
-	return path, nil
+	return os.Rename(tmp.Name(), path)
 }
 
 // Delete removes this gateway's cached token (and any legacy leftover).
@@ -166,6 +170,118 @@ func Delete(baseURL string) error {
 	}
 	if dir, dirErr := tokenDir(); dirErr == nil {
 		_ = os.Remove(filepath.Join(dir, legacyFileName))
+	}
+	_ = os.Remove(path + operatorSuffix) // what was known about the session goes with it
+	return nil
+}
+
+// ── Operator marker ──────────────────────────────────────────────────────────
+//
+// Whether the stored session belongs to a gateway operator. The session token does not
+// say (the gateway reads the grant on every request), so the answer the gateway gave at
+// sign-in is kept beside the token, in "<digest>.operator".
+//
+// The marker holds a fingerprint of the token it describes, not a bare yes: a marker left
+// behind by an earlier session says nothing about the one stored now, so it can never be
+// read as an answer about another token.
+
+const operatorSuffix = ".operator"
+
+func fingerprint(jwt string) string {
+	sum := sha256.Sum256([]byte(jwt))
+	return hex.EncodeToString(sum[:])
+}
+
+// MarkOperator records that jwt, this gateway's session, is an operator's.
+func MarkOperator(baseURL, jwt string) error {
+	path, err := tokenFilePath(baseURL)
+	if err != nil {
+		return err
+	}
+	return writeTokenFile(path+operatorSuffix, fingerprint(jwt))
+}
+
+// UnmarkOperator removes the marker. No marker is not an error.
+func UnmarkOperator(baseURL string) error {
+	path, err := tokenFilePath(baseURL)
+	if err != nil {
+		return err
+	}
+	if err := os.Remove(path + operatorSuffix); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
+}
+
+// IsOperator reports whether the session stored for this gateway was an operator's when
+// it signed in. False when there is no session, no marker, or a marker of another token.
+// A session stored by a version that kept no marker, or pasted in as a raw token, reads
+// false: nothing was asked about it.
+func IsOperator(baseURL string) bool {
+	jwt := Load(baseURL)
+	if jwt == "" {
+		return false
+	}
+	path, err := tokenFilePath(baseURL)
+	if err != nil {
+		return false
+	}
+	b, err := os.ReadFile(path + operatorSuffix)
+	if err != nil {
+		return false
+	}
+	return strings.TrimSpace(string(b)) == fingerprint(jwt)
+}
+
+// ── Write-mode token ─────────────────────────────────────────────────────────
+//
+// An operator session reads; to write it asks the gateway for a second token, valid
+// for an hour ('rail0 admin write-mode on'). That token lives beside the session's, in
+// "<digest>.write": per gateway like the session, and a file of its own so that ending
+// write mode is removing it, with the session untouched.
+
+// writeModeFilePath is where this gateway's write-mode token is (or would be) stored.
+func writeModeFilePath(baseURL string) (string, error) {
+	path, err := tokenFilePath(baseURL)
+	if err != nil {
+		return "", err
+	}
+	return path + ".write", nil
+}
+
+// LoadWriteMode returns this gateway's stored write-mode token, or "" if there is none.
+// It does not judge the token: whether it is still valid, and whether it belongs to the
+// stored session, is the caller's to check.
+func LoadWriteMode(baseURL string) string {
+	path, err := writeModeFilePath(baseURL)
+	if err != nil {
+		return ""
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(b))
+}
+
+// SaveWriteMode stores this gateway's write-mode token, with the session file's
+// permissions and atomic replace.
+func SaveWriteMode(baseURL, jwt string) error {
+	path, err := writeModeFilePath(baseURL)
+	if err != nil {
+		return err
+	}
+	return writeTokenFile(path, jwt)
+}
+
+// DeleteWriteMode removes this gateway's write-mode token. No token is not an error.
+func DeleteWriteMode(baseURL string) error {
+	path, err := writeModeFilePath(baseURL)
+	if err != nil {
+		return err
+	}
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return err
 	}
 	return nil
 }

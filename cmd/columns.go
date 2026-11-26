@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"slices"
 	"strings"
 
 	"github.com/rail0/cli/internal/ui"
@@ -201,4 +202,112 @@ var chainColumns = []ui.Column{
 		return str(contract, "version")
 	}},
 	{Header: "settlement", Field: "settlement_human"},
+}
+
+// ── Operator lists ('rail0 admin …') ─────────────────────────────────────────
+
+// paymentOf reads a field of the payment summary an operator's row carries.
+func paymentOf(row map[string]any, key string) any {
+	payment, _ := row["payment"].(map[string]any)
+	return payment[key]
+}
+
+var operatorTransactionColumns = []ui.Column{
+	{Field: "id"},
+	{Field: "operation"},
+	{Field: "status"},
+	{Header: "amount", Value: amountCell, Right: true},
+	{Header: "chain", Value: func(row map[string]any) string {
+		payment, _ := row["payment"].(map[string]any)
+		return chainCell(payment)
+	}},
+	{Header: "payee", Value: func(row map[string]any) string {
+		s, _ := paymentOf(row, "payee").(string)
+		return ui.ShortHex(s)
+	}},
+	{Header: "tx hash", Value: shortHexOf("transaction_hash")},
+	{Header: "created", Value: shortTimeOf("created_at")},
+	{Header: "error", Value: func(row map[string]any) string {
+		return firstNonEmptyStr(str(row, "error_reason"), str(row, "error_code"))
+	}, Max: 40},
+	{Header: "payment", Field: "payment_id"},
+}
+
+var syncErrorColumns = []ui.Column{
+	{Header: "created", Value: shortTimeOf("created_at")},
+	{Field: "reason"},
+	{Field: "outcome"},
+	{Header: "event", Field: "event_type"},
+	{Header: "chain", Value: chainCell},
+	{Header: "block", Field: "block_number"},
+	{Header: "payment", Value: shortHexOf("payment_id")},
+	{Header: "tx hash", Value: shortHexOf("transaction_hash")},
+	{Field: "id"},
+}
+
+// operatorAccountColumns is the operator's account list: who, in what state, and the id
+// every other command takes.
+var operatorAccountColumns = []ui.Column{
+	{Field: "name", Max: 32},
+	{Field: "email", Max: 36},
+	{Field: "status"},
+	{Header: "operator", Value: func(row map[string]any) string {
+		if admin, _ := row["admin"].(bool); admin {
+			return "yes"
+		}
+		return ""
+	}},
+	{Header: "created", Value: shortTimeOf("created_at")},
+	{Field: "id"},
+}
+
+// operatorWalletColumns is a merchant's wallet list with who switched a wallet off: what
+// decides who may switch it back on.
+var operatorWalletColumns = []ui.Column{
+	{Field: "id"},
+	{Field: "label", Max: 28},
+	{Field: "address"},
+	{Field: "active"},
+	{Header: "off by", Field: "deactivated_by"},
+	{Header: "tokens", Value: walletTokensCell, Max: 40},
+}
+
+// onboardingColumns is the operator's list of onboarding requests: the state, how the
+// last email went and what the request clashes with come before who it is for.
+var onboardingColumns = []ui.Column{
+	{Header: "created", Value: shortTimeOf("created_at")},
+	{Field: "status"},
+	{Field: "origin"},
+	{Field: "name", Max: 28},
+	{Field: "email", Max: 32},
+	{Header: "address", Value: shortHexOf("address")},
+	{Header: "sends", Field: "send_count", Right: true},
+	{Header: "send error", Field: "last_send_error"},
+	{Header: "clashes", Value: onboardingConflictsCell},
+	{Header: "expires", Value: shortTimeOf("expires_at")},
+	{Field: "id"},
+}
+
+// onboardingConflictsCell names the fields a request clashes on, once each: the email an
+// account already holds, the address of another open request.
+func onboardingConflictsCell(row map[string]any) string {
+	conflicts, _ := row["conflicts"].([]any)
+	var fields []string
+	for _, c := range conflicts {
+		conflict, _ := c.(map[string]any)
+		if f := str(conflict, "field"); f != "" && !slices.Contains(fields, f) {
+			fields = append(fields, f)
+		}
+	}
+	return strings.Join(fields, ", ")
+}
+
+var traceTimelineColumns = []ui.Column{
+	{Header: "at", Value: func(row map[string]any) string { return ui.ShortTimeSeconds(str(row, "at")) }},
+	{Field: "kind"},
+	{Field: "event"},
+	{Field: "status"},
+	{Header: "amount", Value: amountCell, Right: true},
+	{Field: "code"},
+	{Header: "detail", Value: func(row map[string]any) string { return ui.ShortHex(str(row, "detail")) }, Max: 48},
 }

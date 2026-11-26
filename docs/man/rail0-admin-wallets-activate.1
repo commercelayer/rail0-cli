@@ -1,0 +1,62 @@
+.nh
+.TH "RAIL0" "1" "Aug 2026" "rail0 CLI" ""
+
+.SH NAME
+rail0-admin-wallets-activate - Switch a wallet back on, on any account (write mode, audited)
+
+
+.SH SYNOPSIS
+\fBrail0 admin wallets activate  [flags]\fP
+
+
+.SH DESCRIPTION
+Switch a wallet back on: it is offered to buyers again and its webhooks resume. The
+only way back for a wallet an operator switched off. No confirmation is asked:
+\&'rail0 admin wallets deactivate' reverses it.
+
+.PP
+A write: it needs write mode ('rail0 admin write-mode on').
+
+
+.SH OPTIONS
+\fB-h\fP, \fB--help\fP[=false]
+	help for activate
+
+
+.SH OPTIONS INHERITED FROM PARENT COMMANDS
+\fB--account\fP=""
+	The account the wallets belong to (required)
+
+.PP
+\fB--agent\fP[=false]
+	Agent mode: one JSON envelope on stdout, JSON events on stderr, no prompts (env: RAIL0_AGENT=1)
+
+.PP
+\fB--base-url\fP=""
+	RAIL0 gateway base URL (env: RAIL0_BASE_URL)
+
+.PP
+\fB--debug\fP[=false]
+	Print HTTP request/response details to stderr
+
+.PP
+\fB--json\fP[=false]
+	Force plain (uncolored) JSON output (useful in scripts)
+
+.PP
+\fB--pretty\fP[=false]
+	Use the key-value/table view instead of JSON (terminal only)
+
+.PP
+\fB-q\fP, \fB--quiet\fP[=false]
+	Print only the result's id/hash, one per line (useful in scripts)
+
+
+.SH EXAMPLE
+.EX
+  rail0 admin wallets activate 0x2D2B… --account 019e748b-…
+.EE
+
+
+.SH SEE ALSO
+\fBrail0-admin-wallets(1)\fP

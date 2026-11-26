@@ -78,6 +78,7 @@ func Execute() {
 	// wording needs (a 404 means something different for a payment than for a
 	// webhook — see notFoundHint).
 	if c, err := rootCmd.ExecuteC(); err != nil {
+		err = explainWithheldSession(err)
 		code := exitCode(err)
 		if agentMode() {
 			ui.FatalAgent(agentErrorPayload(c, err, code), code)
@@ -193,11 +194,13 @@ func init() {
 		&cobra.Group{ID: groupAccount, Title: "Account & merchant setup:"},
 		&cobra.Group{ID: groupCatalog, Title: "Network catalog:"},
 		&cobra.Group{ID: groupLocal, Title: "Local configuration:"},
+		&cobra.Group{ID: groupOperator, Title: "Operator (not available in agent mode):"},
 	)
 	assignGroup(groupPayments, paymentsCmd, payoutsCmd, openCmd)
 	assignGroup(groupAccount, authCmd, tokenCmd, accountCmd, walletsCmd, paymentMethodsCmd, webhooksCmd, analyticsCmd, disputesCmd)
 	assignGroup(groupCatalog, chainsCmd, tokensCmd, balanceCmd, healthCmd)
 	assignGroup(groupLocal, initCmd, configCmd, envCmd, aliasesCmd, keysCmd)
+	assignGroup(groupOperator, adminCmd)
 
 	rootCmd.AddCommand(paymentsCmd, payoutsCmd, accountCmd, walletsCmd, paymentMethodsCmd, webhooksCmd, chainsCmd, tokensCmd, balanceCmd, authCmd, healthCmd, aliasesCmd, keysCmd, configCmd, envCmd, disputesCmd, analyticsCmd, openCmd)
 }
@@ -210,6 +213,7 @@ const (
 	groupAccount  = "account"
 	groupCatalog  = "catalog"
 	groupLocal    = "local"
+	groupOperator = "operator"
 )
 
 // assignGroup tags commands with a help group. A helper because the alternative is
@@ -224,6 +228,7 @@ func assignGroup(id string, cmds ...*cobra.Command) {
 // newClient builds a RAIL0 gateway client.
 // If a JWT is stored for this gateway (~/.cache/rail0/tokens/<digest>), it is
 // sent as Authorization: Bearer on every request.
+// While operator write mode is on, the token sent is the write-mode one (bearerToken).
 //
 // The token goes in ClientOptions.Token, not a hand-built Authorization header.
 // Both end up as the same header, but Token is the SDK's mutable slot: Auth.Login
@@ -240,7 +245,7 @@ func newClient() *rail0.Client {
 func newClientFor(baseURL string) *rail0.Client {
 	opts := rail0.ClientOptions{
 		BaseURL: baseURL,
-		Token:   token.Load(baseURL),
+		Token:   bearerToken(baseURL),
 		Timeout: httpTimeout(),
 	}
 	if debug {
@@ -263,7 +268,7 @@ func newReadClient() *rail0.Client {
 	baseURL := resolveBaseURL()
 	opts := rail0.ClientOptions{
 		BaseURL:    baseURL,
-		Token:      token.Load(baseURL),
+		Token:      bearerToken(baseURL),
 		Timeout:    httpTimeout(),
 		MaxRetries: 2,
 		RetryOn429: true,
@@ -416,6 +421,12 @@ func ensureSession(ctx context.Context, client *rail0.Client, keyHex, addr strin
 		if claims, err := parseJWTClaims(t); err == nil {
 			sub, _ := claims["sub"].(string)
 			sameAddress := strings.EqualFold(sub, addr)
+			// The stored session is this key's and an operator's: agent mode does not
+			// use it (the client was built without it), and signing in again with the
+			// same key would only get the same answer.
+			if sameAddress && operatorSessionWithheld(baseURL) {
+				return storedOperatorSessionError()
+			}
 			if sameAddress && sessionOutlives(claims, sessionReuseMargin()) {
 				return nil
 			}
@@ -438,6 +449,11 @@ func ensureSession(ctx context.Context, client *rail0.Client, keyHex, addr strin
 	if err != nil {
 		return fmt.Errorf("sign-in failed: %w", err)
 	}
+	// An operator's key in agent mode: the session just opened is revoked and refused,
+	// whether or not it would have been stored (see operator_session.go).
+	if authResp.Admin && agentMode() {
+		return refuseOperatorSignIn(ctx, client)
+	}
 	signedInAs[client] = addr
 	// Persist ONLY when this is the machine's session for this gateway. When a
 	// different live session is already stored, the sign-in we just did serves
@@ -455,6 +471,10 @@ func ensureSession(ctx context.Context, client *rail0.Client, keyHex, addr strin
 	if err := token.Save(baseURL, authResp.Token); err != nil {
 		return err
 	}
+	rememberSessionRole(baseURL, authResp.Token, authResp.Admin)
+	// The stored session was replaced: a write-mode token of the previous one is no
+	// longer this session's (writeModeToken would drop it on the next read anyway).
+	_ = token.DeleteWriteMode(baseURL)
 	ui.Notice("signed_in", map[string]any{"address": addr, "stored": true}, fmt.Sprintf("Signed in as %s", addr))
 	return nil
 }
@@ -464,6 +484,9 @@ func ensureSession(ctx context.Context, client *rail0.Client, keyHex, addr strin
 // they derive it from the session instead of taking it as an argument; with no
 // (or an expired) session this errors, pointing the user at `auth login`.
 func currentAccountID() (string, error) {
+	if operatorSessionWithheld(resolveBaseURL()) {
+		return "", storedOperatorSessionError()
+	}
 	t := token.Load(resolveBaseURL())
 	if t == "" {
 		return "", newSessionError("not_logged_in", "not logged in: run 'rail0 auth login -p 0xYourKey…'")
@@ -485,6 +508,9 @@ func currentAccountID() (string, error) {
 // session's wallet" (registering a payout destination) default to it instead of making
 // the user repeat the address they logged in with.
 func sessionAddress() (string, error) {
+	if operatorSessionWithheld(resolveBaseURL()) {
+		return "", storedOperatorSessionError()
+	}
 	t := token.Load(resolveBaseURL())
 	if t == "" {
 		return "", newSessionError("not_logged_in", "not logged in: run 'rail0 auth login -p 0xYourKey…'")

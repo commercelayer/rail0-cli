@@ -1,0 +1,68 @@
+.nh
+.TH "RAIL0" "1" "Aug 2026" "rail0 CLI" ""
+
+.SH NAME
+rail0-admin-catalog - The chain catalogue: what a reload would change, the reload, chains, tokens, contracts (shows the diff when run bare)
+
+
+.SH SYNOPSIS
+\fBrail0 admin catalog [flags]\fP
+
+
+.SH DESCRIPTION
+The gateway reads its chain configuration once, when it starts, into memory. After a
+change in the database (a chain activated, a token retired, an RPC endpoint corrected)
+the running process keeps serving what it read until it is restarted or reloaded.
+
+.PP
+Run bare, this compares the snapshot in memory with the database: 'stale' and 'pending'
+say whether and how much they differ, and blockchains, tokens and contracts each list the
+rows added, removed and changed, a changed row with its fields as from → to.
+
+.PP
+ONE PROCESS: the answer is about the process that served the request. A worker, or
+another web machine, has a snapshot of its own that this cannot see.
+
+
+.SH OPTIONS
+\fB-h\fP, \fB--help\fP[=false]
+	help for catalog
+
+
+.SH OPTIONS INHERITED FROM PARENT COMMANDS
+\fB--agent\fP[=false]
+	Agent mode: one JSON envelope on stdout, JSON events on stderr, no prompts (env: RAIL0_AGENT=1)
+
+.PP
+\fB--base-url\fP=""
+	RAIL0 gateway base URL (env: RAIL0_BASE_URL)
+
+.PP
+\fB--debug\fP[=false]
+	Print HTTP request/response details to stderr
+
+.PP
+\fB--json\fP[=false]
+	Force plain (uncolored) JSON output (useful in scripts)
+
+.PP
+\fB--pretty\fP[=false]
+	Use the key-value/table view instead of JSON (terminal only)
+
+.PP
+\fB-q\fP, \fB--quiet\fP[=false]
+	Print only the result's id/hash, one per line (useful in scripts)
+
+
+.SH EXAMPLE
+.EX
+  rail0 admin catalog                    # is the snapshot stale, and what would change
+  rail0 admin catalog reload             # apply it (write mode)
+  rail0 admin catalog chains --pretty    # every chain, the ones not in service included
+  rail0 admin catalog tokens --pretty
+  rail0 admin catalog contracts --pretty
+.EE
+
+
+.SH SEE ALSO
+\fBrail0-admin(1)\fP, \fBrail0-admin-catalog-chains(1)\fP, \fBrail0-admin-catalog-contracts(1)\fP, \fBrail0-admin-catalog-reload(1)\fP, \fBrail0-admin-catalog-tokens(1)\fP

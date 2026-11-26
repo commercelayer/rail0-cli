@@ -47,7 +47,7 @@ rail0 admin wallets [flags]
 
 ### SEE ALSO
 
-* [rail0 admin](rail0_admin.md)	 - Operator commands: diagnostics, transactions, sync errors, webhooks, disputes, accounts, wallets, onboarding, operators, audit, write mode
+* [rail0 admin](rail0_admin.md)	 - Operator commands: diagnostics, transactions, sync errors, webhooks, disputes, accounts, wallets, onboarding, payouts, operators, audit, configuration, catalogue, write mode
 * [rail0 admin wallets activate](rail0_admin_wallets_activate.md)	 - Switch a wallet back on, on any account (write mode, audited)
 * [rail0 admin wallets deactivate](rail0_admin_wallets_deactivate.md)	 - Switch a wallet off, on any account (write mode, audited)
 * [rail0 admin wallets usage](rail0_admin_wallets_usage.md)	 - What still names a wallet's address: payments as payee and payer, transactions sent

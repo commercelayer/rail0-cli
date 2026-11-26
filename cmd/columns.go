@@ -424,6 +424,125 @@ func grantExpiryCell(row map[string]any) string {
 	return cell
 }
 
+// configColumns is the gateway's configuration, one setting a row. The description is
+// last and the first to go when the terminal is narrow: the JSON has it whole.
+var configColumns = []ui.Column{
+	{Field: "group"},
+	{Field: "setting"},
+	{Header: "value", Value: func(row map[string]any) string { return compactJSON(row["value"]) }, Max: 44},
+	{Field: "env"},
+	{Header: "set", Value: func(row map[string]any) string {
+		if set, _ := row["overridden"].(bool); set {
+			return "yes"
+		}
+		return ""
+	}},
+	{Field: "description", Max: 60},
+}
+
+// compactJSON is a value for one cell: a string as it is, anything else (a number, a
+// flag, a list, a map of per-chain values) as compact JSON, nothing for null.
+func compactJSON(v any) string {
+	switch x := v.(type) {
+	case nil:
+		return ""
+	case string:
+		return x
+	}
+	b, err := json.Marshal(v)
+	if err != nil {
+		return ""
+	}
+	return string(b)
+}
+
+// yesNo is a flag for a cell that must show both answers: "no" is information here (a
+// chain that is not in service), where an empty cell would read as unknown.
+func yesNo(key string) func(map[string]any) string {
+	return func(row map[string]any) string {
+		v, ok := row[key].(bool)
+		switch {
+		case !ok:
+			return ""
+		case v:
+			return "yes"
+		}
+		return "no"
+	}
+}
+
+var catalogChainColumns = []ui.Column{
+	{Header: "chain id", Field: "chain_id", Right: true},
+	{Field: "slug"},
+	{Field: "name", Max: 24},
+	{Header: "in service", Value: yesNo("active")},
+	{Header: "network", Field: "network_type"},
+	{Header: "finality", Value: func(row map[string]any) string {
+		return firstNonEmptyStr(str(row, "finality_tag"), intOrEmpty(num(row, "required_confirmations")))
+	}},
+	{Header: "rpc", Value: func(row map[string]any) string {
+		urls, _ := row["rpc_urls"].([]any)
+		return intOrEmpty(len(urls))
+	}, Right: true},
+	{Field: "id"},
+}
+
+// catalogChainCell names a catalogue row's chain by the slug the operator's chain list
+// gave it (see catalogRowsWithChain), its id otherwise.
+func catalogChainCell(row map[string]any) string {
+	return firstNonEmptyStr(str(row, "chain_slug"), intOrEmpty(num(row, "chain_id")))
+}
+
+var catalogTokenColumns = []ui.Column{
+	{Field: "symbol"},
+	{Header: "chain", Value: catalogChainCell},
+	{Field: "address"},
+	{Field: "decimals", Right: true},
+	{Header: "in service", Value: yesNo("active")},
+	{Header: "eip712 name", Field: "eip712_name"},
+	{Header: "eip712 version", Field: "eip712_version"},
+	{Field: "id"},
+}
+
+var catalogContractColumns = []ui.Column{
+	{Header: "chain", Value: catalogChainCell},
+	{Field: "address"},
+	{Field: "version"},
+	{Header: "active", Value: yesNo("active")},
+	{Header: "start block", Field: "start_block", Right: true},
+	{Header: "deployed", Value: shortTimeOf("deployed_at")},
+	{Field: "id"},
+}
+
+// operatorPayoutColumns is every account's payouts: the outcome first, then whose it is
+// and how much, then where it went.
+var operatorPayoutColumns = []ui.Column{
+	{Header: "created", Value: shortTimeOf("created_at")},
+	{Field: "status"},
+	{Field: "purpose"},
+	{Header: "amount", Value: func(row map[string]any) string {
+		return strings.TrimSpace(firstNonEmptyStr(str(row, "amount_formatted"), str(row, "amount")) + " " + str(row, "token_symbol"))
+	}, Right: true},
+	{Header: "chain", Value: chainCell},
+	{Header: "account", Value: func(row map[string]any) string { return accountName(row, "account", "account_id") }, Max: 24},
+	{Header: "to", Value: shortHexOf("address")},
+	{Header: "error", Field: "error_code", Max: 28},
+	{Header: "tx hash", Value: shortHexOf("transaction_hash")},
+	{Field: "id"},
+}
+
+var operatorPayoutDestinationColumns = []ui.Column{
+	{Field: "status"},
+	{Field: "label", Max: 24},
+	{Header: "account", Value: func(row map[string]any) string { return accountName(row, "account", "account_id") }, Max: 24},
+	{Header: "token", Field: "token_symbol"},
+	{Header: "chain", Value: chainCell},
+	{Field: "address"},
+	{Header: "verified", Value: shortTimeOf("verified_at")},
+	{Header: "created", Value: shortTimeOf("created_at")},
+	{Field: "id"},
+}
+
 var traceTimelineColumns = []ui.Column{
 	{Header: "at", Value: func(row map[string]any) string { return ui.ShortTimeSeconds(str(row, "at")) }},
 	{Field: "kind"},

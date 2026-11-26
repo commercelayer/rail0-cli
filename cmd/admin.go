@@ -16,14 +16,14 @@ import (
 
 var adminCmd = &cobra.Command{
 	Use:   "admin",
-	Short: "Operator commands: diagnostics, transactions, sync errors, webhooks, disputes, accounts, wallets, onboarding, operators, audit, write mode",
+	Short: "Operator commands: diagnostics, transactions, sync errors, webhooks, disputes, accounts, wallets, onboarding, payouts, operators, audit, configuration, catalogue, write mode",
 	Long: `Commands for a gateway operator. They read and repair across every account, so they
 need a session whose account holds the operator grant: 'rail0 auth login' with an
 operator's key. Any other session is answered 403.
 
 An operator session reads. To write (clear sync errors, switch an account or a wallet
 off or on, invite a merchant, reset a webhook circuit, grant or revoke the operator role,
-and the operator's writes elsewhere in the CLI, such as 'account update --account …')
+reload the chain catalogue, and the operator's writes elsewhere in the CLI, such as 'account update --account …')
 switch write mode on with
 'rail0 admin write-mode on': it lasts an hour, both switches are audited on the gateway,
 and 'rail0 admin write-mode off' ends it early. 'rail0 admin audit' lists every operator
@@ -85,9 +85,13 @@ func init() {
 		adminOnboardingsResendCmd, adminOnboardingsCancelCmd)
 	adminWebhooksCmd.AddCommand(adminWebhooksResetCircuitCmd)
 	adminOperatorsCmd.AddCommand(adminOperatorsGrantCmd, adminOperatorsRevokeCmd)
+	adminCatalogCmd.AddCommand(adminCatalogReloadCmd, adminCatalogChainsCmd, adminCatalogTokensCmd, adminCatalogContractsCmd)
+	adminPayoutDestinationsCmd.AddCommand(adminPayoutDestinationsGetCmd, adminPayoutDestinationsEventsCmd)
+	adminPayoutsCmd.AddCommand(adminPayoutsGetCmd, adminPayoutsEventsCmd, adminPayoutDestinationsCmd)
 	adminCmd.AddCommand(adminHealthCmd, adminTransactionsCmd, adminSyncErrorsCmd, adminTraceCmd,
 		adminWebhooksCmd, adminDeliveriesCmd, adminDisputesCmd, adminAccountsCmd, adminWalletsCmd,
-		adminOnboardingsCmd, adminOperatorsCmd, adminAuditCmd, adminWriteModeCmd)
+		adminOnboardingsCmd, adminPayoutsCmd, adminOperatorsCmd, adminAuditCmd, adminConfigCmd, adminCatalogCmd,
+		adminWriteModeCmd)
 	rootCmd.AddCommand(adminCmd)
 
 	// The help data lists what agent mode refuses (agentUnavailable); the admin group is

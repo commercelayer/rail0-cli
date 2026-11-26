@@ -53,6 +53,6 @@ rail0 admin webhooks [flags]
 
 ### SEE ALSO
 
-* [rail0 admin](rail0_admin.md)	 - Operator commands: diagnostics, transactions, sync errors, webhooks, disputes, accounts, wallets, onboarding, operators, audit, write mode
+* [rail0 admin](rail0_admin.md)	 - Operator commands: diagnostics, transactions, sync errors, webhooks, disputes, accounts, wallets, onboarding, payouts, operators, audit, configuration, catalogue, write mode
 * [rail0 admin webhooks reset-circuit](rail0_admin_webhooks_reset-circuit.md)	 - Close a subscription's circuit breaker and re-enable it, on any account (write mode, audited)
 

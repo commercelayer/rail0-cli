@@ -1,0 +1,68 @@
+.nh
+.TH "RAIL0" "1" "Aug 2026" "rail0 CLI" ""
+
+.SH NAME
+rail0-admin - Operator commands: diagnostics, stuck transactions, sync errors, write mode
+
+
+.SH SYNOPSIS
+\fBrail0 admin [flags]\fP
+
+
+.SH DESCRIPTION
+Commands for a gateway operator. They read and repair across every account, so they
+need a session whose account holds the operator grant: 'rail0 auth login' with an
+operator's key. Any other session is answered 403.
+
+.PP
+An operator session reads. To write (today: 'admin sync-errors clear', and the operator's
+writes elsewhere in the CLI, such as 'account update --account …') switch write mode on
+with 'rail0 admin write-mode on': it lasts an hour, both switches are audited on the
+gateway, and 'rail0 admin write-mode off' ends it early.
+
+.PP
+Not available in agent mode: these commands are for a person at a terminal.
+
+
+.SH OPTIONS
+\fB-h\fP, \fB--help\fP[=false]
+	help for admin
+
+
+.SH OPTIONS INHERITED FROM PARENT COMMANDS
+\fB--agent\fP[=false]
+	Agent mode: one JSON envelope on stdout, JSON events on stderr, no prompts (env: RAIL0_AGENT=1)
+
+.PP
+\fB--base-url\fP=""
+	RAIL0 gateway base URL (env: RAIL0_BASE_URL)
+
+.PP
+\fB--debug\fP[=false]
+	Print HTTP request/response details to stderr
+
+.PP
+\fB--json\fP[=false]
+	Force plain (uncolored) JSON output (useful in scripts)
+
+.PP
+\fB--pretty\fP[=false]
+	Use the key-value/table view instead of JSON (terminal only)
+
+.PP
+\fB-q\fP, \fB--quiet\fP[=false]
+	Print only the result's id/hash, one per line (useful in scripts)
+
+
+.SH EXAMPLE
+.EX
+  rail0 admin health                       # one verdict, then a check per thing that can be wrong
+  rail0 admin health --rpc                 # every chain's RPC endpoints, probed from the gateway
+  rail0 admin transactions --stuck any     # what is stuck, across every account
+  rail0 admin trace 0xrail0Id…             # one payment: transactions, sync errors, deliveries, disputes
+  rail0 admin sync-errors --reason not_found
+.EE
+
+
+.SH SEE ALSO
+\fBrail0(1)\fP, \fBrail0-admin-health(1)\fP, \fBrail0-admin-sync-errors(1)\fP, \fBrail0-admin-trace(1)\fP, \fBrail0-admin-transactions(1)\fP, \fBrail0-admin-write-mode(1)\fP

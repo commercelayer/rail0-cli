@@ -1,0 +1,98 @@
+.nh
+.TH "RAIL0" "1" "Aug 2026" "rail0 CLI" ""
+
+.SH NAME
+rail0-admin-transactions - Transactions across every account, or only the stuck ones
+
+
+.SH SYNOPSIS
+\fBrail0 admin transactions [flags]\fP
+
+
+.SH DESCRIPTION
+List transactions across every account, each with the payment it belongs to.
+
+.PP
+--stuck keeps the ones that need attention: 'unbroadcast' (signed, never sent to the
+chain), 'unconfirmed' (sent, never confirmed) or 'any'. --hash finds the transaction an
+explorer link or a merchant's message names. A stuck broadcast is re-sent with
+\&'rail0 payments redrive  \&' (in write mode, for an operator).
+
+
+.SH OPTIONS
+\fB--account\fP=""
+	Only transactions on payments whose payee is one of this account's wallets (account id)
+
+.PP
+\fB--chain\fP=
+	Only transactions on this chain: a slug (arc, base, …) or a chain id; the environment's gateway decides testnet vs mainnet
+
+.PP
+\fB--hash\fP=""
+	The transaction with this hash (0x + 64 hex)
+
+.PP
+\fB-h\fP, \fB--help\fP[=false]
+	help for transactions
+
+.PP
+\fB--operation\fP=""
+	Filter by operation: authorize, capture, charge, void, release, refund, …
+
+.PP
+\fB--page\fP=0
+	Page number (1-based)
+
+.PP
+\fB--per-page\fP=0
+	Results per page
+
+.PP
+\fB--sort\fP=""
+	Sort fields (prefix - for descending, comma-separated), e.g. -created_at
+
+.PP
+\fB--status\fP=[]
+	Filter by status (comma-separated or repeated): pending, submitting, submitted, confirmed, failed
+
+.PP
+\fB--stuck\fP=""
+	Only stuck transactions: unbroadcast, unconfirmed or any
+
+
+.SH OPTIONS INHERITED FROM PARENT COMMANDS
+\fB--agent\fP[=false]
+	Agent mode: one JSON envelope on stdout, JSON events on stderr, no prompts (env: RAIL0_AGENT=1)
+
+.PP
+\fB--base-url\fP=""
+	RAIL0 gateway base URL (env: RAIL0_BASE_URL)
+
+.PP
+\fB--debug\fP[=false]
+	Print HTTP request/response details to stderr
+
+.PP
+\fB--json\fP[=false]
+	Force plain (uncolored) JSON output (useful in scripts)
+
+.PP
+\fB--pretty\fP[=false]
+	Use the key-value/table view instead of JSON (terminal only)
+
+.PP
+\fB-q\fP, \fB--quiet\fP[=false]
+	Print only the result's id/hash, one per line (useful in scripts)
+
+
+.SH EXAMPLE
+.EX
+  rail0 admin transactions --stuck any
+  rail0 admin transactions --hash 0xed7c607d…
+  rail0 admin transactions --account 019e748b-… --status failed --chain arc
+  rail0 admin transactions --operation refund --sort -created_at --pretty
+.EE
+
+
+.SH SEE ALSO
+\fBrail0-admin(1)\fP

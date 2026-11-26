@@ -1,0 +1,71 @@
+.nh
+.TH "RAIL0" "1" "Aug 2026" "rail0 CLI" ""
+
+.SH NAME
+rail0-admin-health - Operator diagnostics: one verdict, then a check per thing that can be wrong
+
+
+.SH SYNOPSIS
+\fBrail0 admin health [flags]\fP
+
+
+.SH DESCRIPTION
+The gateway's operator diagnostics: a verdict ("ok", "degraded" or "error") and a named
+check per standing failure condition — the worker fleet, the indexer's intake, stuck
+transactions, open webhook circuits, balance divergences — each with its figures and a
+sentence saying what they mean.
+
+.PP
+--rpc asks the other question: can the gateway reach the chains. Every active chain's RPC
+endpoints are probed from the gateway's own process, with each one's status, head block
+and latency.
+
+.PP
+The exit code follows the verdict: 0 when it is "ok", 1 otherwise, after the report is
+printed. So 'rail0 admin health -q || alert' works as a check.
+
+
+.SH OPTIONS
+\fB-h\fP, \fB--help\fP[=false]
+	help for health
+
+.PP
+\fB--rpc\fP[=false]
+	Probe every active chain's RPC endpoints from the gateway instead of reading the diagnostics
+
+
+.SH OPTIONS INHERITED FROM PARENT COMMANDS
+\fB--agent\fP[=false]
+	Agent mode: one JSON envelope on stdout, JSON events on stderr, no prompts (env: RAIL0_AGENT=1)
+
+.PP
+\fB--base-url\fP=""
+	RAIL0 gateway base URL (env: RAIL0_BASE_URL)
+
+.PP
+\fB--debug\fP[=false]
+	Print HTTP request/response details to stderr
+
+.PP
+\fB--json\fP[=false]
+	Force plain (uncolored) JSON output (useful in scripts)
+
+.PP
+\fB--pretty\fP[=false]
+	Use the key-value/table view instead of JSON (terminal only)
+
+.PP
+\fB-q\fP, \fB--quiet\fP[=false]
+	Print only the result's id/hash, one per line (useful in scripts)
+
+
+.SH EXAMPLE
+.EX
+  rail0 admin health
+  rail0 admin health --rpc
+  rail0 admin health --pretty
+.EE
+
+
+.SH SEE ALSO
+\fBrail0-admin(1)\fP

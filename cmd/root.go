@@ -193,11 +193,13 @@ func init() {
 		&cobra.Group{ID: groupAccount, Title: "Account & merchant setup:"},
 		&cobra.Group{ID: groupCatalog, Title: "Network catalog:"},
 		&cobra.Group{ID: groupLocal, Title: "Local configuration:"},
+		&cobra.Group{ID: groupOperator, Title: "Operator (not available in agent mode):"},
 	)
 	assignGroup(groupPayments, paymentsCmd, payoutsCmd, openCmd)
 	assignGroup(groupAccount, authCmd, tokenCmd, accountCmd, walletsCmd, paymentMethodsCmd, webhooksCmd, analyticsCmd, disputesCmd)
 	assignGroup(groupCatalog, chainsCmd, tokensCmd, balanceCmd, healthCmd)
 	assignGroup(groupLocal, initCmd, configCmd, envCmd, aliasesCmd, keysCmd)
+	assignGroup(groupOperator, adminCmd)
 
 	rootCmd.AddCommand(paymentsCmd, payoutsCmd, accountCmd, walletsCmd, paymentMethodsCmd, webhooksCmd, chainsCmd, tokensCmd, balanceCmd, authCmd, healthCmd, aliasesCmd, keysCmd, configCmd, envCmd, disputesCmd, analyticsCmd, openCmd)
 }
@@ -210,6 +212,7 @@ const (
 	groupAccount  = "account"
 	groupCatalog  = "catalog"
 	groupLocal    = "local"
+	groupOperator = "operator"
 )
 
 // assignGroup tags commands with a help group. A helper because the alternative is
@@ -224,6 +227,7 @@ func assignGroup(id string, cmds ...*cobra.Command) {
 // newClient builds a RAIL0 gateway client.
 // If a JWT is stored for this gateway (~/.cache/rail0/tokens/<digest>), it is
 // sent as Authorization: Bearer on every request.
+// While operator write mode is on, the token sent is the write-mode one (bearerToken).
 //
 // The token goes in ClientOptions.Token, not a hand-built Authorization header.
 // Both end up as the same header, but Token is the SDK's mutable slot: Auth.Login
@@ -240,7 +244,7 @@ func newClient() *rail0.Client {
 func newClientFor(baseURL string) *rail0.Client {
 	opts := rail0.ClientOptions{
 		BaseURL: baseURL,
-		Token:   token.Load(baseURL),
+		Token:   bearerToken(baseURL),
 		Timeout: httpTimeout(),
 	}
 	if debug {
@@ -263,7 +267,7 @@ func newReadClient() *rail0.Client {
 	baseURL := resolveBaseURL()
 	opts := rail0.ClientOptions{
 		BaseURL:    baseURL,
-		Token:      token.Load(baseURL),
+		Token:      bearerToken(baseURL),
 		Timeout:    httpTimeout(),
 		MaxRetries: 2,
 		RetryOn429: true,
@@ -455,6 +459,9 @@ func ensureSession(ctx context.Context, client *rail0.Client, keyHex, addr strin
 	if err := token.Save(baseURL, authResp.Token); err != nil {
 		return err
 	}
+	// The stored session was replaced: a write-mode token of the previous one is no
+	// longer this session's (writeModeToken would drop it on the next read anyway).
+	_ = token.DeleteWriteMode(baseURL)
 	ui.Notice("signed_in", map[string]any{"address": addr, "stored": true}, fmt.Sprintf("Signed in as %s", addr))
 	return nil
 }

@@ -189,3 +189,62 @@ func TestSaveTightensExistingPermissions(t *testing.T) {
 		t.Errorf("tokens dir holds %d entries, want only the token (no temp file left)", len(entries))
 	}
 }
+
+// The write-mode token lives beside the session's, per gateway, in a file of its own:
+// ending write mode removes it and leaves the session, and one gateway's does not show
+// up on another.
+func TestWriteModeTokenIsStoredBesideTheSession(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+	t.Setenv("XDG_CACHE_HOME", dir)
+	if err := os.MkdirAll(filepath.Join(dir, "Library", "Caches"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := LoadWriteMode(gwA); got != "" {
+		t.Errorf("nothing stored: LoadWriteMode = %q", got)
+	}
+	if err := DeleteWriteMode(gwA); err != nil {
+		t.Errorf("deleting what is not there must not fail: %v", err)
+	}
+	if err := Save(gwA, "session-a"); err != nil {
+		t.Fatal(err)
+	}
+	if err := SaveWriteMode(gwA, "write-a"); err != nil {
+		t.Fatal(err)
+	}
+	if LoadWriteMode(gwA) != "write-a" || Load(gwA) != "session-a" {
+		t.Errorf("write = %q, session = %q", LoadWriteMode(gwA), Load(gwA))
+	}
+	if got := LoadWriteMode(gwB); got != "" {
+		t.Errorf("another gateway sees %q", got)
+	}
+
+	// Same directory as the session, a name of its own, readable by the owner only.
+	path := Path(gwA) + ".write"
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("the write-mode token is not at %s: %v", path, err)
+	}
+	if perm := info.Mode().Perm(); perm != 0o600 {
+		t.Errorf("permissions = %o, want 600", perm)
+	}
+
+	if err := DeleteWriteMode(gwA); err != nil {
+		t.Fatal(err)
+	}
+	if LoadWriteMode(gwA) != "" || Load(gwA) != "session-a" {
+		t.Errorf("after delete: write = %q, session = %q", LoadWriteMode(gwA), Load(gwA))
+	}
+
+	// Signing out removes the session file only; the caller ends write mode first.
+	if err := SaveWriteMode(gwA, "write-a"); err != nil {
+		t.Fatal(err)
+	}
+	if err := Delete(gwA); err != nil {
+		t.Fatal(err)
+	}
+	if Load(gwA) != "" || LoadWriteMode(gwA) != "write-a" {
+		t.Errorf("Delete touched the wrong file: session = %q, write = %q", Load(gwA), LoadWriteMode(gwA))
+	}
+}

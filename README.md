@@ -35,7 +35,7 @@ rotate is reported rather than silently honoured. Keys are scoped to the payment
 - [Shell completion](#shell-completion)
 - [Configuration](#configuration) — [defaults](#persisted-defaults-config) · [`--chain`](#chains---chain-slugid) · [address book](#address-book-aliases) · [signing keys](#signing-keys-os-keychain) · [new wallet](#new-wallet-keys-generate) · [`balance`](#on-chain-balance-balance)
 - [Signing modes](#signing-modes) — who signs what, and when
-- [Commands](#commands) — the full reference, including [repairing a webhook](#repairing-a-webhook-that-stopped-delivering) and [payouts](#payouts)
+- [Commands](#commands) — the full reference, including [repairing a webhook](#repairing-a-webhook-that-stopped-delivering), [payouts](#payouts) and the [operator commands](#operator-commands-admin)
 - [Full flow examples](#full-flow-examples) — authorize/capture, charge, refund
 - [Output modes](#output-modes) — including [agent mode (`--agent`)](#agent-mode---agent)
 - [Releasing](#releasing) — for maintainers
@@ -948,6 +948,8 @@ rail0 auth status
 Revoke the session on the gateway and remove the cached JWT. The result says what
 happened: `session` is `none` (nothing was stored), `revoked`, or `abandoned` (removed
 locally but not revoked — `session_detail` says why).
+An operator's [write mode](#write-mode), if it is on, ends first: its token is revoked
+and removed with the session.
 
 ```sh
 rail0 auth logout
@@ -1932,6 +1934,147 @@ rail0 payouts report-hash <payout_id> 0x5c50…     # a transfer you broadcast y
 
 ---
 
+### Operator commands (`admin`)
+
+For a gateway **operator**: the commands that read and repair across every account.
+They need a session whose account holds the operator grant (`rail0 auth login` with an
+operator's key); any other session is answered `403` `forbidden`.
+
+**Not available in [agent mode](#agent-mode---agent).** Every `rail0 admin` command
+answers `unavailable_in_agent_mode` there, before anything is sent: an operator's
+action is a person's, at a terminal.
+
+| Command | What it does | Writes |
+|---|---|---|
+| `admin health` | One verdict, then a named check per thing that can be wrong | no |
+| `admin health --rpc` | Every active chain's RPC endpoints, probed from the gateway | no |
+| `admin transactions` | Transactions across every account, or only the stuck ones | no |
+| `admin sync-errors` | Why an indexer callback could not be applied | no |
+| `admin sync-errors clear` | Delete the sync errors the filters select | **yes** |
+| `admin trace <payment>` | Everything about one payment, whoever it belongs to | no |
+| `admin write-mode [on\|off]` | See, open or close the hour in which the operator may write | — |
+
+#### Write mode
+
+An operator session **reads**. A write is refused `403` `write_mode_required` until
+write mode is on: a second token for the same session, valid one hour by default and
+never longer than the session. Switching it on asks for no signature, and both switches
+are recorded in the gateway's operator audit log.
+
+```sh
+rail0 admin write-mode        # is it on, and until when
+rail0 admin write-mode on     # → {"active": true, "expires_at": "…", "expires_in": "1h 0m"}
+rail0 admin write-mode off    # revoke it now
+```
+
+- **It is a state of the session, not of one command.** While it is on, every command
+  this CLI runs against that gateway carries the write-mode token, so the operator's
+  writes outside `rail0 admin` work too: `account update --account …`,
+  `payments redrive`, a wallet switched off or back on.
+- **It ends** when the hour is up, with `write-mode off`, with `auth logout` and with a
+  new `auth login` (each revokes the token on the gateway, not only here).
+- **The token** is stored beside the session's (same directory, `0600`) and is never
+  printed. Agent mode never carries it: with write mode on in a terminal, an agent on
+  the same machine still gets `write_mode_required` for an operator's write.
+
+#### `admin health`
+
+```sh
+rail0 admin health            # the operator diagnostics
+rail0 admin health --rpc      # can the gateway reach the chains
+rail0 admin health --pretty
+```
+
+The diagnostics are a verdict (`ok`, `degraded`, `error`) and a check per standing
+failure condition: the worker fleet, the indexer's intake, broadcasts that are not
+landing, open webhook circuits, sync callbacks that could not be applied, balance
+divergences. Each check carries its figures and a `describes` sentence saying what they
+mean. `--rpc` reports, per chain, each endpoint's status, head block and latency as
+seen from the gateway's own process.
+
+**The exit code follows the verdict:** `0` when it is `ok`, `1` otherwise, after the
+report is printed, with the failing checks named on stderr. So it works as a check:
+
+```sh
+rail0 admin health --json > /tmp/health.json || notify "gateway: $(jq -r .status /tmp/health.json)"
+```
+
+#### `admin transactions`
+
+```sh
+rail0 admin transactions --stuck any                  # what needs attention
+rail0 admin transactions --hash 0xed7c607d…           # the one an explorer link names
+rail0 admin transactions --account 019e748b-… --status failed --chain arc
+rail0 admin transactions --operation refund --sort -created_at --pretty
+```
+
+| Flag | Meaning |
+|---|---|
+| `--stuck` | `unbroadcast` (signed, never sent), `unconfirmed` (sent, never confirmed) or `any` |
+| `--status` | One or more of `pending`, `submitting`, `submitted`, `confirmed`, `failed` |
+| `--operation` | `authorize`, `capture`, `charge`, `void`, `release`, `refund`, … |
+| `--chain` | A slug or a chain id |
+| `--account` | Payments whose payee is one of this account's wallets |
+| `--hash` | The transaction with this hash |
+| `--sort`, `--page`, `--per-page` | As on every list |
+
+Each row carries the payment it belongs to (`payment`: ids, chain, parties, amount) and
+`error_reason` when it failed. A stuck broadcast is re-sent with
+`rail0 payments redrive <payment> <transaction>`, in write mode.
+
+#### `admin sync-errors`
+
+The gateway's ledger of indexer callbacks it could not apply: on-chain events the
+gateway's mirror never recorded. It is never pruned by itself.
+
+```sh
+rail0 admin sync-errors
+rail0 admin sync-errors --reason payment_mismatch --pretty
+rail0 admin sync-errors --payment 0xrail0Id…
+rail0 admin sync-errors clear --reason not_found      # asks first, with the count
+rail0 admin sync-errors clear --payment 0xrail0Id… --yes
+```
+
+`--reason` is one of `not_found`, `external_operation`, `chain_mismatch`,
+`payment_mismatch`, `operation_mismatch`, `unapplicable`, `balance_divergence`,
+`impossible_balances`; `--outcome` is `confirmed` or `failed`; `--tx-hash` and
+`--payment` (a UUID or a `rail0_id`) narrow to one transaction or payment.
+
+`clear` deletes exactly the rows the same filters list. It counts them first and asks
+(`--yes` skips the question), cannot be undone, needs [write mode](#write-mode) and is
+audited with its filters and the number of rows removed. **At least one filter is
+required.** `--all` empties the whole ledger instead, and that includes the
+`balance_divergence` rows whose count `admin health` reports: to drop a backlog and
+keep those, filter by `--reason`.
+
+#### `admin trace`
+
+"What happened to this payment", in one command, whoever the payment belongs to.
+
+```sh
+rail0 admin trace 0xrail0Id…
+rail0 admin trace 019e748b-… --timeline --pretty
+```
+
+The result has a section per kind: `payment` (with its transactions), `sync_errors`,
+`deliveries` (webhook deliveries across every subscription, each with the subscription
+and its account, without the request body), `disputes`, `actions` (what operators did
+to it) and `totals`, which says how many of each exist.
+
+`--timeline` prints the same facts as one chronological list instead:
+
+```
+  AT                   KIND         EVENT              STATUS     AMOUNT  CODE  DETAIL
+  ───────────────────  ───────────  ─────────────────  ─────────  ──────  ────  ───────────
+  2026-10-22 14:28:15  payment      created                          2.5
+  2026-10-22 14:30:21  transaction  authorize          confirmed                0x563d…9b02
+  2026-10-22 14:37:06  transaction  capture            confirmed       1        0xf8e0…b029
+  2026-10-22 14:37:10  delivery     payments.captured  failed               500  Shop
+  2026-10-23 09:00:00  dispute      opened             open                     not_received
+```
+
+---
+
 ### Help, as text or as data (`help`)
 
 ```sh
@@ -2088,8 +2231,8 @@ call, or once with `RAIL0_AGENT=1` in the agent's environment.
   `usage_error`, `missing_private_key`, `invalid_chain`, `flag_conflict`,
   `confirmation_required`, `minimum_required`, `minimum_conflict`, `label_required`,
   `unavailable_in_agent_mode`, `interactive_only`, `not_logged_in`, `session_expired`,
-  `account_required`, `aborted`, `wait_timeout`, `network_error`, `cli_error`
-  (`rail0 --agent help` prints this list, with the exit codes).
+  `account_required`, `write_mode_required`, `aborted`, `wait_timeout`, `network_error`,
+  `cli_error` (`rail0 --agent help` prints this list, with the exit codes).
   A mistake in the call (a flag or an argument that is wrong, missing or in conflict,
   a key that is not a key) is `usage_error`, exit `2`: fix the call. No usable stored
   session is `not_logged_in` or `session_expired`, exit `3`, with the sign-in as
@@ -2132,8 +2275,10 @@ call, or once with `RAIL0_AGENT=1` in the agent's environment.
 - **Not available:** `keys generate` and `keys add` (the private key would pass through
   the agent's context — create and save it in a terminal and give the agent only its
   `@name`), `token` and `auth login --token` (the session token is a credential too:
-  the CLI sends it by itself, and `auth status` says who is signed in and until when)
-  and `init`.
+  the CLI sends it by itself, and `auth status` says who is signed in and until when),
+  `init`, and every [`rail0 admin` command](#operator-commands-admin): an operator's
+  action is a person's. The write-mode token is never carried in agent mode either, so
+  an operator's write through any other command is refused `write_mode_required`.
 - Cannot be combined with `--quiet` or `--pretty` (exit `2`); `--json` is implied.
 
 ```sh

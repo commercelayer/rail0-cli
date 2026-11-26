@@ -351,6 +351,10 @@ var errorHints = map[string]string{
 	// the gateway at all.
 	"forbidden":              "not permitted for this session — typically the operator grant, a resource owned by another account, or a transaction signed by the wrong wallet ('rail0 auth status' shows who you are signed in as)",
 	"payment_already_exists": "a payment with this id already exists on-chain",
+	// An operator's write without the write-mode token: the session is the operator's,
+	// and it reads until a person switches write mode on. Agent mode never carries that
+	// token (bearerToken), so there the answer is to hand the write to a person.
+	"write_mode_required": "an operator session reads until write mode is on — run 'rail0 admin write-mode on' at a terminal (it lasts an hour and is audited; agent mode never writes as an operator)",
 }
 
 // hintFor returns the actionable hint for an error code (preferred) or its

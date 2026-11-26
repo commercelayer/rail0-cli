@@ -1962,6 +1962,9 @@ action is a person's, at a terminal.
 | `admin webhooks reset-circuit <webhook>` | Close a subscription's circuit breaker, on any account | **yes** |
 | `admin deliveries` | Webhook deliveries across accounts, by payment or subscription | no |
 | `admin audit` | The operator audit log: every operator write | no |
+| `admin disputes` | Every dispute across accounts, open and closed | no |
+| `admin operators` | Who holds the operator role | no |
+| `admin operators grant\|revoke <account>` | Give or remove the operator role | **yes** |
 | `admin write-mode [on\|off]` | See, open or close the hour in which the operator may write | — |
 
 #### Write mode
@@ -2266,6 +2269,60 @@ count of a sync-error clear. A merchant's own writes are not operator actions an
 in this log. The action names are completed by the shell and checked by the gateway, so a
 gateway newer than the CLI can still be filtered by an action added since.
 `rail0 admin trace <payment>` shows one payment's operator actions from either of its ids.
+
+#### `admin disputes`
+
+`rail0 disputes` lists the disputes on one wallet's payments. This is every account's, for
+the platform-wide question: what is being contested, since when, where, and why.
+
+```sh
+rail0 admin disputes --status open
+rail0 admin disputes --status open --chain arc --pretty
+rail0 admin disputes --reason not_received --from 2026-11-01T00:00:00Z
+rail0 admin disputes --payment 0xrail0Id…
+```
+
+| Flag | Meaning |
+|---|---|
+| `--status` | `open` or `closed` |
+| `--payment` | A payment's UUID or its `rail0_id` |
+| `--chain` | A slug or a chain id |
+| `--reason` | A code a payer can open a dispute with (`rail0 disputes reasons`) |
+| `--from`, `--to` | ISO-8601 times, on when the dispute was opened |
+| `--sort` | `opened_at` or `closed_at` (newest first by default) |
+| `--page`, `--per-page` | As on every list |
+
+Each row carries the payment it is about (`payment`: ids, chain, payer, payee, amount) and
+both reasons with their code and description. Read-only: a dispute is opened and closed by
+the payer, on chain, and a full refund closes it.
+
+#### `admin operators`
+
+The operator role is what opens every command of this group. It is a grant beside the
+account: who vouched for it, why, and optionally until when.
+
+```sh
+rail0 admin operators                             # every grant, expired ones included
+rail0 admin operators grant 019e748b-… --note "on call this week" --expires 7d
+rail0 admin operators grant 019e748b-… --note "platform team"
+rail0 admin operators revoke 019e748b-…
+```
+
+- **`grant`** gives the role to an account: from its next request it reads every account,
+  payment and webhook, and with write mode it writes to them, this role included. `--note`
+  says why and is kept with the grant and in the audit log. `--expires` time-boxes it: a
+  duration from now (`7d`, `12h`) or an ISO-8601 time; past it the grant opens nothing and
+  stays listed as history. Without `--expires` it lasts until revoked.
+- **`revoke`** removes it, by the **account's** id. The gateway refuses your own grant
+  (`422` `self_revoke`: stepping down is another operator's act) and the last active
+  operator (`422` `last_admin`).
+- Both read the account and **ask first, naming it** (`--yes` skips the question), need
+  [write mode](#write-mode), and are audited (`rail0 admin audit --action
+  administrator.grant`). Your own account is recorded as the one who granted.
+- An account that already holds a grant, expired or not, is refused (`409`): revoke it
+  first to change its note or expiry.
+- Like the rest of the group, neither runs in agent mode: the role is given and taken by a
+  person at a terminal.
 
 ---
 

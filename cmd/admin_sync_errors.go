@@ -136,12 +136,8 @@ A write: it needs write mode ('rail0 admin write-mode on').`,
 			return usagef("pass at least one filter (--reason, --outcome, --tx-hash, --payment), " +
 				"or --all to empty the whole ledger, balance_divergence rows included")
 		}
-		baseURL := resolveBaseURL()
-		if _, err := sessionAddress(); err != nil {
+		if err := requireWriteMode(); err != nil {
 			return err
-		}
-		if writeModeToken(baseURL) == "" {
-			return writeModeRequired()
 		}
 
 		// Count before asking, with the filter the delete will use: the question names

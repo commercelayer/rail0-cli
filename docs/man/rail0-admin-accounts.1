@@ -1,0 +1,86 @@
+.nh
+.TH "RAIL0" "1" "Aug 2026" "rail0 CLI" ""
+
+.SH NAME
+rail0-admin-accounts - Every account: find one, read it, switch it off or on (lists when run bare)
+
+
+.SH SYNOPSIS
+\fBrail0 admin accounts [flags]\fP
+
+
+.SH DESCRIPTION
+List every account, as the operator reads them: the whole record, with the operator's
+switch (active, status) and whether the account holds the operator grant (admin).
+
+.PP
+--search finds an account from whatever is at hand: a part of its name or of its email,
+a wallet address or its beginning (0x…), or its id.
+
+
+.SH OPTIONS
+\fB-h\fP, \fB--help\fP[=false]
+	help for accounts
+
+.PP
+\fB--operator\fP=""
+	Only accounts that hold the operator grant ('true') or that do not ('false')
+
+.PP
+\fB--page\fP=0
+	Page number (1-based)
+
+.PP
+\fB--per-page\fP=0
+	Results per page
+
+.PP
+\fB--search\fP=""
+	A part of the name or email, a wallet address or its beginning (0x…), or the account's id
+
+.PP
+\fB--sort\fP=""
+	Sort by name, email or created_at (prefix - for descending; default: name)
+
+.PP
+\fB--status\fP=""
+	Only accounts with this status: active or deactivated
+
+
+.SH OPTIONS INHERITED FROM PARENT COMMANDS
+\fB--agent\fP[=false]
+	Agent mode: one JSON envelope on stdout, JSON events on stderr, no prompts (env: RAIL0_AGENT=1)
+
+.PP
+\fB--base-url\fP=""
+	RAIL0 gateway base URL (env: RAIL0_BASE_URL)
+
+.PP
+\fB--debug\fP[=false]
+	Print HTTP request/response details to stderr
+
+.PP
+\fB--json\fP[=false]
+	Force plain (uncolored) JSON output (useful in scripts)
+
+.PP
+\fB--pretty\fP[=false]
+	Use the key-value/table view instead of JSON (terminal only)
+
+.PP
+\fB-q\fP, \fB--quiet\fP[=false]
+	Print only the result's id/hash, one per line (useful in scripts)
+
+
+.SH EXAMPLE
+.EX
+  rail0 admin accounts
+  rail0 admin accounts --search acme --pretty
+  rail0 admin accounts --search 0x2D2B…            # whose wallet is this
+  rail0 admin accounts --status deactivated
+  rail0 admin accounts --operator true             # who holds the operator grant
+.EE
+
+
+.SH SEE ALSO
+\fBrail0-admin(1)\fP, \fBrail0-admin-accounts-activate(1)\fP, \fBrail0-admin-accounts-deactivate(1)\fP, \fBrail0-admin-accounts-exposure(1)\fP, \fBrail0-admin-accounts-get(1)\fP

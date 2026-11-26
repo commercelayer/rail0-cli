@@ -1,0 +1,90 @@
+.nh
+.TH "RAIL0" "1" "Aug 2026" "rail0 CLI" ""
+
+.SH NAME
+rail0-admin-onboardings - Onboarding requests: list, invite, correct, resend, cancel (lists when run bare)
+
+
+.SH SYNOPSIS
+\fBrail0 admin onboardings [flags]\fP
+
+
+.SH DESCRIPTION
+List the onboarding requests: the invites an operator sent and the sign-ups merchants
+made themselves, each with its state, how its last email went, and its clashes with
+accounts or with other requests (conflicts).
+
+.PP
+Open and expired requests are listed by default: the ones still waiting for something.
+--status completed shows the history; a completed request's id is its account's id.
+
+.PP
+A request becomes an account only when the merchant claims it, by signing with the
+wallet it names, from the link in the email. The link is never shown here.
+
+
+.SH OPTIONS
+\fB-h\fP, \fB--help\fP[=false]
+	help for onboardings
+
+.PP
+\fB--origin\fP=""
+	Only requests from this entrance: operator (an invite) or signup (self-service)
+
+.PP
+\fB--page\fP=0
+	Page number (1-based)
+
+.PP
+\fB--per-page\fP=0
+	Results per page
+
+.PP
+\fB--send-failed\fP=""
+	Only requests whose last email failed ('true') or did not ('false')
+
+.PP
+\fB--sort\fP=""
+	Sort by created_at, expires_at, last_sent_at, name or email (prefix - for descending; default: newest first)
+
+.PP
+\fB--status\fP=[]
+	State(s), comma-separated or repeated: open, expired, completed (default: open,expired)
+
+
+.SH OPTIONS INHERITED FROM PARENT COMMANDS
+\fB--agent\fP[=false]
+	Agent mode: one JSON envelope on stdout, JSON events on stderr, no prompts (env: RAIL0_AGENT=1)
+
+.PP
+\fB--base-url\fP=""
+	RAIL0 gateway base URL (env: RAIL0_BASE_URL)
+
+.PP
+\fB--debug\fP[=false]
+	Print HTTP request/response details to stderr
+
+.PP
+\fB--json\fP[=false]
+	Force plain (uncolored) JSON output (useful in scripts)
+
+.PP
+\fB--pretty\fP[=false]
+	Use the key-value/table view instead of JSON (terminal only)
+
+.PP
+\fB-q\fP, \fB--quiet\fP[=false]
+	Print only the result's id/hash, one per line (useful in scripts)
+
+
+.SH EXAMPLE
+.EX
+  rail0 admin onboardings
+  rail0 admin onboardings --send-failed true        # whose email did not go out
+  rail0 admin onboardings --status completed --origin signup --pretty
+  rail0 admin onboardings invite --name "Acme Store" --email ops@acme.example --address 0x2D2B…
+.EE
+
+
+.SH SEE ALSO
+\fBrail0-admin(1)\fP, \fBrail0-admin-onboardings-cancel(1)\fP, \fBrail0-admin-onboardings-correct(1)\fP, \fBrail0-admin-onboardings-invite(1)\fP, \fBrail0-admin-onboardings-resend(1)\fP

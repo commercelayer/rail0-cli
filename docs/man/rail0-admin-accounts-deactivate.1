@@ -1,0 +1,80 @@
+.nh
+.TH "RAIL0" "1" "Aug 2026" "rail0 CLI" ""
+
+.SH NAME
+rail0-admin-accounts-deactivate - Switch an account off (write mode, audited)
+
+
+.SH SYNOPSIS
+\fBrail0 admin accounts deactivate  [flags]\fP
+
+
+.SH DESCRIPTION
+Switch an account off. From then on it can start no new payment (authorize, charge)
+and write no payout; its sessions keep reading, and what is already in motion stays
+where it is. Reversible: 'rail0 admin accounts activate'.
+
+.PP
+The command reads the account and its exposure first ('rail0 admin accounts exposure')
+and asks, naming the account and what it still has in motion. Answering yes to that
+question is the acknowledgement the gateway requires for an account with open exposure.
+Without a question (--yes, or no terminal) an account with open exposure is refused
+unless --acknowledge-exposure is passed too: --yes alone never switches off an account
+that has something in motion.
+
+.PP
+The gateway also refuses your own account (another operator has to) and the account
+holding the last active operator grant.
+
+.PP
+A write: it needs write mode ('rail0 admin write-mode on').
+
+
+.SH OPTIONS
+\fB--acknowledge-exposure\fP[=false]
+	Switch the account off although it still has payments, escrow, disputes or payouts in motion (needed with --yes)
+
+.PP
+\fB-h\fP, \fB--help\fP[=false]
+	help for deactivate
+
+.PP
+\fB-y\fP, \fB--yes\fP[=false]
+	Skip the confirmation prompt (required to run non-interactively)
+
+
+.SH OPTIONS INHERITED FROM PARENT COMMANDS
+\fB--agent\fP[=false]
+	Agent mode: one JSON envelope on stdout, JSON events on stderr, no prompts (env: RAIL0_AGENT=1)
+
+.PP
+\fB--base-url\fP=""
+	RAIL0 gateway base URL (env: RAIL0_BASE_URL)
+
+.PP
+\fB--debug\fP[=false]
+	Print HTTP request/response details to stderr
+
+.PP
+\fB--json\fP[=false]
+	Force plain (uncolored) JSON output (useful in scripts)
+
+.PP
+\fB--pretty\fP[=false]
+	Use the key-value/table view instead of JSON (terminal only)
+
+.PP
+\fB-q\fP, \fB--quiet\fP[=false]
+	Print only the result's id/hash, one per line (useful in scripts)
+
+
+.SH EXAMPLE
+.EX
+  rail0 admin accounts deactivate 019e748b-…
+  rail0 admin accounts deactivate 019e748b-… --yes                          # only with nothing in motion
+  rail0 admin accounts deactivate 019e748b-… --yes --acknowledge-exposure
+.EE
+
+
+.SH SEE ALSO
+\fBrail0-admin-accounts(1)\fP

@@ -1,0 +1,77 @@
+.nh
+.TH "RAIL0" "1" "Aug 2026" "rail0 CLI" ""
+
+.SH NAME
+rail0-admin-wallets-deactivate - Switch a wallet off, on any account (write mode, audited)
+
+
+.SH SYNOPSIS
+\fBrail0 admin wallets deactivate  [flags]\fP
+
+
+.SH DESCRIPTION
+Switch a wallet off. It stops being offered to buyers, so no new payment can name it,
+and webhooks stop being dispatched for its payments. Existing payments settle whatever
+the switch says: they carry the address themselves.
+
+.PP
+This is the definitive revocation, for a leaked or lost key: a wallet an operator
+switched off can be switched back on only by an operator ('rail0 admin wallets
+activate'). Its own session cannot, where it could after switching itself off.
+
+.PP
+The command reads what still names the address first ('rail0 admin wallets usage') and
+asks. The account's only active wallet is refused (422 last_active_wallet): the account
+could no longer sign in.
+
+.PP
+A write: it needs write mode ('rail0 admin write-mode on').
+
+
+.SH OPTIONS
+\fB-h\fP, \fB--help\fP[=false]
+	help for deactivate
+
+.PP
+\fB-y\fP, \fB--yes\fP[=false]
+	Skip the confirmation prompt (required to run non-interactively)
+
+
+.SH OPTIONS INHERITED FROM PARENT COMMANDS
+\fB--account\fP=""
+	The account the wallets belong to (required)
+
+.PP
+\fB--agent\fP[=false]
+	Agent mode: one JSON envelope on stdout, JSON events on stderr, no prompts (env: RAIL0_AGENT=1)
+
+.PP
+\fB--base-url\fP=""
+	RAIL0 gateway base URL (env: RAIL0_BASE_URL)
+
+.PP
+\fB--debug\fP[=false]
+	Print HTTP request/response details to stderr
+
+.PP
+\fB--json\fP[=false]
+	Force plain (uncolored) JSON output (useful in scripts)
+
+.PP
+\fB--pretty\fP[=false]
+	Use the key-value/table view instead of JSON (terminal only)
+
+.PP
+\fB-q\fP, \fB--quiet\fP[=false]
+	Print only the result's id/hash, one per line (useful in scripts)
+
+
+.SH EXAMPLE
+.EX
+  rail0 admin wallets deactivate 0x2D2B… --account 019e748b-…
+  rail0 admin wallets deactivate 019f02aa-… --account 019e748b-… --yes
+.EE
+
+
+.SH SEE ALSO
+\fBrail0-admin-wallets(1)\fP

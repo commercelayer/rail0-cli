@@ -66,7 +66,7 @@ var cliErrorCodes = []string{
 	"usage_error", "missing_private_key", "invalid_chain", "flag_conflict",
 	"confirmation_required", "minimum_required", "minimum_conflict", "label_required",
 	"unavailable_in_agent_mode", "interactive_only", "not_logged_in", "session_expired",
-	"account_required", "write_mode_required", "aborted", "wait_timeout", "network_error", "cli_error",
+	"account_required", "write_mode_required", "exposure_not_acknowledged", "aborted", "wait_timeout", "network_error", "cli_error",
 }
 
 // extraEnvironment are the variables read outside the config layer (configKeys carries

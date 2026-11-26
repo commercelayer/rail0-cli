@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -32,6 +33,17 @@ type operatorRequest struct {
 	path   string
 	query  url.Values
 	token  string // the bearer token, without "Bearer "
+	body   []byte
+}
+
+// json decodes the request's body, which must be a JSON object.
+func (r operatorRequest) json(t *testing.T) map[string]any {
+	t.Helper()
+	var out map[string]any
+	if err := json.Unmarshal(r.body, &out); err != nil {
+		t.Fatalf("%s %s: body %q is not a JSON object: %v", r.method, r.path, r.body, err)
+	}
+	return out
 }
 
 func newOperatorGateway(t *testing.T) *operatorGateway {
@@ -40,10 +52,12 @@ func newOperatorGateway(t *testing.T) *operatorGateway {
 	isolateTokenStore(t)
 	g := &operatorGateway{}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
 		g.mu.Lock()
 		g.reqs = append(g.reqs, operatorRequest{
 			method: r.Method, path: r.URL.Path, query: r.URL.Query(),
 			token: strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "),
+			body:  raw,
 		})
 		total := g.total
 		g.mu.Unlock()

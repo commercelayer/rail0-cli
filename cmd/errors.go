@@ -317,6 +317,7 @@ var errorHints = map[string]string{
 	"payout_hash_in_use":    "another payout already records that transaction hash — check the hash you reported",
 	"foreign_transfer_hash": "that transaction is not this payout's transfer (sender, token, recipient or amount differ) — report the hash of the transfer you sent for it",
 	"transaction_mismatch":  "the signed transaction does not match the one prepared — sign the prepared transaction unchanged",
+	"transaction_in_flight": "the other party already has this payment's release signed or sent — wait a moment and run the release again ('rail0 payments get <id>' shows whether theirs settled)",
 	// Not hinted: transaction_not_overwritable. The gateway raises it only on the
 	// /…/submitted endpoints (reporting an externally broadcast hash onto a transaction
 	// already confirmed), and the CLI never calls them — every operation here is

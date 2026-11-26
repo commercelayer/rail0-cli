@@ -1,0 +1,81 @@
+.nh
+.TH "RAIL0" "1" "Aug 2026" "rail0 CLI" ""
+
+.SH NAME
+rail0-admin-wallets - Any account's wallets: list them, see what names one, switch it off or on (lists when run bare)
+
+
+.SH SYNOPSIS
+\fBrail0 admin wallets [flags]\fP
+
+
+.SH DESCRIPTION
+List the wallets of an account (--account), each with the tokens it accepts and, when
+it is off, who switched it off (deactivated_by: owner or operator).
+
+.PP
+The account is always named with --account: 'rail0 admin accounts --search 0x…' finds
+the account a wallet address belongs to.
+
+
+.SH OPTIONS
+\fB--account\fP=""
+	The account the wallets belong to (required)
+
+.PP
+\fB--active\fP=""
+	Only wallets that are on ('true') or off ('false')
+
+.PP
+\fB-h\fP, \fB--help\fP[=false]
+	help for wallets
+
+.PP
+\fB--page\fP=0
+	Page number (1-based)
+
+.PP
+\fB--per-page\fP=0
+	Wallets per page
+
+.PP
+\fB--sort\fP=""
+	Sort wallets (e.g. -created_at)
+
+
+.SH OPTIONS INHERITED FROM PARENT COMMANDS
+\fB--agent\fP[=false]
+	Agent mode: one JSON envelope on stdout, JSON events on stderr, no prompts (env: RAIL0_AGENT=1)
+
+.PP
+\fB--base-url\fP=""
+	RAIL0 gateway base URL (env: RAIL0_BASE_URL)
+
+.PP
+\fB--debug\fP[=false]
+	Print HTTP request/response details to stderr
+
+.PP
+\fB--json\fP[=false]
+	Force plain (uncolored) JSON output (useful in scripts)
+
+.PP
+\fB--pretty\fP[=false]
+	Use the key-value/table view instead of JSON (terminal only)
+
+.PP
+\fB-q\fP, \fB--quiet\fP[=false]
+	Print only the result's id/hash, one per line (useful in scripts)
+
+
+.SH EXAMPLE
+.EX
+  rail0 admin wallets --account 019e748b-…
+  rail0 admin wallets --account 019e748b-… --active false --pretty
+  rail0 admin wallets usage 0x2D2B… --account 019e748b-…
+  rail0 admin wallets deactivate 0x2D2B… --account 019e748b-…
+.EE
+
+
+.SH SEE ALSO
+\fBrail0-admin(1)\fP, \fBrail0-admin-wallets-activate(1)\fP, \fBrail0-admin-wallets-deactivate(1)\fP, \fBrail0-admin-wallets-usage(1)\fP

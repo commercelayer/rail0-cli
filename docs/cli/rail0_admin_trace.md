@@ -47,5 +47,5 @@ rail0 admin trace <payment> [flags]
 
 ### SEE ALSO
 
-* [rail0 admin](rail0_admin.md)	 - Operator commands: diagnostics, stuck transactions, sync errors, write mode
+* [rail0 admin](rail0_admin.md)	 - Operator commands: diagnostics, stuck transactions, sync errors, accounts, wallets, onboarding, write mode
 

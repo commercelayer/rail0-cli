@@ -131,6 +131,19 @@ func writeModeRequired() error {
 	}
 }
 
+// requireWriteMode refuses an operator's write here, before anything is read or asked:
+// no session, or write mode off. The gateway would refuse the write the same way; said
+// first, the operator is not shown figures and a question for a command that cannot run.
+func requireWriteMode() error {
+	if _, err := sessionAddress(); err != nil {
+		return err
+	}
+	if writeModeToken(resolveBaseURL()) == "" {
+		return writeModeRequired()
+	}
+	return nil
+}
+
 // writeModeInfo is what the write-mode commands print: never the token.
 func writeModeInfo(writeToken string) map[string]any {
 	claims, err := parseJWTClaims(writeToken)

@@ -18,9 +18,9 @@ import (
 // one `auth status` prints); --account names another one, which the gateway answers
 // only for an admin (anyone else gets 403 not_your_account).
 //
-// The account's `active` flag is deliberately NOT exposed: it is the operator's
+// The account's `active` flag is deliberately NOT exposed here: it is the operator's
 // field (the gateway refuses it from an owner with 403), and reactivating or parking
-// an account belongs on the operator surface, not in a merchant's CLI.
+// an account belongs on the operator surface: `rail0 admin accounts deactivate|activate`.
 
 var accountID string
 var accountUpdateName string
@@ -42,7 +42,7 @@ the gateway allows only for an admin (anyone else gets 403 not_your_account).
 
 Run bare, or as 'account get', to show it; 'account update' changes the name,
 email and/or priority tip. The account's active flag is operator-only and is not
-settable here.`,
+settable here (an operator: 'rail0 admin accounts deactivate').`,
 	Example: `  rail0 account                          # the signed-in account
   rail0 account get --account 019e748b-… # another account (admin only)
   rail0 account update --email ops@example.com

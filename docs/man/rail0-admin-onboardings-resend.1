@@ -1,0 +1,62 @@
+.nh
+.TH "RAIL0" "1" "Aug 2026" "rail0 CLI" ""
+
+.SH NAME
+rail0-admin-onboardings-resend - Send a request's link again: the invite, or a reminder for a sign-up (write mode, audited)
+
+
+.SH SYNOPSIS
+\fBrail0 admin onboardings resend  [flags]\fP
+
+
+.SH DESCRIPTION
+Send the link of a request again, with the same values: the invite again, or a reminder
+for a self-service sign-up. The previous link stops working and an expired request is
+renewed. It is also how a failed send is retried.
+
+.PP
+Refused with 409 when an account has taken the request's name, email or address since it
+was created: correct the request first ('rail0 admin onboardings correct').
+
+.PP
+A write: it needs write mode ('rail0 admin write-mode on').
+
+
+.SH OPTIONS
+\fB-h\fP, \fB--help\fP[=false]
+	help for resend
+
+
+.SH OPTIONS INHERITED FROM PARENT COMMANDS
+\fB--agent\fP[=false]
+	Agent mode: one JSON envelope on stdout, JSON events on stderr, no prompts (env: RAIL0_AGENT=1)
+
+.PP
+\fB--base-url\fP=""
+	RAIL0 gateway base URL (env: RAIL0_BASE_URL)
+
+.PP
+\fB--debug\fP[=false]
+	Print HTTP request/response details to stderr
+
+.PP
+\fB--json\fP[=false]
+	Force plain (uncolored) JSON output (useful in scripts)
+
+.PP
+\fB--pretty\fP[=false]
+	Use the key-value/table view instead of JSON (terminal only)
+
+.PP
+\fB-q\fP, \fB--quiet\fP[=false]
+	Print only the result's id/hash, one per line (useful in scripts)
+
+
+.SH EXAMPLE
+.EX
+  rail0 admin onboardings resend 019f0c11-…
+.EE
+
+
+.SH SEE ALSO
+\fBrail0-admin-onboardings(1)\fP

@@ -56,6 +56,6 @@ rail0 admin sync-errors [flags]
 
 ### SEE ALSO
 
-* [rail0 admin](rail0_admin.md)	 - Operator commands: diagnostics, stuck transactions, sync errors, write mode
+* [rail0 admin](rail0_admin.md)	 - Operator commands: diagnostics, stuck transactions, sync errors, accounts, wallets, onboarding, write mode
 * [rail0 admin sync-errors clear](rail0_admin_sync-errors_clear.md)	 - Delete the sync errors the filters select (write mode, audited)
 

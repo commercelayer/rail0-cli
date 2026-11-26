@@ -1952,6 +1952,12 @@ action is a person's, at a terminal.
 | `admin sync-errors` | Why an indexer callback could not be applied | no |
 | `admin sync-errors clear` | Delete the sync errors the filters select | **yes** |
 | `admin trace <payment>` | Everything about one payment, whoever it belongs to | no |
+| `admin accounts` | Every account: search, the whole record (`get`), what it has in motion (`exposure`) | no |
+| `admin accounts deactivate\|activate` | Switch an account off or back on | **yes** |
+| `admin wallets --account …` | An account's wallets, and what still names an address (`usage`) | no |
+| `admin wallets deactivate\|activate` | Switch any wallet off or back on | **yes** |
+| `admin onboardings` | Invites and sign-ups, with how their last email went | no |
+| `admin onboardings invite\|correct\|resend\|cancel` | Invite a merchant and follow the request to its claim | **yes** |
 | `admin write-mode [on\|off]` | See, open or close the hour in which the operator may write | — |
 
 #### Write mode
@@ -2072,6 +2078,114 @@ to it) and `totals`, which says how many of each exist.
   2026-10-22 14:37:10  delivery     payments.captured  failed               500  Shop
   2026-10-23 09:00:00  dispute      opened             open                     not_received
 ```
+
+#### `admin accounts`
+
+```sh
+rail0 admin accounts                              # every account, by name
+rail0 admin accounts --search acme --pretty
+rail0 admin accounts --search 0x2D2B…             # whose wallet is this
+rail0 admin accounts --status deactivated
+rail0 admin accounts --operator true              # who holds the operator grant
+rail0 admin accounts get 019e748b-…               # the whole record: active, status, admin
+rail0 admin accounts exposure 019e748b-…          # what it still has in motion
+```
+
+`--search` takes whatever is at hand: a part of the name or of the email, a wallet
+address or its beginning, or the account's id.
+
+`exposure` is what a deactivation would leave half-way, counted on the payments the
+account is the payee of: `in_flight` (created or signed, not yet on chain), `in_escrow`
+(buyer funds the contract holds, not yet captured), `disputed` (open disputes), the money
+of those per chain and token (`by_token`), and the `payouts` still moving. None of it is
+lost by a deactivation: escrow always returns to the buyer by void or release, and the
+wallet is the merchant's.
+
+```sh
+rail0 admin accounts deactivate 019e748b-…        # reads the exposure, shows it, asks
+rail0 admin accounts deactivate 019e748b-… --yes --acknowledge-exposure
+rail0 admin accounts activate 019e748b-…
+```
+
+A deactivated account can start no new payment and write no payout; its sessions keep
+reading, and it can still capture, refund and release what it has. Both need
+[write mode](#write-mode) and are audited.
+
+- **An account with something in motion needs an acknowledgement.** At a terminal the
+  question shows the figures, and answering yes is the acknowledgement. Where no
+  question is asked (`--yes`, a script) the command stops with
+  `exposure_not_acknowledged` unless `--acknowledge-exposure` is passed too: `--yes`
+  alone never switches off an account that has something in motion.
+- The gateway refuses your own account (`422` `self_deactivate`: another operator has
+  to) and the account holding the last active operator grant (`422` `last_admin`).
+- An account already deactivated is reported as such and nothing is written.
+
+#### `admin wallets`
+
+`rail0 wallets` is the merchant's: its own account, and writes only on the wallet it
+signed in with. These are the same reads and the same switch on **any** account, named
+with `--account`.
+
+```sh
+rail0 admin wallets --account 019e748b-…                       # with deactivated_by on the ones that are off
+rail0 admin wallets usage 0x2D2B… --account 019e748b-…         # payments as payee and payer, transactions sent
+rail0 admin wallets deactivate 0x2D2B… --account 019e748b-…    # shows the usage, asks
+rail0 admin wallets activate 0x2D2B… --account 019e748b-…
+```
+
+A wallet is its id, its `0x` address or an `@alias`. `--account` is always required and
+never defaults to the operator's own account.
+
+**An operator's switch-off is the definitive revocation**, for a leaked or lost key: the
+wallet's own session cannot switch it back on (`403` `wallet_deactivated_by_operator`),
+where it could after switching itself off. Only `admin wallets activate` lifts it. The
+wallet stops being offered to buyers and its webhooks stop; its payments still settle.
+The account's only active wallet is refused (`422` `last_active_wallet`). Both switches
+need [write mode](#write-mode) and are audited.
+
+#### `admin onboardings`
+
+How a merchant's account comes to exist: the operator invites (or the merchant signs
+up), the gateway emails a link, and the merchant **claims** the request by signing with
+the wallet it names. Only then is there an account, with the request's id.
+
+```sh
+rail0 admin onboardings                           # open and expired: still waiting for something
+rail0 admin onboardings --send-failed true        # whose email did not go out
+rail0 admin onboardings --status completed --origin signup --pretty
+```
+
+| Flag | Meaning |
+|---|---|
+| `--status` | One or more of `open`, `expired`, `completed` (default: `open,expired`) |
+| `--origin` | `operator` (an invite) or `signup` (self-service) |
+| `--send-failed` | `true`: the last email failed (`last_send_error` says why); `false`: the others |
+| `--sort`, `--page`, `--per-page` | As on every list |
+
+Each row carries its `conflicts`: the name, email or address an account already holds,
+or that another request not yet completed also names.
+
+```sh
+rail0 admin onboardings invite --name "Acme Store" --email ops@acme.example --address 0x2D2B…
+rail0 admin onboardings correct 019f0c11-… --email right@acme.example
+rail0 admin onboardings resend 019f0c11-…         # the invite again, or a reminder for a sign-up
+rail0 admin onboardings cancel 019f0c11-…         # asks first
+```
+
+- **The address is the merchant's own wallet**, given by the merchant: the claim must be
+  signed by it. An operator never makes a wallet for a merchant.
+- **No answer carries the link.** It exists only in the email; the answer says which mail
+  was queued and to whom, and the list shows later whether it went out. Every new link
+  makes the previous one stop working.
+- `invite` repeated for an open request with the same email and address sends a new link
+  for that request. `correct` renews an expired request and sends nothing to the address
+  it replaced. `resend` is also how a failed send is retried.
+- A name, email or address an account already holds is refused (`409`
+  `account_name_taken`, `account_email_taken`, `account_wallet_taken`), and an email the
+  environment may not write to (`422` `email_domain_not_allowed`).
+- A completed request is history (`422` `onboarding_completed`): correct its account with
+  `account update --account`, stop it with `admin accounts deactivate`.
+- All four writes need [write mode](#write-mode) and are audited.
 
 ---
 
@@ -2231,7 +2345,7 @@ call, or once with `RAIL0_AGENT=1` in the agent's environment.
   `usage_error`, `missing_private_key`, `invalid_chain`, `flag_conflict`,
   `confirmation_required`, `minimum_required`, `minimum_conflict`, `label_required`,
   `unavailable_in_agent_mode`, `interactive_only`, `not_logged_in`, `session_expired`,
-  `account_required`, `write_mode_required`, `aborted`, `wait_timeout`, `network_error`,
+  `account_required`, `write_mode_required`, `exposure_not_acknowledged`, `aborted`, `wait_timeout`, `network_error`,
   `cli_error` (`rail0 --agent help` prints this list, with the exit codes).
   A mistake in the call (a flag or an argument that is wrong, missing or in conflict,
   a key that is not a key) is `usage_error`, exit `2`: fix the call. No usable stored

@@ -41,7 +41,7 @@ Use 'rail0 <command> --help' for detailed usage of any command.
 ### SEE ALSO
 
 * [rail0 account](rail0_account.md)	 - Show or update the signed-in account's profile (shows when run bare)
-* [rail0 admin](rail0_admin.md)	 - Operator commands: diagnostics, stuck transactions, sync errors, write mode
+* [rail0 admin](rail0_admin.md)	 - Operator commands: diagnostics, stuck transactions, sync errors, accounts, wallets, onboarding, write mode
 * [rail0 aliases](rail0_aliases.md)	 - Address book — list saved addresses, or manage them with add/rm
 * [rail0 analytics](rail0_analytics.md)	 - Account sales analytics: summary, timeseries, breakdown (requires login)
 * [rail0 auth](rail0_auth.md)	 - Authenticate with the RAIL0 gateway using SIWE

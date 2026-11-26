@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"slices"
 	"strings"
 
@@ -300,6 +301,78 @@ func onboardingConflictsCell(row map[string]any) string {
 		}
 	}
 	return strings.Join(fields, ", ")
+}
+
+// accountName is the name of the account nested under key (a subscription's owner, an
+// action's actor or target), or its id when the row carries no name.
+func accountName(row map[string]any, key, idKey string) string {
+	account, _ := row[key].(map[string]any)
+	return firstNonEmptyStr(str(account, "name"), str(row, idKey))
+}
+
+// operatorWebhookColumns is every account's subscriptions: whether it is receiving comes
+// first (circuit, failures, last attempt), then whose it is, then where it points.
+var operatorWebhookColumns = []ui.Column{
+	{Header: "circuit", Field: "circuit_state"},
+	{Field: "active"},
+	{Header: "failures", Field: "circuit_failure_count", Right: true},
+	{Header: "last attempt", Value: func(row map[string]any) string {
+		at := ui.ShortTime(str(row, "last_attempt_at"))
+		if at == "" {
+			return ""
+		}
+		return str(row, "last_attempt_status") + " " + at
+	}},
+	{Header: "account", Value: func(row map[string]any) string { return accountName(row, "account", "account_id") }, Max: 24},
+	{Field: "name", Max: 24},
+	{Header: "url", Field: "callback_url", Max: 48},
+	{Field: "id"},
+}
+
+// operatorDeliveryColumns is the delivery log across accounts: the outcome first, then
+// which subscription of which account, then what it was about.
+var operatorDeliveryColumns = []ui.Column{
+	{Header: "created", Value: shortTimeOf("created_at")},
+	{Field: "topic"},
+	{Field: "status"},
+	{Header: "code", Field: "response_code"},
+	{Header: "account", Value: func(row map[string]any) string {
+		webhook, _ := row["webhook"].(map[string]any)
+		return accountName(webhook, "account", "account_id")
+	}, Max: 24},
+	{Header: "webhook", Value: func(row map[string]any) string {
+		webhook, _ := row["webhook"].(map[string]any)
+		return firstNonEmptyStr(str(webhook, "name"), str(row, "webhook_id"))
+	}, Max: 24},
+	{Header: "about", Value: func(row map[string]any) string {
+		return firstNonEmptyStr(str(row, "payment_id"), str(row, "payout_id"), str(row, "payout_destination_id"))
+	}},
+	{Header: "error", Field: "error_reason", Max: 32},
+	{Field: "id"},
+}
+
+// auditColumns is the operator audit log: when, what, by whom, to whom, on what, and the
+// detail the gateway recorded, as compact JSON.
+var auditColumns = []ui.Column{
+	{Header: "at", Value: func(row map[string]any) string { return ui.ShortTimeSeconds(str(row, "created_at")) }},
+	{Field: "action"},
+	{Header: "actor", Value: func(row map[string]any) string {
+		return firstNonEmptyStr(accountName(row, "actor", ""), ui.ShortHex(str(row, "actor_address")), str(row, "actor_account_id"))
+	}, Max: 24},
+	{Header: "target", Value: func(row map[string]any) string { return accountName(row, "target_account", "target_account_id") }, Max: 24},
+	{Header: "resource", Value: func(row map[string]any) string {
+		return strings.TrimSpace(str(row, "resource_type") + " " + str(row, "resource_id"))
+	}, Max: 46},
+	{Header: "detail", Value: func(row map[string]any) string {
+		if row["detail"] == nil {
+			return ""
+		}
+		b, err := json.Marshal(row["detail"])
+		if err != nil {
+			return ""
+		}
+		return string(b)
+	}, Max: 60},
 }
 
 var traceTimelineColumns = []ui.Column{

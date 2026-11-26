@@ -202,3 +202,54 @@ var chainColumns = []ui.Column{
 	}},
 	{Header: "settlement", Field: "settlement_human"},
 }
+
+// ── Operator lists ('rail0 admin …') ─────────────────────────────────────────
+
+// paymentOf reads a field of the payment summary an operator's row carries.
+func paymentOf(row map[string]any, key string) any {
+	payment, _ := row["payment"].(map[string]any)
+	return payment[key]
+}
+
+var operatorTransactionColumns = []ui.Column{
+	{Field: "id"},
+	{Field: "operation"},
+	{Field: "status"},
+	{Header: "amount", Value: amountCell, Right: true},
+	{Header: "chain", Value: func(row map[string]any) string {
+		payment, _ := row["payment"].(map[string]any)
+		return chainCell(payment)
+	}},
+	{Header: "payee", Value: func(row map[string]any) string {
+		s, _ := paymentOf(row, "payee").(string)
+		return ui.ShortHex(s)
+	}},
+	{Header: "tx hash", Value: shortHexOf("transaction_hash")},
+	{Header: "created", Value: shortTimeOf("created_at")},
+	{Header: "error", Value: func(row map[string]any) string {
+		return firstNonEmptyStr(str(row, "error_reason"), str(row, "error_code"))
+	}, Max: 40},
+	{Header: "payment", Field: "payment_id"},
+}
+
+var syncErrorColumns = []ui.Column{
+	{Header: "created", Value: shortTimeOf("created_at")},
+	{Field: "reason"},
+	{Field: "outcome"},
+	{Header: "event", Field: "event_type"},
+	{Header: "chain", Value: chainCell},
+	{Header: "block", Field: "block_number"},
+	{Header: "payment", Value: shortHexOf("payment_id")},
+	{Header: "tx hash", Value: shortHexOf("transaction_hash")},
+	{Field: "id"},
+}
+
+var traceTimelineColumns = []ui.Column{
+	{Header: "at", Value: func(row map[string]any) string { return ui.ShortTimeSeconds(str(row, "at")) }},
+	{Field: "kind"},
+	{Field: "event"},
+	{Field: "status"},
+	{Header: "amount", Value: amountCell, Right: true},
+	{Field: "code"},
+	{Header: "detail", Value: func(row map[string]any) string { return ui.ShortHex(str(row, "detail")) }, Max: 48},
+}

@@ -108,6 +108,9 @@ add'), or omit it to fall back to the RAIL0_PRIVATE_KEY environment variable.`,
 			return err
 		}
 
+		// A new session starts reading: a write-mode token left by the previous one is
+		// revoked and removed, whoever that session belonged to.
+		endWriteMode(resolveBaseURL())
 		tokenPath, saveErr := token.SaveAndReport(resolveBaseURL(), authResp.Token)
 		if saveErr != nil {
 			// Reports the failure and how to recover, but NEVER the token itself —
@@ -274,10 +277,16 @@ func revokeSession(baseURL string) sessionRevocation {
 
 	// An already-expired token needs no revocation: parseJWTClaims rejects one,
 	// so a nil error means the session is still live and worth killing.
+	// Write mode ends with the session it belongs to: its token is revoked and removed
+	// first, so it cannot outlive the sign-out on this machine. And the sign-out below
+	// presents the SESSION token explicitly — a client built the usual way would carry
+	// the write-mode token while it is on, and the gateway would revoke that one instead.
+	endWriteMode(baseURL)
+
 	if _, err := parseJWTClaims(stored); err != nil {
 		out.Why = "the stored session had already expired"
 	} else {
-		res, err := newClientFor(baseURL).Auth.Logout(context.Background())
+		res, err := clientWithToken(baseURL, stored).Auth.Logout(context.Background())
 		switch {
 		case err != nil:
 			out.Why = fmt.Sprintf("could not reach %s to revoke it (%s)", baseURL, humanizeError(err))
@@ -389,7 +398,8 @@ func dropRevokedLocalSession(baseURL, address string) string {
 		}
 	}
 	// This address's session, or one too broken to read: either way it no longer
-	// authenticates anything.
+	// authenticates anything. Its write-mode token goes with it.
+	_ = token.DeleteWriteMode(baseURL)
 	_ = token.Delete(baseURL)
 	return "removed"
 }

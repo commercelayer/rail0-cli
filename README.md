@@ -2345,7 +2345,7 @@ call, or once with `RAIL0_AGENT=1` in the agent's environment.
   `usage_error`, `missing_private_key`, `invalid_chain`, `flag_conflict`,
   `confirmation_required`, `minimum_required`, `minimum_conflict`, `label_required`,
   `unavailable_in_agent_mode`, `interactive_only`, `not_logged_in`, `session_expired`,
-  `account_required`, `write_mode_required`, `exposure_not_acknowledged`, `aborted`, `wait_timeout`, `network_error`,
+  `account_required`, `write_mode_required`, `operator_session`, `exposure_not_acknowledged`, `aborted`, `wait_timeout`, `network_error`,
   `cli_error` (`rail0 --agent help` prints this list, with the exit codes).
   A mistake in the call (a flag or an argument that is wrong, missing or in conflict,
   a key that is not a key) is `usage_error`, exit `2`: fix the call. No usable stored
@@ -2393,6 +2393,23 @@ call, or once with `RAIL0_AGENT=1` in the agent's environment.
   `init`, and every [`rail0 admin` command](#operator-commands-admin): an operator's
   action is a person's. The write-mode token is never carried in agent mode either, so
   an operator's write through any other command is refused `write_mode_required`.
+- **Never with an operator's session.** With an operator's session the gateway widens
+  the ordinary commands too (`payments list --scope all`, `payments get` on anyone's
+  payment, `account get --account`, `wallets --account`), so agent mode refuses the
+  session itself, with `operator_session` (exit `4`):
+  - a session **stored** by a person who signed in as an operator is not carried: what
+    needs no session still works (`health`, `chains`, `tokens`, `payment-methods`,
+    `help`), anything else answers `operator_session`;
+  - a session **opened on the spot**, by `auth login` or by a command signing in with
+    its `-p` key, is revoked at once when the gateway says it is an operator's, and is
+    never stored. A session a person stored before is left as it was.
+
+  The way out is a key whose account is not an operator's (`rail0 auth login -p @key`),
+  or a person at a terminal. `auth status` says `"operator": true` for such a session,
+  and in agent mode `"usable_in_agent_mode": false`. The CLI knows what the gateway
+  answered at sign-in: a session stored by a CLI older than this rule, one pasted with
+  `auth login --token`, and a role granted after the sign-in read as not an operator's
+  until the next sign-in, at most the 24 hours a session lasts.
 - Cannot be combined with `--quiet` or `--pretty` (exit `2`); `--json` is implied.
 
 ```sh

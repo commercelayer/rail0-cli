@@ -171,7 +171,66 @@ func Delete(baseURL string) error {
 	if dir, dirErr := tokenDir(); dirErr == nil {
 		_ = os.Remove(filepath.Join(dir, legacyFileName))
 	}
+	_ = os.Remove(path + operatorSuffix) // what was known about the session goes with it
 	return nil
+}
+
+// ── Operator marker ──────────────────────────────────────────────────────────
+//
+// Whether the stored session belongs to a gateway operator. The session token does not
+// say (the gateway reads the grant on every request), so the answer the gateway gave at
+// sign-in is kept beside the token, in "<digest>.operator".
+//
+// The marker holds a fingerprint of the token it describes, not a bare yes: a marker left
+// behind by an earlier session says nothing about the one stored now, so it can never be
+// read as an answer about another token.
+
+const operatorSuffix = ".operator"
+
+func fingerprint(jwt string) string {
+	sum := sha256.Sum256([]byte(jwt))
+	return hex.EncodeToString(sum[:])
+}
+
+// MarkOperator records that jwt, this gateway's session, is an operator's.
+func MarkOperator(baseURL, jwt string) error {
+	path, err := tokenFilePath(baseURL)
+	if err != nil {
+		return err
+	}
+	return writeTokenFile(path+operatorSuffix, fingerprint(jwt))
+}
+
+// UnmarkOperator removes the marker. No marker is not an error.
+func UnmarkOperator(baseURL string) error {
+	path, err := tokenFilePath(baseURL)
+	if err != nil {
+		return err
+	}
+	if err := os.Remove(path + operatorSuffix); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
+}
+
+// IsOperator reports whether the session stored for this gateway was an operator's when
+// it signed in. False when there is no session, no marker, or a marker of another token.
+// A session stored by a version that kept no marker, or pasted in as a raw token, reads
+// false: nothing was asked about it.
+func IsOperator(baseURL string) bool {
+	jwt := Load(baseURL)
+	if jwt == "" {
+		return false
+	}
+	path, err := tokenFilePath(baseURL)
+	if err != nil {
+		return false
+	}
+	b, err := os.ReadFile(path + operatorSuffix)
+	if err != nil {
+		return false
+	}
+	return strings.TrimSpace(string(b)) == fingerprint(jwt)
 }
 
 // ── Write-mode token ─────────────────────────────────────────────────────────

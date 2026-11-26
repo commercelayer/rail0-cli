@@ -69,7 +69,12 @@ func writeModeBelongs(writeToken, sessionToken string) bool {
 // and a write-mode window opened in a terminal must not become an agent's authority to
 // write for the rest of the hour: the agent's requests carry the session token, and the
 // gateway refuses the operator's writes with it.
+//
+// And never an operator's session in agent mode: see operator_session.go.
 func bearerToken(baseURL string) string {
+	if operatorSessionWithheld(baseURL) {
+		return ""
+	}
 	if !agentMode() {
 		if wt := writeModeToken(baseURL); wt != "" {
 			return wt

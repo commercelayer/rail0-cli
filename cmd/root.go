@@ -78,6 +78,7 @@ func Execute() {
 	// wording needs (a 404 means something different for a payment than for a
 	// webhook — see notFoundHint).
 	if c, err := rootCmd.ExecuteC(); err != nil {
+		err = explainWithheldSession(err)
 		code := exitCode(err)
 		if agentMode() {
 			ui.FatalAgent(agentErrorPayload(c, err, code), code)
@@ -420,6 +421,12 @@ func ensureSession(ctx context.Context, client *rail0.Client, keyHex, addr strin
 		if claims, err := parseJWTClaims(t); err == nil {
 			sub, _ := claims["sub"].(string)
 			sameAddress := strings.EqualFold(sub, addr)
+			// The stored session is this key's and an operator's: agent mode does not
+			// use it (the client was built without it), and signing in again with the
+			// same key would only get the same answer.
+			if sameAddress && operatorSessionWithheld(baseURL) {
+				return storedOperatorSessionError()
+			}
 			if sameAddress && sessionOutlives(claims, sessionReuseMargin()) {
 				return nil
 			}
@@ -442,6 +449,11 @@ func ensureSession(ctx context.Context, client *rail0.Client, keyHex, addr strin
 	if err != nil {
 		return fmt.Errorf("sign-in failed: %w", err)
 	}
+	// An operator's key in agent mode: the session just opened is revoked and refused,
+	// whether or not it would have been stored (see operator_session.go).
+	if authResp.Admin && agentMode() {
+		return refuseOperatorSignIn(ctx, client)
+	}
 	signedInAs[client] = addr
 	// Persist ONLY when this is the machine's session for this gateway. When a
 	// different live session is already stored, the sign-in we just did serves
@@ -459,6 +471,7 @@ func ensureSession(ctx context.Context, client *rail0.Client, keyHex, addr strin
 	if err := token.Save(baseURL, authResp.Token); err != nil {
 		return err
 	}
+	rememberSessionRole(baseURL, authResp.Token, authResp.Admin)
 	// The stored session was replaced: a write-mode token of the previous one is no
 	// longer this session's (writeModeToken would drop it on the next read anyway).
 	_ = token.DeleteWriteMode(baseURL)
@@ -471,6 +484,9 @@ func ensureSession(ctx context.Context, client *rail0.Client, keyHex, addr strin
 // they derive it from the session instead of taking it as an argument; with no
 // (or an expired) session this errors, pointing the user at `auth login`.
 func currentAccountID() (string, error) {
+	if operatorSessionWithheld(resolveBaseURL()) {
+		return "", storedOperatorSessionError()
+	}
 	t := token.Load(resolveBaseURL())
 	if t == "" {
 		return "", newSessionError("not_logged_in", "not logged in: run 'rail0 auth login -p 0xYourKey…'")
@@ -492,6 +508,9 @@ func currentAccountID() (string, error) {
 // session's wallet" (registering a payout destination) default to it instead of making
 // the user repeat the address they logged in with.
 func sessionAddress() (string, error) {
+	if operatorSessionWithheld(resolveBaseURL()) {
+		return "", storedOperatorSessionError()
+	}
 	t := token.Load(resolveBaseURL())
 	if t == "" {
 		return "", newSessionError("not_logged_in", "not logged in: run 'rail0 auth login -p 0xYourKey…'")

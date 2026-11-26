@@ -107,6 +107,11 @@ add'), or omit it to fall back to the RAIL0_PRIVATE_KEY environment variable.`,
 		if err != nil {
 			return err
 		}
+		// An operator's key in agent mode: the session is revoked and not stored, and
+		// the session already stored, if any, is left as it was.
+		if authResp.Admin && agentMode() {
+			return refuseOperatorSignIn(ctx, client)
+		}
 
 		// A new session starts reading: a write-mode token left by the previous one is
 		// revoked and removed, whoever that session belonged to.
@@ -117,6 +122,7 @@ add'), or omit it to fall back to the RAIL0_PRIVATE_KEY environment variable.`,
 			// see tokenSaveFailureNotice for why that matters. (#64)
 			ui.Notice("warning", map[string]any{"what": "token_not_saved"}, tokenSaveFailureNotice(saveErr))
 		} else {
+			rememberSessionRole(resolveBaseURL(), authResp.Token, authResp.Admin)
 			ui.Notice("token_saved", map[string]any{"path": tokenPath}, fmt.Sprintf("Token saved to %s", tokenPath))
 		}
 
@@ -187,13 +193,22 @@ useful when several environments are in play, or to remove one by hand.`,
 		}
 		expiresAt, expiresIn := tokenExpiry(claims)
 		return ui.RunAPI(func() (any, error) {
-			return map[string]any{
+			status := map[string]any{
 				"address":    checksumAddress(claims["sub"]),
 				"account_id": claims["account_id"],
 				"expires_at": expiresAt,
 				"expires_in": expiresIn,
 				"token_path": token.Path(resolveBaseURL()),
-			}, nil
+			}
+			// Said only when it is one, as the gateway answered at sign-in: an agent
+			// reads here why its commands are refused with operator_session.
+			if token.IsOperator(resolveBaseURL()) {
+				status["operator"] = true
+				if agentMode() {
+					status["usable_in_agent_mode"] = false
+				}
+			}
+			return status, nil
 		})
 	},
 }

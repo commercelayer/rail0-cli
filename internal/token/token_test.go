@@ -248,3 +248,65 @@ func TestWriteModeTokenIsStoredBesideTheSession(t *testing.T) {
 		t.Errorf("Delete touched the wrong file: session = %q, write = %q", Load(gwA), LoadWriteMode(gwA))
 	}
 }
+
+// The operator marker describes ONE token: the one stored when it was written. A marker
+// left by an earlier session must never answer for the session stored now.
+func TestOperatorMarkerBelongsToItsToken(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+	t.Setenv("XDG_CACHE_HOME", dir)
+	if err := os.MkdirAll(filepath.Join(dir, "Library", "Caches"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	if IsOperator(gwA) {
+		t.Fatal("no session, no marker: must read as not an operator's")
+	}
+	if err := Save(gwA, "operator-jwt"); err != nil {
+		t.Fatal(err)
+	}
+	if IsOperator(gwA) {
+		t.Fatal("a session with no marker must read as not an operator's")
+	}
+	if err := MarkOperator(gwA, "operator-jwt"); err != nil {
+		t.Fatal(err)
+	}
+	if !IsOperator(gwA) {
+		t.Fatal("the marked session must read as an operator's")
+	}
+	if IsOperator(gwB) {
+		t.Error("the marker leaked to another gateway")
+	}
+
+	// The marker file is as private as the token's, and holds no token.
+	path := Path(gwA) + operatorSuffix
+	info, err := os.Stat(path)
+	if err != nil || info.Mode().Perm() != 0o600 {
+		t.Errorf("marker file: %v, mode %v, want 0600", err, info.Mode().Perm())
+	}
+	if b, _ := os.ReadFile(path); len(b) == 0 || string(b) == "operator-jwt\n" {
+		t.Errorf("the marker must hold a fingerprint, not the token: %q", b)
+	}
+
+	// Another session stored over it: the old marker says nothing about the new token.
+	if err := Save(gwA, "merchant-jwt"); err != nil {
+		t.Fatal(err)
+	}
+	if IsOperator(gwA) {
+		t.Error("a marker of the previous session answered for the new one")
+	}
+
+	// Removing the session removes what was known about it.
+	if err := MarkOperator(gwA, "merchant-jwt"); err != nil {
+		t.Fatal(err)
+	}
+	if err := Delete(gwA); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Errorf("the marker outlived its session: %v", err)
+	}
+	if err := UnmarkOperator(gwA); err != nil {
+		t.Errorf("removing a marker that is not there: %v", err)
+	}
+}

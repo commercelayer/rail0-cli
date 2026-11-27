@@ -2370,13 +2370,13 @@ rail0 admin config --overridden          # what this environment changed from th
 | `group` | `build`, `payments`, `recovery`, `retention`, `webhooks`, `payouts`, `settlement`, `rate_limit`, `siwe`, `session`, `fees`, `rpc`, `onboarding`, `email` |
 | `setting` | Its name within the group |
 | `value` | What the gateway is using now |
-| `env` | The environment variable that sets it; empty for a constant of the code and for a setting read from the environment's file |
-| `source` | Where the value comes from: `constant` (the code, nothing sets it), `default` (the code's value, its variable unset), `override` (its variable is set), `environment_file` (the settings file the gateway loads for its environment). `null` from a gateway that does not say |
-| `overridden` | Whether this environment states the value: its variable is set in the process (a default and an override that coincide read differently), or its file gives a value other than the code's |
+| `env` | The environment variable that sets it; empty for a constant of the code |
+| `source` | Where the value comes from, in the gateway's word: `constant` (the code, nothing sets it), `default` (the code's value, its variable unset), `override` (its variable is set). `null` from a gateway that does not say |
+| `overridden` | Whether that variable is set in this process: a default and an override that coincide read differently |
 | `description` | What it controls and its unit, in the gateway's own words |
 
-Read-only by nature: the gateway reads its code, its environment's file and its variables
-when the process starts, and a deploy is the only way to change one. No secret is among them.
+Read-only by nature: the values come from the environment when the process starts, and a
+deploy is the only way to change one. No secret is among them.
 
 #### `admin catalog`
 

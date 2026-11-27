@@ -25,10 +25,10 @@ func configGateway(t *testing.T) *operatorGateway {
 		if r.URL.Path == "/admin/config" {
 			return http.StatusOK, map[string]any{
 				"build":        map[string]any{"version": setting("1.0.1", nil, false, "")},
-				"payouts":      map[string]any{"enabled": setting(false, nil, false, "environment_file"), "proof_amount": setting("0.01", nil, false, "constant")},
+				"payouts":      map[string]any{"enabled": setting(false, "RAIL0_FEATURE_PAYOUTS", false, "default"), "proof_amount": setting("0.01", nil, false, "constant")},
 				"rate_limit":   map[string]any{"period": setting(60, "RATE_LIMIT_PERIOD", false, "default")},
 				"recovery":     map[string]any{"recovery_interval": setting(120, "RECOVERY_INTERVAL", true, "override")},
-				"siwe":         map[string]any{"domains": setting([]any{"console.example", "gateway.example"}, nil, true, "environment_file")},
+				"siwe":         map[string]any{"domains": setting([]any{"console.example", "gateway.example"}, "SIWE_DOMAIN", true, "a_later_source")},
 				"fees":         map[string]any{"multipliers": setting(map[string]any{"137": 1.5}, nil, false, "constant")},
 				"generated_at": "2026-11-27T15:00:00Z",
 			}
@@ -79,9 +79,9 @@ func TestAdminConfigOneSettingPerRow(t *testing.T) {
 	}
 }
 
-// Where a value comes from is the gateway's word, passed on as it is; a setting read from
-// the environment's file has no variable, and a gateway older than the field leaves the
-// key in the row with nothing in it, so the shape of a row does not depend on the gateway.
+// Where a value comes from is the gateway's word, passed on as it is, also when it is a
+// word this version does not know; a gateway older than the field leaves the key in the
+// row with nothing in it, so the shape of a row does not depend on the gateway.
 func TestAdminConfigSource(t *testing.T) {
 	configGateway(t)
 	rows := configOutput(t)
@@ -89,15 +89,11 @@ func TestAdminConfigSource(t *testing.T) {
 		{"payouts", "proof_amount", "constant"},
 		{"rate_limit", "period", "default"},
 		{"recovery", "recovery_interval", "override"},
-		{"payouts", "enabled", "environment_file"},
-		{"siwe", "domains", "environment_file"},
+		{"siwe", "domains", "a_later_source"},
 	} {
 		if got := configRow(t, rows, tc.group, tc.setting)["source"]; got != tc.source {
 			t.Errorf("%s.%s source = %v, want %s", tc.group, tc.setting, got, tc.source)
 		}
-	}
-	if flag := configRow(t, rows, "payouts", "enabled"); flag["env"] != nil || flag["overridden"] != false {
-		t.Errorf("a setting of the environment's file equal to the code's = %v", flag)
 	}
 	old := configRow(t, rows, "build", "version")
 	if source, present := old["source"]; !present || source != nil {
@@ -115,8 +111,6 @@ func TestAdminConfigGroupAndOverridden(t *testing.T) {
 	}
 	adminConfigOverridden = true
 	t.Cleanup(func() { adminConfigOverridden = false })
-	// A variable set in the process and a value of its own in the environment's file both
-	// count: the second has no variable to be set.
 	rows := configOutput(t)
 	if len(rows) != 2 || rows[0]["setting"] != "recovery_interval" || rows[1]["setting"] != "domains" {
 		t.Errorf("--overridden = %v", rows)

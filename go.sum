@@ -86,8 +86,8 @@ github.com/cockroachdb/swiss v0.0.0-20260820225851-333444432258 h1:IJ+uNItEm0qx9
 github.com/cockroachdb/swiss v0.0.0-20260820225851-333444432258/go.mod h1:yBRu/cnL4ks9bgy4vAASdjIW+/xMlFwuHKqtmh3GZQg=
 github.com/cockroachdb/tokenbucket v0.0.0-20230807174530-cc333fc44b06 h1:zuQyyAKVxetITBuuhv3BI9cMrmStnpT18zmgmTxunpo=
 github.com/cockroachdb/tokenbucket v0.0.0-20230807174530-cc333fc44b06/go.mod h1:7nc4anLGjupUW/PeY5qiNYsdNXj7zopG+eqsS7To5IQ=
-github.com/commercelayer/rail0-go v1.10.3-0.20261126151848-fdc1807db56a h1:LArILyz1kIe/tpaqFKBQbEYq/S9Afj/r5xUAfff1S7Q=
-github.com/commercelayer/rail0-go v1.10.3-0.20261126151848-fdc1807db56a/go.mod h1:UGM3ZD9uxjA63Nqju9apAXqKzTap71CGmPWLCbwC18Y=
+github.com/commercelayer/rail0-go v1.12.0 h1:WmHkKbs4PGWVZSMVnDAEd0YZna+CjNIBN1sSB27V4Dk=
+github.com/commercelayer/rail0-go v1.12.0/go.mod h1:STyKIfe8w4XpAYGjjhrq//8Rr8dJ0+IdTSYnfRZmrsA=
 github.com/consensys/gnark-crypto v0.18.1 h1:RyLV6UhPRoYYzaFnPQA4qK3DyuDgkTgskDdoGqFt3fI=
 github.com/consensys/gnark-crypto v0.18.1/go.mod h1:L3mXGFTe1ZN+RSJ+CLjUt9x7PNdx8ubaYfDROyp2Z8c=
 github.com/cpuguy83/go-md2man/v2 v2.0.6 h1:XJtiaUW6dEEqVuZiMTn1ldk455QWwEIsMIJlo5vtkx0=

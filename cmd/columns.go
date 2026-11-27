@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/rail0/cli/internal/ui"
 )
@@ -373,6 +374,54 @@ var auditColumns = []ui.Column{
 		}
 		return string(b)
 	}, Max: 60},
+}
+
+// operatorDisputeColumns is every account's disputes: when and why first, then where and
+// between whom, then how it ended, then the payment every other command takes.
+var operatorDisputeColumns = []ui.Column{
+	{Header: "opened", Value: shortTimeOf("opened_at")},
+	{Field: "status"},
+	{Header: "reason", Field: "reason_code"},
+	{Header: "chain", Value: func(row map[string]any) string {
+		payment, _ := row["payment"].(map[string]any)
+		return chainCell(payment)
+	}},
+	{Header: "payee", Value: func(row map[string]any) string {
+		s, _ := paymentOf(row, "payee").(string)
+		return ui.ShortHex(s)
+	}},
+	{Header: "payer", Value: func(row map[string]any) string {
+		s, _ := paymentOf(row, "payer").(string)
+		return ui.ShortHex(s)
+	}},
+	{Header: "closed", Value: shortTimeOf("closed_at")},
+	{Header: "close reason", Field: "close_reason_code"},
+	{Header: "payment", Field: "payment_id"},
+}
+
+// operatorGrantColumns is who holds the operator role: the person, who vouched for them
+// and why, since when and until when, and the account id 'operators revoke' takes.
+var operatorGrantColumns = []ui.Column{
+	{Header: "account", Value: func(row map[string]any) string { return accountName(row, "account", "account_id") }, Max: 28},
+	{Header: "granted by", Value: func(row map[string]any) string { return accountName(row, "grantor", "granted_by") }, Max: 24},
+	{Field: "note", Max: 36},
+	{Header: "granted", Value: shortTimeOf("created_at")},
+	{Header: "expires", Value: grantExpiryCell},
+	{Header: "account id", Field: "account_id"},
+}
+
+// grantExpiryCell is when a grant expires, marked when that is already behind: an expired
+// grant stays listed as history and opens nothing.
+func grantExpiryCell(row map[string]any) string {
+	raw := str(row, "expires_at")
+	if raw == "" {
+		return ""
+	}
+	cell := ui.ShortTime(raw)
+	if at, err := time.Parse(time.RFC3339, raw); err == nil && !at.After(time.Now()) {
+		cell += " (expired)"
+	}
+	return cell
 }
 
 var traceTimelineColumns = []ui.Column{

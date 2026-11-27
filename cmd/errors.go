@@ -111,6 +111,9 @@ func conflictHint(cmd *cobra.Command) string {
 	if cmd == accountUpdateCmd {
 		return " — " + accountConflictHint
 	}
+	if cmd == adminOperatorsGrantCmd {
+		return " — " + operatorGrantConflictHint
+	}
 	return ""
 }
 

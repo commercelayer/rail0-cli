@@ -25,22 +25,19 @@ threshold, limit and feature flag, one per row.
                rate_limit, siwe, session, fees, rpc, onboarding, email
   setting      its name within the group
   value        what the gateway is using now
-  env          the environment variable that sets it (empty for a constant of the code
-               and for a setting read from the environment's file)
-  source       where the value comes from: constant (the code, nothing sets it), default
-               (the code's value, its variable unset), override (its variable is set),
-               environment_file (the settings file the gateway loads for its environment);
-               empty from a gateway that does not say
-  overridden   whether this environment states the value: its variable is set in the
-               process (a default and an override that happen to coincide read
-               differently), or its file gives a value other than the code's
+  env          the environment variable that sets it (empty for a constant of the code)
+  source       where the value comes from, in the gateway's word: constant (the code,
+               nothing sets it), default (the code's value, its variable unset),
+               override (its variable is set); empty from a gateway that does not say
+  overridden   whether that variable is set in this process: a default and an override
+               that happen to coincide read differently
   description  what it controls and its unit, in the gateway's own words
 
-Pass a group to print only that one. --overridden keeps only the overridden settings: what
-this environment changed from the defaults.
+Pass a group to print only that one. --overridden keeps only the settings whose variable
+is set: what this environment changed from the defaults.
 
-Read-only by nature: the gateway reads its code, its environment's file and its variables
-when the process starts, and a deploy is the only way to change one. No secret is among them.`,
+Read-only by nature: the values come from the environment when the process starts, and a
+deploy is the only way to change one. No secret is among them.`,
 	Example: `  rail0 admin config --pretty
   rail0 admin config payouts               # is the payouts feature on here
   rail0 admin config rate_limit --pretty
@@ -84,8 +81,8 @@ when the process starts, and a deploy is the only way to change one. No secret i
 // overridden, description}) into one row per setting, sorted by group and setting, and
 // returns the groups it found. Anything in the report that is not a group of settings
 // (generated_at) is left out. source is the gateway's own word (constant, default,
-// override, environment_file) and is passed on as it comes, so a value the gateway adds
-// later needs no release here; a gateway older than the field leaves it null.
+// override) and is passed on as it comes, so a value the gateway adds later needs no
+// release here; a gateway older than the field leaves it null.
 func configRows(report map[string]any) ([]map[string]any, map[string]bool) {
 	var rows []map[string]any
 	groups := map[string]bool{}
@@ -116,5 +113,5 @@ func configRows(report map[string]any) ([]map[string]any, map[string]bool) {
 
 func init() {
 	adminConfigCmd.Flags().BoolVar(&adminConfigOverridden, "overridden", false,
-		"Only the settings this environment overrides: a variable set in the process, or a value of its own in the environment's file")
+		"Only the settings whose environment variable is set in this process")
 }

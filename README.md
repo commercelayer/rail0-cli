@@ -1958,6 +1958,10 @@ action is a person's, at a terminal.
 | `admin wallets deactivate\|activate` | Switch any wallet off or back on | **yes** |
 | `admin onboardings` | Invites and sign-ups, with how their last email went | no |
 | `admin onboardings invite\|correct\|resend\|cancel` | Invite a merchant and follow the request to its claim | **yes** |
+| `admin webhooks` | Every account's webhook subscriptions, with circuit and last attempt | no |
+| `admin webhooks reset-circuit <webhook>` | Close a subscription's circuit breaker, on any account | **yes** |
+| `admin deliveries` | Webhook deliveries across accounts, by payment or subscription | no |
+| `admin audit` | The operator audit log: every operator write | no |
 | `admin write-mode [on\|off]` | See, open or close the hour in which the operator may write | — |
 
 #### Write mode
@@ -2186,6 +2190,82 @@ rail0 admin onboardings cancel 019f0c11-…         # asks first
 - A completed request is history (`422` `onboarding_completed`): correct its account with
   `account update --account`, stop it with `admin accounts deactivate`.
 - All four writes need [write mode](#write-mode) and are audited.
+
+#### `admin webhooks` and `admin deliveries`
+
+`rail0 webhooks` is the merchant's: its own subscriptions, one at a time. These are every
+account's, for the question an operator is asked: "my webhook stopped arriving".
+
+```sh
+rail0 admin webhooks --circuit open               # subscriptions that are receiving nothing
+rail0 admin webhooks --account 019e748b-… --pretty
+rail0 admin webhooks --topic payments.captured --sort -circuit_failure_count
+```
+
+Each row carries the account that owns the subscription, whether it is active, its circuit
+state and failure count, and when and how its newest delivery attempt went
+(`last_attempt_at`, `last_attempt_status`). The open circuits come first. **No signing key
+is shown**: the gateway returns a shared secret once, to the subscription's owner.
+
+```sh
+rail0 admin deliveries --status failed --since 2026-11-26T00:00:00Z   # everything not landing
+rail0 admin deliveries --payment 0xrail0Id…                           # what was this merchant told
+rail0 admin deliveries --webhook 01a0f3c2-… --status failed --response-code 500
+```
+
+| Flag | Meaning |
+|---|---|
+| `--payment` | A payment's UUID or its `rail0_id` |
+| `--webhook` | One subscription |
+| `--status` | `delivered` or `failed` |
+| `--topic` | An event topic, e.g. `payments.captured` |
+| `--response-code` | The receiver's exact HTTP status: tells its crashes (`500`) from its refusals (`401`, `429`) |
+| `--since`, `--until` | ISO-8601 times; the gateway keeps 15 days of attempts |
+| `--payload` | Include each delivery's event body (left out by default: several kilobytes a row) |
+| `--sort`, `--page`, `--per-page` | As on every list |
+
+Each delivery carries the subscription it went to and that subscription's account.
+
+```sh
+rail0 admin webhooks reset-circuit 01a0f3c2-…
+```
+
+A circuit opens after 10 consecutive failed events and never closes by itself. The reset
+closes it and re-enables the subscription, whoever it belongs to: the same write as the
+merchant's `webhooks reset-circuit`. It re-arms delivery to an endpoint the operator does
+not control, so read `admin deliveries --webhook … --status failed` first: a receiver that
+still fails only spends another 10 events reopening it. Events that fired while the
+circuit was open were not delivered, and the reset does not send them. It needs
+[write mode](#write-mode) and is audited with the callback URL.
+
+#### `admin audit`
+
+Every write an operator made: who, on whose account, on what, and the detail the gateway
+recorded with it. Read-only.
+
+```sh
+rail0 admin audit                                  # the latest operator writes
+rail0 admin audit --target 019e748b-…              # everything done to one account
+rail0 admin audit --actor 019f8a3d-… --from 2026-11-26T00:00:00Z
+rail0 admin audit --action account.deactivate --pretty
+```
+
+| Flag | Meaning |
+|---|---|
+| `--action` | One kind of action: `account.update\|activate\|deactivate`, `onboarding.create\|update\|send\|delete`, `wallet.update\|deactivate\|reactivate`, `administrator.grant\|revoke`, `webhook.reset_circuit`, `transaction.redrive`, `catalog.reload`, `sync_errors.clear`, `write_mode.enable\|disable` |
+| `--actor` | The operator's account id |
+| `--target` | The account the action landed on |
+| `--resource-type` | `account`, `wallet`, `onboarding`, `webhook`, … |
+| `--payment` | The payment a redrive names: its **UUID** (not its `rail0_id`) |
+| `--from`, `--to` | ISO-8601 times |
+| `--sort`, `--page`, `--per-page` | As on every list |
+
+`detail` is what makes a row useful: the fields an operator changed and the values they
+replaced, the exposure acknowledged when an account was switched off, the filters and the
+count of a sync-error clear. A merchant's own writes are not operator actions and are not
+in this log. The action names are completed by the shell and checked by the gateway, so a
+gateway newer than the CLI can still be filtered by an action added since.
+`rail0 admin trace <payment>` shows one payment's operator actions from either of its ids.
 
 ---
 

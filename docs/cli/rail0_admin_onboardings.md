@@ -52,7 +52,7 @@ rail0 admin onboardings [flags]
 
 ### SEE ALSO
 
-* [rail0 admin](rail0_admin.md)	 - Operator commands: diagnostics, stuck transactions, sync errors, accounts, wallets, onboarding, write mode
+* [rail0 admin](rail0_admin.md)	 - Operator commands: diagnostics, transactions, sync errors, webhooks, accounts, wallets, onboarding, audit, write mode
 * [rail0 admin onboardings cancel](rail0_admin_onboardings_cancel.md)	 - Delete a request that is not completed: its link stops working (write mode, audited)
 * [rail0 admin onboardings correct](rail0_admin_onboardings_correct.md)	 - Correct a request's name, email or address and send a new link (write mode, audited)
 * [rail0 admin onboardings invite](rail0_admin_onboardings_invite.md)	 - Invite a merchant: create the request and email the link (write mode, audited)

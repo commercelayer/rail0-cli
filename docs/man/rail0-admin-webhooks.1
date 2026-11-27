@@ -1,0 +1,91 @@
+.nh
+.TH "RAIL0" "1" "Aug 2026" "rail0 CLI" ""
+
+.SH NAME
+rail0-admin-webhooks - Every account's webhook subscriptions, with circuit and last attempt (lists when run bare)
+
+
+.SH SYNOPSIS
+\fBrail0 admin webhooks [flags]\fP
+
+
+.SH DESCRIPTION
+List the webhook subscriptions of every account: each with the account that owns it,
+whether it is active, its circuit state and failure count, and when and how its newest
+delivery attempt went. The open circuits come first.
+
+.PP
+A circuit opens after 10 consecutive failed events and never closes by itself: nothing is
+delivered to that subscription until it is reset, by its merchant ('rail0 webhooks
+reset-circuit') or here ('rail0 admin webhooks reset-circuit'). --circuit open lists the
+subscriptions that are receiving nothing right now.
+
+.PP
+No signing key is shown: a shared secret is returned once, to the subscription's owner.
+
+
+.SH OPTIONS
+\fB--account\fP=""
+	Only this account's subscriptions (account id)
+
+.PP
+\fB--circuit\fP=""
+	Only subscriptions whose circuit is open or closed
+
+.PP
+\fB-h\fP, \fB--help\fP[=false]
+	help for webhooks
+
+.PP
+\fB--page\fP=0
+	Page number (1-based)
+
+.PP
+\fB--per-page\fP=0
+	Results per page
+
+.PP
+\fB--sort\fP=""
+	Sort by created_at, updated_at, circuit_failure_count or name (prefix - for descending; default: open circuits first)
+
+.PP
+\fB--topic\fP=""
+	Only subscriptions that include this topic
+
+
+.SH OPTIONS INHERITED FROM PARENT COMMANDS
+\fB--agent\fP[=false]
+	Agent mode: one JSON envelope on stdout, JSON events on stderr, no prompts (env: RAIL0_AGENT=1)
+
+.PP
+\fB--base-url\fP=""
+	RAIL0 gateway base URL (env: RAIL0_BASE_URL)
+
+.PP
+\fB--debug\fP[=false]
+	Print HTTP request/response details to stderr
+
+.PP
+\fB--json\fP[=false]
+	Force plain (uncolored) JSON output (useful in scripts)
+
+.PP
+\fB--pretty\fP[=false]
+	Use the key-value/table view instead of JSON (terminal only)
+
+.PP
+\fB-q\fP, \fB--quiet\fP[=false]
+	Print only the result's id/hash, one per line (useful in scripts)
+
+
+.SH EXAMPLE
+.EX
+  rail0 admin webhooks --circuit open               # who is receiving nothing
+  rail0 admin webhooks --account 019e748b-… --pretty
+  rail0 admin webhooks --topic payments.captured --sort -circuit_failure_count
+  rail0 admin deliveries --webhook 01a0f3c2-… --status failed   # what it was failing on
+.EE
+
+
+.SH SEE ALSO
+\fBrail0-admin(1)\fP, \fBrail0-admin-webhooks-reset-circuit(1)\fP

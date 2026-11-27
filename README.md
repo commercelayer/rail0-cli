@@ -1958,6 +1958,17 @@ action is a person's, at a terminal.
 | `admin wallets deactivate\|activate` | Switch any wallet off or back on | **yes** |
 | `admin onboardings` | Invites and sign-ups, with how their last email went | no |
 | `admin onboardings invite\|correct\|resend\|cancel` | Invite a merchant and follow the request to its claim | **yes** |
+| `admin webhooks` | Every account's webhook subscriptions, with circuit and last attempt | no |
+| `admin webhooks reset-circuit <webhook>` | Close a subscription's circuit breaker, on any account | **yes** |
+| `admin deliveries` | Webhook deliveries across accounts, by payment or subscription | no |
+| `admin audit` | The operator audit log: every operator write | no |
+| `admin disputes` | Every dispute across accounts, open and closed | no |
+| `admin operators` | Who holds the operator role | no |
+| `admin operators grant\|revoke <account>` | Give or remove the operator role | **yes** |
+| `admin payouts` | Every account's payouts and payout destinations (`get`, `events`, `destinations`) | no |
+| `admin config [group]` | The configuration the gateway is running with | no |
+| `admin catalog` | What a reload of the chain catalogue would change; `chains`, `tokens`, `contracts` | no |
+| `admin catalog reload` | Rebuild the catalogue snapshot from the database | **yes** |
 | `admin write-mode [on\|off]` | See, open or close the hour in which the operator may write | — |
 
 #### Write mode
@@ -2186,6 +2197,215 @@ rail0 admin onboardings cancel 019f0c11-…         # asks first
 - A completed request is history (`422` `onboarding_completed`): correct its account with
   `account update --account`, stop it with `admin accounts deactivate`.
 - All four writes need [write mode](#write-mode) and are audited.
+
+#### `admin webhooks` and `admin deliveries`
+
+`rail0 webhooks` is the merchant's: its own subscriptions, one at a time. These are every
+account's, for the question an operator is asked: "my webhook stopped arriving".
+
+```sh
+rail0 admin webhooks --circuit open               # subscriptions that are receiving nothing
+rail0 admin webhooks --account 019e748b-… --pretty
+rail0 admin webhooks --topic payments.captured --sort -circuit_failure_count
+```
+
+Each row carries the account that owns the subscription, whether it is active, its circuit
+state and failure count, and when and how its newest delivery attempt went
+(`last_attempt_at`, `last_attempt_status`). The open circuits come first. **No signing key
+is shown**: the gateway returns a shared secret once, to the subscription's owner.
+
+```sh
+rail0 admin deliveries --status failed --since 2026-11-26T00:00:00Z   # everything not landing
+rail0 admin deliveries --payment 0xrail0Id…                           # what was this merchant told
+rail0 admin deliveries --webhook 01a0f3c2-… --status failed --response-code 500
+```
+
+| Flag | Meaning |
+|---|---|
+| `--payment` | A payment's UUID or its `rail0_id` |
+| `--webhook` | One subscription |
+| `--status` | `delivered` or `failed` |
+| `--topic` | An event topic, e.g. `payments.captured` |
+| `--response-code` | The receiver's exact HTTP status: tells its crashes (`500`) from its refusals (`401`, `429`) |
+| `--since`, `--until` | ISO-8601 times; the gateway keeps 15 days of attempts |
+| `--payload` | Include each delivery's event body (left out by default: several kilobytes a row) |
+| `--sort`, `--page`, `--per-page` | As on every list |
+
+Each delivery carries the subscription it went to and that subscription's account.
+
+```sh
+rail0 admin webhooks reset-circuit 01a0f3c2-…
+```
+
+A circuit opens after 10 consecutive failed events and never closes by itself. The reset
+closes it and re-enables the subscription, whoever it belongs to: the same write as the
+merchant's `webhooks reset-circuit`. It re-arms delivery to an endpoint the operator does
+not control, so read `admin deliveries --webhook … --status failed` first: a receiver that
+still fails only spends another 10 events reopening it. Events that fired while the
+circuit was open were not delivered, and the reset does not send them. It needs
+[write mode](#write-mode) and is audited with the callback URL.
+
+#### `admin audit`
+
+Every write an operator made: who, on whose account, on what, and the detail the gateway
+recorded with it. Read-only.
+
+```sh
+rail0 admin audit                                  # the latest operator writes
+rail0 admin audit --target 019e748b-…              # everything done to one account
+rail0 admin audit --actor 019f8a3d-… --from 2026-11-26T00:00:00Z
+rail0 admin audit --action account.deactivate --pretty
+```
+
+| Flag | Meaning |
+|---|---|
+| `--action` | One kind of action: `account.update\|activate\|deactivate`, `onboarding.create\|update\|send\|delete`, `wallet.update\|deactivate\|reactivate`, `administrator.grant\|revoke`, `webhook.reset_circuit`, `transaction.redrive`, `catalog.reload`, `sync_errors.clear`, `write_mode.enable\|disable` |
+| `--actor` | The operator's account id |
+| `--target` | The account the action landed on |
+| `--resource-type` | `account`, `wallet`, `onboarding`, `webhook`, … |
+| `--payment` | The payment a redrive names: its **UUID** (not its `rail0_id`) |
+| `--from`, `--to` | ISO-8601 times |
+| `--sort`, `--page`, `--per-page` | As on every list |
+
+`detail` is what makes a row useful: the fields an operator changed and the values they
+replaced, the exposure acknowledged when an account was switched off, the filters and the
+count of a sync-error clear. A merchant's own writes are not operator actions and are not
+in this log. The action names are completed by the shell and checked by the gateway, so a
+gateway newer than the CLI can still be filtered by an action added since.
+`rail0 admin trace <payment>` shows one payment's operator actions from either of its ids.
+
+#### `admin disputes`
+
+`rail0 disputes` lists the disputes on one wallet's payments. This is every account's, for
+the platform-wide question: what is being contested, since when, where, and why.
+
+```sh
+rail0 admin disputes --status open
+rail0 admin disputes --status open --chain arc --pretty
+rail0 admin disputes --reason not_received --from 2026-11-01T00:00:00Z
+rail0 admin disputes --payment 0xrail0Id…
+```
+
+| Flag | Meaning |
+|---|---|
+| `--status` | `open` or `closed` |
+| `--payment` | A payment's UUID or its `rail0_id` |
+| `--chain` | A slug or a chain id |
+| `--reason` | A code a payer can open a dispute with (`rail0 disputes reasons`) |
+| `--from`, `--to` | ISO-8601 times, on when the dispute was opened |
+| `--sort` | `opened_at` or `closed_at` (newest first by default) |
+| `--page`, `--per-page` | As on every list |
+
+Each row carries the payment it is about (`payment`: ids, chain, payer, payee, amount) and
+both reasons with their code and description. Read-only: a dispute is opened and closed by
+the payer, on chain, and a full refund closes it.
+
+#### `admin operators`
+
+The operator role is what opens every command of this group. It is a grant beside the
+account: who vouched for it, why, and optionally until when.
+
+```sh
+rail0 admin operators                             # every grant, expired ones included
+rail0 admin operators grant 019e748b-… --note "on call this week" --expires 7d
+rail0 admin operators grant 019e748b-… --note "platform team"
+rail0 admin operators revoke 019e748b-…
+```
+
+- **`grant`** gives the role to an account: from its next request it reads every account,
+  payment and webhook, and with write mode it writes to them, this role included. `--note`
+  says why and is kept with the grant and in the audit log. `--expires` time-boxes it: a
+  duration from now (`7d`, `12h`) or an ISO-8601 time; past it the grant opens nothing and
+  stays listed as history. Without `--expires` it lasts until revoked.
+- **`revoke`** removes it, by the **account's** id. The gateway refuses your own grant
+  (`422` `self_revoke`: stepping down is another operator's act) and the last active
+  operator (`422` `last_admin`).
+- Both read the account and **ask first, naming it** (`--yes` skips the question), need
+  [write mode](#write-mode), and are audited (`rail0 admin audit --action
+  administrator.grant`). Your own account is recorded as the one who granted.
+- An account that already holds a grant, expired or not, is refused (`409`): revoke it
+  first to change its note or expiry.
+- Like the rest of the group, neither runs in agent mode: the role is given and taken by a
+  person at a terminal.
+
+#### `admin payouts`
+
+Every account's payouts and payout destinations. **Read-only**: the gateway is
+non-custodial and every payout write is the destination wallet's own (`rail0 payouts`), so
+an operator can look, not act.
+
+```sh
+rail0 admin payouts --status failed --pretty
+rail0 admin payouts --account 019e748b-… --created-from 2026-11-01T00:00:00Z
+rail0 admin payouts get 01a3f0c2-…                  # the whole record but its signed payload
+rail0 admin payouts events 01a3f0c2-…               # its audit trail
+rail0 admin payouts destinations --status unverified
+rail0 admin payouts destinations get 01a3e9b1-…
+rail0 admin payouts destinations events 01a3e9b1-…
+```
+
+The list takes `--account`, `--wallet`, `--destination`, `--chain`, `--status` (several),
+`--purpose` (`payout` or `proof`), `--created-from` / `--created-to`; the destinations
+`--account`, `--wallet`, `--chain`, `--status` (`unverified`, `verified`, `disabled`).
+A failed payout carries `error_code` and `error_reason`; a destination says who
+registered it (`created_by`) and who confirmed it (`verified_by`).
+
+With the payouts feature off on the gateway these routes do not exist: every command
+answers `404`, and the hint says so. `rail0 admin config payouts` tells whether it is on.
+
+#### `admin config`
+
+The configuration the gateway process is **running with**: every window, threshold, limit
+and feature flag, one setting a row. It answers "which configuration is this environment
+on" without opening the platform's secrets page.
+
+```sh
+rail0 admin config --pretty
+rail0 admin config payouts               # one group: is the payouts feature on here
+rail0 admin config --overridden          # what this environment changed from the defaults
+```
+
+| Field | Meaning |
+|---|---|
+| `group` | `build`, `payments`, `recovery`, `retention`, `webhooks`, `payouts`, `settlement`, `rate_limit`, `siwe`, `session`, `fees`, `rpc`, `onboarding`, `email` |
+| `setting` | Its name within the group |
+| `value` | What the gateway is using now |
+| `env` | The environment variable that sets it; empty for a constant of the code and for a setting read from the environment's file |
+| `source` | Where the value comes from: `constant` (the code, nothing sets it), `default` (the code's value, its variable unset), `override` (its variable is set), `environment_file` (the settings file the gateway loads for its environment). `null` from a gateway that does not say |
+| `overridden` | Whether this environment states the value: its variable is set in the process (a default and an override that coincide read differently), or its file gives a value other than the code's |
+| `description` | What it controls and its unit, in the gateway's own words |
+
+Read-only by nature: the gateway reads its code, its environment's file and its variables
+when the process starts, and a deploy is the only way to change one. No secret is among them.
+
+#### `admin catalog`
+
+The gateway reads its chain configuration once, at start, into memory. After a change in
+the database (a chain activated, a token retired, an RPC endpoint corrected) the running
+process serves what it read until it is restarted or reloaded.
+
+```sh
+rail0 admin catalog                      # is the snapshot stale, and what would change
+rail0 admin catalog reload               # apply it: reads the diff, asks, reloads
+rail0 admin catalog chains --pretty      # every chain, the ones not in service included
+rail0 admin catalog tokens --pretty      # every token, with its EIP-712 domain
+rail0 admin catalog contracts --pretty   # every deployment that is not archived
+```
+
+- **The diff** says `stale` and `pending`, and lists per kind the rows `added`, `removed`
+  and `changed`, a changed row with its fields as `from` → `to`.
+- **`reload`** makes what the database holds what the process serves: a chain switched on
+  starts taking payments. It needs [write mode](#write-mode), asks first saying how many
+  changes are pending (`--yes` skips the question) and is audited with what it applied.
+- **One process.** Both the diff and the reload are about the process that answered the
+  request. Where several serve (web machines, a worker) each has its own snapshot: a
+  restart is what reaches them all.
+- **`chains`, `tokens`, `contracts`** are whole rows, with what `rail0 chains` and
+  `rail0 tokens` leave out: what is configured and not in service. A token or a contract
+  names its chain by the catalogue's own reference; the command adds `chain_id` and
+  `chain_slug`.
+- A keyed RPC endpoint is shown as its template, with a `{RAIL0_RPC_KEY_<NAME>}`
+  placeholder: the key is in the gateway's environment, never in the answer.
 
 ---
 

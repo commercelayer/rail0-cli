@@ -1,0 +1,85 @@
+.nh
+.TH "RAIL0" "1" "Aug 2026" "rail0 CLI" ""
+
+.SH NAME
+rail0-admin-config - The configuration the gateway is running with: every window, limit and feature flag
+
+
+.SH SYNOPSIS
+\fBrail0 admin config [group] [flags]\fP
+
+
+.SH DESCRIPTION
+Print the effective configuration of the gateway process that answers: every window,
+threshold, limit and feature flag, one per row.
+
+.PP
+group        build, payments, recovery, retention, webhooks, payouts, settlement,
+               rate_limit, siwe, session, fees, rpc, onboarding, email
+  setting      its name within the group
+  value        what the gateway is using now
+  env          the environment variable that sets it (empty for a constant of the code
+               and for a setting read from the environment's file)
+  source       where the value comes from: constant (the code, nothing sets it), default
+               (the code's value, its variable unset), override (its variable is set),
+               environment_file (the settings file the gateway loads for its environment);
+               empty from a gateway that does not say
+  overridden   whether this environment states the value: its variable is set in the
+               process (a default and an override that happen to coincide read
+               differently), or its file gives a value other than the code's
+  description  what it controls and its unit, in the gateway's own words
+
+.PP
+Pass a group to print only that one. --overridden keeps only the overridden settings: what
+this environment changed from the defaults.
+
+.PP
+Read-only by nature: the gateway reads its code, its environment's file and its variables
+when the process starts, and a deploy is the only way to change one. No secret is among them.
+
+
+.SH OPTIONS
+\fB-h\fP, \fB--help\fP[=false]
+	help for config
+
+.PP
+\fB--overridden\fP[=false]
+	Only the settings this environment overrides: a variable set in the process, or a value of its own in the environment's file
+
+
+.SH OPTIONS INHERITED FROM PARENT COMMANDS
+\fB--agent\fP[=false]
+	Agent mode: one JSON envelope on stdout, JSON events on stderr, no prompts (env: RAIL0_AGENT=1)
+
+.PP
+\fB--base-url\fP=""
+	RAIL0 gateway base URL (env: RAIL0_BASE_URL)
+
+.PP
+\fB--debug\fP[=false]
+	Print HTTP request/response details to stderr
+
+.PP
+\fB--json\fP[=false]
+	Force plain (uncolored) JSON output (useful in scripts)
+
+.PP
+\fB--pretty\fP[=false]
+	Use the key-value/table view instead of JSON (terminal only)
+
+.PP
+\fB-q\fP, \fB--quiet\fP[=false]
+	Print only the result's id/hash, one per line (useful in scripts)
+
+
+.SH EXAMPLE
+.EX
+  rail0 admin config --pretty
+  rail0 admin config payouts               # is the payouts feature on here
+  rail0 admin config rate_limit --pretty
+  rail0 admin config --overridden          # what this environment changed from the defaults
+.EE
+
+
+.SH SEE ALSO
+\fBrail0-admin(1)\fP

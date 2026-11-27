@@ -1,0 +1,60 @@
+.nh
+.TH "RAIL0" "1" "Aug 2026" "rail0 CLI" ""
+
+.SH NAME
+rail0-admin-catalog-tokens - Every token configured in this environment, on chains not in service too
+
+
+.SH SYNOPSIS
+\fBrail0 admin catalog tokens [flags]\fP
+
+
+.SH DESCRIPTION
+List every token this gateway is configured with, whole rows, with the EIP-712 domain
+(eip712_name, eip712_version) the gateway signs against. 'rail0 tokens' stops at the
+chains in service.
+
+.PP
+A row names its chain by the catalogue's own reference (blockchain_id); the command adds
+chain_id and chain_slug, read from 'rail0 admin catalog chains', so a row can be read by
+itself.
+
+
+.SH OPTIONS
+\fB-h\fP, \fB--help\fP[=false]
+	help for tokens
+
+
+.SH OPTIONS INHERITED FROM PARENT COMMANDS
+\fB--agent\fP[=false]
+	Agent mode: one JSON envelope on stdout, JSON events on stderr, no prompts (env: RAIL0_AGENT=1)
+
+.PP
+\fB--base-url\fP=""
+	RAIL0 gateway base URL (env: RAIL0_BASE_URL)
+
+.PP
+\fB--debug\fP[=false]
+	Print HTTP request/response details to stderr
+
+.PP
+\fB--json\fP[=false]
+	Force plain (uncolored) JSON output (useful in scripts)
+
+.PP
+\fB--pretty\fP[=false]
+	Use the key-value/table view instead of JSON (terminal only)
+
+.PP
+\fB-q\fP, \fB--quiet\fP[=false]
+	Print only the result's id/hash, one per line (useful in scripts)
+
+
+.SH EXAMPLE
+.EX
+  rail0 admin catalog tokens --pretty
+.EE
+
+
+.SH SEE ALSO
+\fBrail0-admin-catalog(1)\fP

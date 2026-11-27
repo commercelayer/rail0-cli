@@ -100,6 +100,9 @@ func notFoundHint(cmd *cobra.Command) string {
 	if isPaymentCommand(cmd) {
 		return "the id may be wrong, or you are not the payer/payee of this payment (check the key you passed with -p)"
 	}
+	if isAdminPayoutsCommand(cmd) {
+		return "the id may be wrong, or the payouts feature is off on this gateway ('rail0 admin config payouts' says whether it is on)"
+	}
 	return "the id may be wrong, or it is not visible to this session ('rail0 auth status' shows who you are signed in as)"
 }
 
@@ -110,6 +113,9 @@ func notFoundHint(cmd *cobra.Command) string {
 func conflictHint(cmd *cobra.Command) string {
 	if cmd == accountUpdateCmd {
 		return " — " + accountConflictHint
+	}
+	if cmd == adminOperatorsGrantCmd {
+		return " — " + operatorGrantConflictHint
 	}
 	return ""
 }

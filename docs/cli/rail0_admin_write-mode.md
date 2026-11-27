@@ -47,7 +47,7 @@ rail0 admin write-mode [flags]
 
 ### SEE ALSO
 
-* [rail0 admin](rail0_admin.md)	 - Operator commands: diagnostics, stuck transactions, sync errors, accounts, wallets, onboarding, write mode
+* [rail0 admin](rail0_admin.md)	 - Operator commands: diagnostics, transactions, sync errors, webhooks, disputes, accounts, wallets, onboarding, payouts, operators, audit, configuration, catalogue, write mode
 * [rail0 admin write-mode off](rail0_admin_write-mode_off.md)	 - Switch write mode off: revoke its token and remove it
 * [rail0 admin write-mode on](rail0_admin_write-mode_on.md)	 - Switch write mode on for an hour (audited)
 * [rail0 admin write-mode status](rail0_admin_write-mode_status.md)	 - Whether write mode is on, and until when

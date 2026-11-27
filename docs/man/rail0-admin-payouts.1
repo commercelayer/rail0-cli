@@ -1,0 +1,107 @@
+.nh
+.TH "RAIL0" "1" "Aug 2026" "rail0 CLI" ""
+
+.SH NAME
+rail0-admin-payouts - Every account's payouts, read-only (lists when run bare)
+
+
+.SH SYNOPSIS
+\fBrail0 admin payouts [flags]\fP
+
+
+.SH DESCRIPTION
+List the payouts of every account, newest first: each with its account, destination,
+amount, status and, when it failed, why (error_code, error_reason).
+
+.PP
+Read-only: every payout write is the destination wallet's own, and the gateway holds no
+funds. With the payouts feature off on this gateway the command answers 404
+('rail0 admin config payouts' says whether it is on).
+
+
+.SH OPTIONS
+\fB--account\fP=""
+	Only this account's payouts (account id)
+
+.PP
+\fB--chain\fP=
+	Only payouts on this chain: a slug (arc, base, …) or a chain id; the environment's gateway decides testnet vs mainnet
+
+.PP
+\fB--created-from\fP=""
+	Only payouts created at/after this ISO-8601 time
+
+.PP
+\fB--created-to\fP=""
+	Only payouts created at/before this ISO-8601 time
+
+.PP
+\fB--destination\fP=""
+	Only payouts to this destination (destination id)
+
+.PP
+\fB-h\fP, \fB--help\fP[=false]
+	help for payouts
+
+.PP
+\fB--page\fP=0
+	Page number (1-based)
+
+.PP
+\fB--per-page\fP=0
+	Payouts per page (max 100)
+
+.PP
+\fB--purpose\fP=""
+	Filter by purpose: payout or proof
+
+.PP
+\fB--sort\fP=""
+	Sort fields (e.g. -created_at)
+
+.PP
+\fB--status\fP=[]
+	Filter by status (pending, submitted, confirmed, failed); repeat or comma-separate for any of several
+
+.PP
+\fB--wallet\fP=""
+	Only payouts from this wallet (wallet id)
+
+
+.SH OPTIONS INHERITED FROM PARENT COMMANDS
+\fB--agent\fP[=false]
+	Agent mode: one JSON envelope on stdout, JSON events on stderr, no prompts (env: RAIL0_AGENT=1)
+
+.PP
+\fB--base-url\fP=""
+	RAIL0 gateway base URL (env: RAIL0_BASE_URL)
+
+.PP
+\fB--debug\fP[=false]
+	Print HTTP request/response details to stderr
+
+.PP
+\fB--json\fP[=false]
+	Force plain (uncolored) JSON output (useful in scripts)
+
+.PP
+\fB--pretty\fP[=false]
+	Use the key-value/table view instead of JSON (terminal only)
+
+.PP
+\fB-q\fP, \fB--quiet\fP[=false]
+	Print only the result's id/hash, one per line (useful in scripts)
+
+
+.SH EXAMPLE
+.EX
+  rail0 admin payouts --status failed --pretty
+  rail0 admin payouts --account 019e748b-… --created-from 2026-11-01T00:00:00Z
+  rail0 admin payouts get 01a3f0c2-…
+  rail0 admin payouts events 01a3f0c2-…
+  rail0 admin payouts destinations --status unverified
+.EE
+
+
+.SH SEE ALSO
+\fBrail0-admin(1)\fP, \fBrail0-admin-payouts-destinations(1)\fP, \fBrail0-admin-payouts-events(1)\fP, \fBrail0-admin-payouts-get(1)\fP

@@ -49,7 +49,7 @@ rail0 admin accounts [flags]
 
 ### SEE ALSO
 
-* [rail0 admin](rail0_admin.md)	 - Operator commands: diagnostics, stuck transactions, sync errors, accounts, wallets, onboarding, write mode
+* [rail0 admin](rail0_admin.md)	 - Operator commands: diagnostics, transactions, sync errors, webhooks, disputes, accounts, wallets, onboarding, payouts, operators, audit, configuration, catalogue, write mode
 * [rail0 admin accounts activate](rail0_admin_accounts_activate.md)	 - Switch a deactivated account back on (write mode, audited)
 * [rail0 admin accounts deactivate](rail0_admin_accounts_deactivate.md)	 - Switch an account off (write mode, audited)
 * [rail0 admin accounts exposure](rail0_admin_accounts_exposure.md)	 - What an account still has in motion: what a deactivation would leave half-way

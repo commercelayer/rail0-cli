@@ -2,7 +2,7 @@
 .TH "RAIL0" "1" "Aug 2026" "rail0 CLI" ""
 
 .SH NAME
-rail0-admin - Operator commands: diagnostics, stuck transactions, sync errors, accounts, wallets, onboarding, write mode
+rail0-admin - Operator commands: diagnostics, transactions, sync errors, webhooks, disputes, accounts, wallets, onboarding, payouts, operators, audit, configuration, catalogue, write mode
 
 
 .SH SYNOPSIS
@@ -16,10 +16,12 @@ operator's key. Any other session is answered 403.
 
 .PP
 An operator session reads. To write (clear sync errors, switch an account or a wallet
-off or on, invite a merchant, and the operator's writes elsewhere in the CLI, such as
-\&'account update --account …') switch write mode on with 'rail0 admin write-mode on': it
-lasts an hour, both switches are audited on the gateway, and 'rail0 admin write-mode off'
-ends it early.
+off or on, invite a merchant, reset a webhook circuit, grant or revoke the operator role,
+reload the chain catalogue, and the operator's writes elsewhere in the CLI, such as 'account update --account …')
+switch write mode on with
+\&'rail0 admin write-mode on': it lasts an hour, both switches are audited on the gateway,
+and 'rail0 admin write-mode off' ends it early. 'rail0 admin audit' lists every operator
+write.
 
 .PP
 Not available in agent mode: these commands are for a person at a terminal.
@@ -64,8 +66,10 @@ Not available in agent mode: these commands are for a person at a terminal.
   rail0 admin sync-errors --reason not_found
   rail0 admin accounts --search 0x2D2B…    # whose wallet is this
   rail0 admin onboardings                  # invites and sign-ups still waiting
+  rail0 admin webhooks --circuit open      # subscriptions that are receiving nothing
+  rail0 admin audit --target 019e748b-…    # everything operators did to one account
 .EE
 
 
 .SH SEE ALSO
-\fBrail0(1)\fP, \fBrail0-admin-accounts(1)\fP, \fBrail0-admin-health(1)\fP, \fBrail0-admin-onboardings(1)\fP, \fBrail0-admin-sync-errors(1)\fP, \fBrail0-admin-trace(1)\fP, \fBrail0-admin-transactions(1)\fP, \fBrail0-admin-wallets(1)\fP, \fBrail0-admin-write-mode(1)\fP
+\fBrail0(1)\fP, \fBrail0-admin-accounts(1)\fP, \fBrail0-admin-audit(1)\fP, \fBrail0-admin-catalog(1)\fP, \fBrail0-admin-config(1)\fP, \fBrail0-admin-deliveries(1)\fP, \fBrail0-admin-disputes(1)\fP, \fBrail0-admin-health(1)\fP, \fBrail0-admin-onboardings(1)\fP, \fBrail0-admin-operators(1)\fP, \fBrail0-admin-payouts(1)\fP, \fBrail0-admin-sync-errors(1)\fP, \fBrail0-admin-trace(1)\fP, \fBrail0-admin-transactions(1)\fP, \fBrail0-admin-wallets(1)\fP, \fBrail0-admin-webhooks(1)\fP, \fBrail0-admin-write-mode(1)\fP

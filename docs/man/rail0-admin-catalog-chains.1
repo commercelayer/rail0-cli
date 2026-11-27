@@ -1,0 +1,63 @@
+.nh
+.TH "RAIL0" "1" "Aug 2026" "rail0 CLI" ""
+
+.SH NAME
+rail0-admin-catalog-chains - Every blockchain configured in this environment, the ones not in service included
+
+
+.SH SYNOPSIS
+\fBrail0 admin catalog chains [flags]\fP
+
+
+.SH DESCRIPTION
+List every blockchain this gateway is configured with, whole rows: 'active' says
+whether it is in service, 'rpc_urls' are the endpoints the gateway itself calls.
+
+.PP
+\&'rail0 chains' lists only the chains a payment can be made on. A chain here and not
+there is configured and not serving: switched off, or missing a token or a deployment
+('rail0 admin catalog tokens', 'rail0 admin catalog contracts').
+
+.PP
+A keyed RPC endpoint is shown as its template, with a {RAIL0_RPC\fIKEY\fP} placeholder:
+the key is in the gateway's environment, never in this answer.
+
+
+.SH OPTIONS
+\fB-h\fP, \fB--help\fP[=false]
+	help for chains
+
+
+.SH OPTIONS INHERITED FROM PARENT COMMANDS
+\fB--agent\fP[=false]
+	Agent mode: one JSON envelope on stdout, JSON events on stderr, no prompts (env: RAIL0_AGENT=1)
+
+.PP
+\fB--base-url\fP=""
+	RAIL0 gateway base URL (env: RAIL0_BASE_URL)
+
+.PP
+\fB--debug\fP[=false]
+	Print HTTP request/response details to stderr
+
+.PP
+\fB--json\fP[=false]
+	Force plain (uncolored) JSON output (useful in scripts)
+
+.PP
+\fB--pretty\fP[=false]
+	Use the key-value/table view instead of JSON (terminal only)
+
+.PP
+\fB-q\fP, \fB--quiet\fP[=false]
+	Print only the result's id/hash, one per line (useful in scripts)
+
+
+.SH EXAMPLE
+.EX
+  rail0 admin catalog chains --pretty
+.EE
+
+
+.SH SEE ALSO
+\fBrail0-admin-catalog(1)\fP

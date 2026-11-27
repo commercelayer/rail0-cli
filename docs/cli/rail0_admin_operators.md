@@ -43,7 +43,7 @@ rail0 admin operators [flags]
 
 ### SEE ALSO
 
-* [rail0 admin](rail0_admin.md)	 - Operator commands: diagnostics, transactions, sync errors, webhooks, disputes, accounts, wallets, onboarding, operators, audit, write mode
+* [rail0 admin](rail0_admin.md)	 - Operator commands: diagnostics, transactions, sync errors, webhooks, disputes, accounts, wallets, onboarding, payouts, operators, audit, configuration, catalogue, write mode
 * [rail0 admin operators grant](rail0_admin_operators_grant.md)	 - Give an account the operator role (write mode, audited)
 * [rail0 admin operators revoke](rail0_admin_operators_revoke.md)	 - Remove an account's operator role (write mode, audited)
 

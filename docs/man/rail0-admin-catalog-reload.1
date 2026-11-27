@@ -1,0 +1,72 @@
+.nh
+.TH "RAIL0" "1" "Aug 2026" "rail0 CLI" ""
+
+.SH NAME
+rail0-admin-catalog-reload - Rebuild the catalogue snapshot from the database, in the process that answers (write mode, audited)
+
+
+.SH SYNOPSIS
+\fBrail0 admin catalog reload [flags]\fP
+
+
+.SH DESCRIPTION
+Rebuild the chain catalogue's in-memory snapshot from the database. What the database
+holds becomes what the process serves: a chain switched on starts taking payments, a
+token retired stops being offered.
+
+.PP
+The command reads the diff first and asks, saying how many changes are pending. The
+answer says what the rebuilt snapshot holds and what the reload applied.
+
+.PP
+ONE PROCESS, the one that answers the request. It is the tool for an environment served
+by a single process. Where several serve (web machines, a worker) each has its own
+snapshot and this reaches one of them: a restart is what reaches them all.
+
+.PP
+A write: it needs write mode ('rail0 admin write-mode on').
+
+
+.SH OPTIONS
+\fB-h\fP, \fB--help\fP[=false]
+	help for reload
+
+.PP
+\fB-y\fP, \fB--yes\fP[=false]
+	Skip the confirmation prompt (required to run non-interactively)
+
+
+.SH OPTIONS INHERITED FROM PARENT COMMANDS
+\fB--agent\fP[=false]
+	Agent mode: one JSON envelope on stdout, JSON events on stderr, no prompts (env: RAIL0_AGENT=1)
+
+.PP
+\fB--base-url\fP=""
+	RAIL0 gateway base URL (env: RAIL0_BASE_URL)
+
+.PP
+\fB--debug\fP[=false]
+	Print HTTP request/response details to stderr
+
+.PP
+\fB--json\fP[=false]
+	Force plain (uncolored) JSON output (useful in scripts)
+
+.PP
+\fB--pretty\fP[=false]
+	Use the key-value/table view instead of JSON (terminal only)
+
+.PP
+\fB-q\fP, \fB--quiet\fP[=false]
+	Print only the result's id/hash, one per line (useful in scripts)
+
+
+.SH EXAMPLE
+.EX
+  rail0 admin catalog reload
+  rail0 admin catalog reload --yes
+.EE
+
+
+.SH SEE ALSO
+\fBrail0-admin-catalog(1)\fP

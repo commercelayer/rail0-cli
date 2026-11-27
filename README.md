@@ -1965,6 +1965,10 @@ action is a person's, at a terminal.
 | `admin disputes` | Every dispute across accounts, open and closed | no |
 | `admin operators` | Who holds the operator role | no |
 | `admin operators grant\|revoke <account>` | Give or remove the operator role | **yes** |
+| `admin payouts` | Every account's payouts and payout destinations (`get`, `events`, `destinations`) | no |
+| `admin config [group]` | The configuration the gateway is running with | no |
+| `admin catalog` | What a reload of the chain catalogue would change; `chains`, `tokens`, `contracts` | no |
+| `admin catalog reload` | Rebuild the catalogue snapshot from the database | **yes** |
 | `admin write-mode [on\|off]` | See, open or close the hour in which the operator may write | — |
 
 #### Write mode
@@ -2323,6 +2327,85 @@ rail0 admin operators revoke 019e748b-…
   first to change its note or expiry.
 - Like the rest of the group, neither runs in agent mode: the role is given and taken by a
   person at a terminal.
+
+#### `admin payouts`
+
+Every account's payouts and payout destinations. **Read-only**: the gateway is
+non-custodial and every payout write is the destination wallet's own (`rail0 payouts`), so
+an operator can look, not act.
+
+```sh
+rail0 admin payouts --status failed --pretty
+rail0 admin payouts --account 019e748b-… --created-from 2026-11-01T00:00:00Z
+rail0 admin payouts get 01a3f0c2-…                  # the whole record but its signed payload
+rail0 admin payouts events 01a3f0c2-…               # its audit trail
+rail0 admin payouts destinations --status unverified
+rail0 admin payouts destinations get 01a3e9b1-…
+rail0 admin payouts destinations events 01a3e9b1-…
+```
+
+The list takes `--account`, `--wallet`, `--destination`, `--chain`, `--status` (several),
+`--purpose` (`payout` or `proof`), `--created-from` / `--created-to`; the destinations
+`--account`, `--wallet`, `--chain`, `--status` (`unverified`, `verified`, `disabled`).
+A failed payout carries `error_code` and `error_reason`; a destination says who
+registered it (`created_by`) and who confirmed it (`verified_by`).
+
+With the payouts feature off on the gateway these routes do not exist: every command
+answers `404`, and the hint says so. `rail0 admin config payouts` tells whether it is on.
+
+#### `admin config`
+
+The configuration the gateway process is **running with**: every window, threshold, limit
+and feature flag, one setting a row. It answers "which configuration is this environment
+on" without opening the platform's secrets page.
+
+```sh
+rail0 admin config --pretty
+rail0 admin config payouts               # one group: is the payouts feature on here
+rail0 admin config --overridden          # what this environment changed from the defaults
+```
+
+| Field | Meaning |
+|---|---|
+| `group` | `build`, `payments`, `recovery`, `retention`, `webhooks`, `payouts`, `settlement`, `rate_limit`, `siwe`, `session`, `fees`, `rpc`, `onboarding`, `email` |
+| `setting` | Its name within the group |
+| `value` | What the gateway is using now |
+| `env` | The environment variable that sets it; empty for a constant of the code and for a setting read from the environment's file |
+| `source` | Where the value comes from: `constant` (the code, nothing sets it), `default` (the code's value, its variable unset), `override` (its variable is set), `environment_file` (the settings file the gateway loads for its environment). `null` from a gateway that does not say |
+| `overridden` | Whether this environment states the value: its variable is set in the process (a default and an override that coincide read differently), or its file gives a value other than the code's |
+| `description` | What it controls and its unit, in the gateway's own words |
+
+Read-only by nature: the gateway reads its code, its environment's file and its variables
+when the process starts, and a deploy is the only way to change one. No secret is among them.
+
+#### `admin catalog`
+
+The gateway reads its chain configuration once, at start, into memory. After a change in
+the database (a chain activated, a token retired, an RPC endpoint corrected) the running
+process serves what it read until it is restarted or reloaded.
+
+```sh
+rail0 admin catalog                      # is the snapshot stale, and what would change
+rail0 admin catalog reload               # apply it: reads the diff, asks, reloads
+rail0 admin catalog chains --pretty      # every chain, the ones not in service included
+rail0 admin catalog tokens --pretty      # every token, with its EIP-712 domain
+rail0 admin catalog contracts --pretty   # every deployment that is not archived
+```
+
+- **The diff** says `stale` and `pending`, and lists per kind the rows `added`, `removed`
+  and `changed`, a changed row with its fields as `from` → `to`.
+- **`reload`** makes what the database holds what the process serves: a chain switched on
+  starts taking payments. It needs [write mode](#write-mode), asks first saying how many
+  changes are pending (`--yes` skips the question) and is audited with what it applied.
+- **One process.** Both the diff and the reload are about the process that answered the
+  request. Where several serve (web machines, a worker) each has its own snapshot: a
+  restart is what reaches them all.
+- **`chains`, `tokens`, `contracts`** are whole rows, with what `rail0 chains` and
+  `rail0 tokens` leave out: what is configured and not in service. A token or a contract
+  names its chain by the catalogue's own reference; the command adds `chain_id` and
+  `chain_slug`.
+- A keyed RPC endpoint is shown as its template, with a `{RAIL0_RPC_KEY_<NAME>}`
+  placeholder: the key is in the gateway's environment, never in the answer.
 
 ---
 

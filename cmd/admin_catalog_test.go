@@ -9,21 +9,28 @@ import (
 	rail0 "github.com/commercelayer/rail0-go"
 )
 
-// configGateway answers the configuration report the way the gateway does.
+// configGateway answers the configuration report the way the gateway does: one setting
+// for each source it names, and one group from a gateway older than the field.
 func configGateway(t *testing.T) *operatorGateway {
 	t.Helper()
 	g := newOperatorGateway(t)
-	setting := func(value any, env any, overridden bool) map[string]any {
-		return map[string]any{"value": value, "env": env, "overridden": overridden, "description": "what it is for"}
+	setting := func(value any, env any, overridden bool, source string) map[string]any {
+		s := map[string]any{"value": value, "env": env, "overridden": overridden, "description": "what it is for"}
+		if source != "" {
+			s["source"] = source
+		}
+		return s
 	}
 	g.respond = func(r *http.Request) (int, any) {
 		if r.URL.Path == "/admin/config" {
 			return http.StatusOK, map[string]any{
-				"build":        map[string]any{"version": setting("1.0.1", nil, false)},
-				"payouts":      map[string]any{"enabled": setting(false, "RAIL0_FEATURE_PAYOUTS", true), "proof_amount": setting("0.01", "PAYOUT_PROOF_AMOUNT", false)},
-				"payments":     map[string]any{"authorization_ttl": setting(604800, "AUTHORIZATION_TTL", false)},
-				"fees":         map[string]any{"multipliers": setting(map[string]any{"137": 1.5}, nil, false)},
-				"generated_at": "2026-11-26T15:00:00Z",
+				"build":        map[string]any{"version": setting("1.0.1", nil, false, "")},
+				"payouts":      map[string]any{"enabled": setting(false, nil, false, "environment_file"), "proof_amount": setting("0.01", nil, false, "constant")},
+				"rate_limit":   map[string]any{"period": setting(60, "RATE_LIMIT_PERIOD", false, "default")},
+				"recovery":     map[string]any{"recovery_interval": setting(120, "RECOVERY_INTERVAL", true, "override")},
+				"siwe":         map[string]any{"domains": setting([]any{"console.example", "gateway.example"}, nil, true, "environment_file")},
+				"fees":         map[string]any{"multipliers": setting(map[string]any{"137": 1.5}, nil, false, "constant")},
+				"generated_at": "2026-11-27T15:00:00Z",
 			}
 		}
 		return 0, nil
@@ -44,23 +51,57 @@ func configOutput(t *testing.T, args ...string) []map[string]any {
 	return rows
 }
 
+func configRow(t *testing.T, rows []map[string]any, group, setting string) map[string]any {
+	t.Helper()
+	for _, r := range rows {
+		if r["group"] == group && r["setting"] == setting {
+			return r
+		}
+	}
+	t.Fatalf("no row %s.%s in %v", group, setting, rows)
+	return nil
+}
+
 // The report is printed one setting a row, sorted, with nothing but generated_at left out.
 func TestAdminConfigOneSettingPerRow(t *testing.T) {
 	configGateway(t)
 	rows := configOutput(t)
-	if len(rows) != 5 {
-		t.Fatalf("%d rows, want 5: %v", len(rows), rows)
-	}
 	var order []string
 	for _, r := range rows {
 		order = append(order, r["group"].(string)+"."+r["setting"].(string))
 	}
-	if got := strings.Join(order, " "); got != "build.version fees.multipliers payments.authorization_ttl payouts.enabled payouts.proof_amount" {
+	if got := strings.Join(order, " "); got != "build.version fees.multipliers payouts.enabled payouts.proof_amount rate_limit.period recovery.recovery_interval siwe.domains" {
 		t.Errorf("order = %s", got)
 	}
-	enabled := rows[3]
-	if enabled["value"] != false || enabled["env"] != "RAIL0_FEATURE_PAYOUTS" || enabled["overridden"] != true || enabled["description"] != "what it is for" {
-		t.Errorf("payouts.enabled = %v", enabled)
+	interval := configRow(t, rows, "recovery", "recovery_interval")
+	if interval["value"] != float64(120) || interval["env"] != "RECOVERY_INTERVAL" || interval["overridden"] != true || interval["description"] != "what it is for" {
+		t.Errorf("recovery.recovery_interval = %v", interval)
+	}
+}
+
+// Where a value comes from is the gateway's word, passed on as it is; a setting read from
+// the environment's file has no variable, and a gateway older than the field leaves the
+// key in the row with nothing in it, so the shape of a row does not depend on the gateway.
+func TestAdminConfigSource(t *testing.T) {
+	configGateway(t)
+	rows := configOutput(t)
+	for _, tc := range []struct{ group, setting, source string }{
+		{"payouts", "proof_amount", "constant"},
+		{"rate_limit", "period", "default"},
+		{"recovery", "recovery_interval", "override"},
+		{"payouts", "enabled", "environment_file"},
+		{"siwe", "domains", "environment_file"},
+	} {
+		if got := configRow(t, rows, tc.group, tc.setting)["source"]; got != tc.source {
+			t.Errorf("%s.%s source = %v, want %s", tc.group, tc.setting, got, tc.source)
+		}
+	}
+	if flag := configRow(t, rows, "payouts", "enabled"); flag["env"] != nil || flag["overridden"] != false {
+		t.Errorf("a setting of the environment's file equal to the code's = %v", flag)
+	}
+	old := configRow(t, rows, "build", "version")
+	if source, present := old["source"]; !present || source != nil {
+		t.Errorf("a gateway that names no source: source = %v (present %v), want a null", source, present)
 	}
 }
 
@@ -69,15 +110,18 @@ func TestAdminConfigGroupAndOverridden(t *testing.T) {
 	if rows := configOutput(t, "payouts"); len(rows) != 2 || rows[0]["group"] != "payouts" {
 		t.Errorf("config payouts = %v", rows)
 	}
-	if _, err := runE(t, adminConfigCmd, "paiouts"); err == nil || exitCode(err) != ExitCodeUsage || !strings.Contains(err.Error(), "build, fees, payments, payouts") {
+	if _, err := runE(t, adminConfigCmd, "paiouts"); err == nil || exitCode(err) != ExitCodeUsage || !strings.Contains(err.Error(), "build, fees, payouts, rate_limit, recovery, siwe") {
 		t.Errorf("an unknown group: err = %v", err)
 	}
 	adminConfigOverridden = true
 	t.Cleanup(func() { adminConfigOverridden = false })
-	if rows := configOutput(t); len(rows) != 1 || rows[0]["setting"] != "enabled" {
+	// A variable set in the process and a value of its own in the environment's file both
+	// count: the second has no variable to be set.
+	rows := configOutput(t)
+	if len(rows) != 2 || rows[0]["setting"] != "recovery_interval" || rows[1]["setting"] != "domains" {
 		t.Errorf("--overridden = %v", rows)
 	}
-	if rows := configOutput(t, "payments"); len(rows) != 0 {
+	if rows := configOutput(t, "payouts"); len(rows) != 0 {
 		t.Errorf("--overridden on a group with none = %v", rows)
 	}
 }

@@ -431,6 +431,7 @@ var configColumns = []ui.Column{
 	{Field: "setting"},
 	{Header: "value", Value: func(row map[string]any) string { return compactJSON(row["value"]) }, Max: 44},
 	{Field: "env"},
+	{Field: "source"},
 	{Header: "set", Value: func(row map[string]any) string {
 		if set, _ := row["overridden"].(bool); set {
 			return "yes"

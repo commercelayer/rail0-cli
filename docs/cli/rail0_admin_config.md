@@ -11,16 +11,22 @@ threshold, limit and feature flag, one per row.
                rate_limit, siwe, session, fees, rpc, onboarding, email
   setting      its name within the group
   value        what the gateway is using now
-  env          the environment variable that sets it (empty for a constant of the code)
-  overridden   whether that variable is set in this process: a default and an override
-               that happen to coincide read differently
+  env          the environment variable that sets it (empty for a constant of the code
+               and for a setting read from the environment's file)
+  source       where the value comes from: constant (the code, nothing sets it), default
+               (the code's value, its variable unset), override (its variable is set),
+               environment_file (the settings file the gateway loads for its environment);
+               empty from a gateway that does not say
+  overridden   whether this environment states the value: its variable is set in the
+               process (a default and an override that happen to coincide read
+               differently), or its file gives a value other than the code's
   description  what it controls and its unit, in the gateway's own words
 
-Pass a group to print only that one. --overridden keeps only the settings whose variable
-is set: what this environment changed from the defaults.
+Pass a group to print only that one. --overridden keeps only the overridden settings: what
+this environment changed from the defaults.
 
-Read-only by nature: the values come from the environment when the process starts, and a
-deploy is the only way to change one. No secret is among them.
+Read-only by nature: the gateway reads its code, its environment's file and its variables
+when the process starts, and a deploy is the only way to change one. No secret is among them.
 
 ```
 rail0 admin config [group] [flags]
@@ -39,7 +45,7 @@ rail0 admin config [group] [flags]
 
 ```
   -h, --help         help for config
-      --overridden   Only the settings whose environment variable is set in this process
+      --overridden   Only the settings this environment overrides: a variable set in the process, or a value of its own in the environment's file
 ```
 
 ### Options inherited from parent commands
